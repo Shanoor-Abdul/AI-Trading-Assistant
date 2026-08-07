@@ -128,3 +128,15 @@
     @apply font-sans;
   }
 }
+
+@utility glass {
+  @apply bg-black/40 backdrop-blur-md border border-white/10;
+}
+
+@utility glass-card {
+  @apply bg-zinc-900/50 backdrop-blur-lg border border-white/5 shadow-xl;
+}
+
+@utility text-glow {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
