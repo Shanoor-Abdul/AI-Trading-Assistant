@@ -223,13 +223,31 @@ export default function MobileDashboard() {
               <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {getModelsByProvider("gemini").map(m => (
-                  <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
-                ))}
-                {getModelsByProvider("groq").map(m => (
-                  <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
-                ))}
+              <SelectContent className="max-h-[300px]">
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs">Google (Free Tier)</SelectLabel>
+                  {getModelsByProvider("gemini").map(m => (
+                    <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">Groq (Free Tier)</SelectLabel>
+                  {getModelsByProvider("groq").map(m => (
+                    <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenAI (Credits Required)</SelectLabel>
+                  {getModelsByProvider("openai").map(m => (
+                    <SelectItem key={m.id} value={`openai:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
+                  {getModelsByProvider("openrouter").map(m => (
+                    <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
