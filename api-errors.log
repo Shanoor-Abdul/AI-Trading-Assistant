@@ -10,3 +10,4 @@
 [2026-08-07T23:57:17.463Z] Groq Error (llama-3.2-90b-vision-preview): Error: 400 The model `llama-3.2-90b-vision-preview` has been decommissioned and is no longer supported. Please refer to https://console.groq.com/docs/deprecations for a recommendation on which model to use instead.
 [2026-08-07T23:57:18.660Z] Groq Error (llama-3.2-90b-vision-preview): Error: 400 The model `llama-3.2-90b-vision-preview` has been decommissioned and is no longer supported. Please refer to https://console.groq.com/docs/deprecations for a recommendation on which model to use instead.
 [2026-08-08T00:00:20.631Z] OpenRouter Error (nvidia/nemotron-nano-12b-v2-vl:free): Error: Model nvidia/nemotron-nano-12b-v2-vl:free returned an invalid response (it may be down or rejecting images).
+[2026-08-08T00:23:26.863Z] OpenRouter Error (nvidia/nemotron-nano-12b-v2-vl:free): Error: Model nvidia/nemotron-nano-12b-v2-vl:free returned an invalid response (it may be down or rejecting images).

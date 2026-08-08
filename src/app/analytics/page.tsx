@@ -68,16 +68,16 @@ export default async function AnalyticsPage() {
               <tr key={trade.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
                 <td className="px-4 py-3 font-medium text-white">{trade.analyses?.symbol} ({trade.analyses?.timeframe})</td>
                 <td className="px-4 py-3">
-                  <span className={\`px-2 py-1 rounded text-xs font-semibold \${
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
                     trade.analyses?.signal === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                  }\`}>
+                  }`}>
                     {trade.analyses?.signal}
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={\`\${
+                  <span className={`${
                     trade.status === 'WON' ? 'text-green-400' : trade.status === 'LOST' ? 'text-red-400' : 'text-yellow-400'
-                  }\`}>
+                  }`}>
                     {trade.status}
                   </span>
                 </td>

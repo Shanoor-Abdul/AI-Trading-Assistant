@@ -141,15 +141,15 @@ export default function Dashboard() {
   return (
     <main className="container mx-auto p-4 md:p-6 lg:p-8 max-w-7xl">
       <TradeTracker />
-      <header className="flex items-center justify-between mb-8">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-4">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-4">
             AI Trading Assistant
             <LogoutButton />
           </h1>
-          <p className="text-zinc-400">Live AI chart analysis and probability-based signals</p>
+          <p className="text-sm md:text-base text-zinc-400">Live AI chart analysis and probability-based signals</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4">
           <div className="flex items-center gap-2">
             <Select
               value={`${selectedProvider}:${selectedModel}`}

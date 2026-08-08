@@ -22,6 +22,10 @@ export function TradeTracker() {
         try {
           // Fetch latest price data for this symbol
           const symbol = trade.symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+          
+          // Binance public API doesn't support OTC pairs, so don't attempt to track them to avoid 400 errors
+          if (symbol.includes("OTC")) continue;
+
           const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
           if (!res.ok) continue;
           
