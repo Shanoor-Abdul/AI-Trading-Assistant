@@ -25,12 +25,16 @@ export type TradeStatus =
 export interface AnalyzeRequest {
   imageBase64?: string;
   symbol?: string;
-  timeframe?: string;
+  timeframe?: string; // Also serves as primaryTimeframe
   provider: AIProvider;
   model?: string;
   strategy?: string;
   strategyRules?: string;
   marketData?: any;
+  platform?: string;
+  tradeDuration?: string;
+  confirmationTimeframe?: string;
+  trendTimeframe?: string;
 }
 
 export interface TradingAnalysis {
