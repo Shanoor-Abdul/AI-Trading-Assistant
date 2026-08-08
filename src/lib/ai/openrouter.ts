@@ -14,14 +14,16 @@ export async function analyzeWithOpenRouter({
   timeframe,
   model,
   marketData,
+  strategyRules,
 }: {
   imageBase64: string;
   symbol: string;
   timeframe: string;
   model?: string;
   marketData?: any;
+  strategyRules?: string;
 }): Promise<TradingAnalysis> {
-  const prompt = buildTradingPrompt(symbol, timeframe, marketData);
+  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules);
 
   const image = imageBase64.includes(",")
     ? imageBase64.split(",")[1]
@@ -53,6 +55,11 @@ export async function analyzeWithOpenRouter({
         },
       ],
     });
+
+    if (!response?.choices?.length) {
+      console.error("OpenRouter invalid response:", JSON.stringify(response, null, 2));
+      throw new Error(`Model ${currentModel} returned an invalid response (it may be down or rejecting images).`);
+    }
 
     const text = response.choices[0]?.message?.content ?? "";
     return parseAIResponse(text);

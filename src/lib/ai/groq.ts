@@ -54,14 +54,16 @@ export async function analyzeWithGroq({
   timeframe,
   model,
   marketData,
+  strategyRules,
 }: {
   imageBase64: string;
   symbol: string;
   timeframe: string;
   model?: string;
   marketData?: any;
+  strategyRules?: string;
 }): Promise<TradingAnalysis> {
-  const prompt = buildTradingPrompt(symbol, timeframe, marketData);
+  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules);
 
   const image = imageBase64.includes(",")
     ? imageBase64.split(",")[1]

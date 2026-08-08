@@ -17,6 +17,7 @@ export interface AnalyzeRequest {
   timeframe?: string;
   provider: AIProvider;
   model?: string;
+  strategy?: string;
   marketData?: any;
 }
 

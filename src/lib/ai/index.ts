@@ -13,7 +13,8 @@ export async function analyze(
     symbol: request.symbol || "Auto",
     timeframe: request.timeframe || "Auto",
     model: request.model,
-    marketData: request.marketData
+    marketData: request.marketData,
+    strategyRules: request.strategyRules
   };
 
   switch (request.provider) {

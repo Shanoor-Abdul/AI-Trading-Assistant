@@ -3,11 +3,10 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
-export default function LoginPage({
-  searchParams,
-}: {
-  searchParams: { message: string }
+export default async function LoginPage(props: {
+  searchParams: Promise<{ message: string }>
 }) {
+  const searchParams = await props.searchParams;
   return (
     <div className="flex-1 flex flex-col w-full px-8 sm:max-w-md justify-center gap-2 mx-auto min-h-screen">
       <Card className="p-8 bg-black/40 backdrop-blur-md border-zinc-800">
