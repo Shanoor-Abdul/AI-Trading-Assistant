@@ -23,12 +23,12 @@ export class ManualExecutionProvider implements ExecutionProvider {
   }
 
   async executeTrade(symbol: string, analysis: TradingAnalysis, positionSize: number) {
-    console.log(\`[ManualExecutionProvider] NOTIFY USER TO EXECUTE: \${analysis.signal} \${positionSize} of \${symbol} @ \${analysis.entryPrice}\`);
+    console.log(`[ManualExecutionProvider] NOTIFY USER TO EXECUTE: ${analysis.signal} ${positionSize} of ${symbol} @ ${analysis.entryPrice}`);
     
     // In manual mode, we immediately return a pseudo-success 
     // because the "execution" is just saving to the journal.
     return {
-      orderId: \`manual-\${Date.now()}\`,
+      orderId: `manual-${Date.now()}`,
       status: "LOGGED_TO_JOURNAL",
       executedPrice: analysis.entryPrice || 0
     };
