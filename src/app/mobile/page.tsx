@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
 import { MobileHistory } from "@/components/mobile/MobileHistory";
 import { AI_MODELS, getModelsByProvider } from "@/config/models";
+import { LogoutButton } from "@/components/LogoutButton";
 
 export default function MobileDashboard() {
   const {
@@ -139,6 +140,7 @@ export default function MobileDashboard() {
           <h1 className="text-xl font-bold tracking-tight">AI Assistant</h1>
           <p className="text-xs text-zinc-400">Mobile Scanner</p>
         </div>
+        <LogoutButton />
       </header>
 
       {!pendingUnsureRequest ? (
