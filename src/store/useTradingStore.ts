@@ -18,7 +18,7 @@ export interface TradingState {
   setIsAutoScan: (val: boolean) => void;
   // Analysis results
   trend: "Bullish" | "Bearish" | "Sideways" | null;
-  signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | null;
+  signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | "NO_TRADE" | null;
   confidence: number; // 0-100
   entryPrice: number | null;
   stopLoss: number | null;

@@ -19,7 +19,8 @@ export type TradeStatus =
   | "WON"
   | "LOST"
   | "REVIEWED"
-  | "RISK_REJECTED";
+  | "RISK_REJECTED"
+  | "SKIPPED";
 
 export interface AnalyzeRequest {
   imageBase64?: string;
