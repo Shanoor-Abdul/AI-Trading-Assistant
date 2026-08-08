@@ -71,11 +71,11 @@ export default function MobileDashboard() {
       // Build request payload
       const payload = {
         imageBase64: previewImageBase64,
-        platform,
-        symbol,
-        timeframe: pendingUnsureRequest && requestedTimeframe ? requestedTimeframe : primaryTimeframe, // Send the requested timeframe if in unsure flow
-        tradeDuration,
-        confirmationTimeframe,
+        platform: platform?.trim() || "OlympTrade",
+        symbol: symbol?.trim().toUpperCase(),
+        timeframe: (pendingUnsureRequest && requestedTimeframe ? requestedTimeframe : primaryTimeframe)?.trim() || "5m",
+        tradeDuration: tradeDuration?.trim(),
+        confirmationTimeframe: confirmationTimeframe?.trim(),
         provider: selectedProvider,
         model: selectedModel,
         strategy,
