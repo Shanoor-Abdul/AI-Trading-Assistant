@@ -5,7 +5,7 @@ import { useMobileStore } from "@/store/useMobileStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Activity, Camera, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
@@ -167,45 +167,30 @@ export default function MobileDashboard() {
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Chart TF</Label>
-              <Select value={primaryTimeframe} onValueChange={val => setField("primaryTimeframe", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1m">1m</SelectItem>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={primaryTimeframe} 
+                onChange={e => setField("primaryTimeframe", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="5m"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Confirm TF</Label>
-              <Select value={confirmationTimeframe} onValueChange={val => setField("confirmationTimeframe", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                  <SelectItem value="4h">4h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={confirmationTimeframe} 
+                onChange={e => setField("confirmationTimeframe", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="15m"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Duration</Label>
-              <Select value={tradeDuration} onValueChange={val => setField("tradeDuration", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1m">1m</SelectItem>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={tradeDuration} 
+                onChange={e => setField("tradeDuration", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="5m"
+              />
             </div>
           </div>
 
@@ -223,13 +208,31 @@ export default function MobileDashboard() {
               <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {getModelsByProvider("gemini").map(m => (
-                  <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
-                ))}
-                {getModelsByProvider("groq").map(m => (
-                  <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
-                ))}
+              <SelectContent className="max-h-[300px]">
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs">Google (Free Tier)</SelectLabel>
+                  {getModelsByProvider("gemini").map(m => (
+                    <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">Groq (Free Tier)</SelectLabel>
+                  {getModelsByProvider("groq").map(m => (
+                    <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenAI (Credits Required)</SelectLabel>
+                  {getModelsByProvider("openai").map(m => (
+                    <SelectItem key={m.id} value={`openai:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
+                  {getModelsByProvider("openrouter").map(m => (
+                    <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
