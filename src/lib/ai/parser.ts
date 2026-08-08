@@ -36,8 +36,8 @@ export function parseAIResponse(
       };
 
       return {
-        trend: extractString("trend") || "Sideways",
-        signal: extractString("signal") || "WAIT",
+        trend: (extractString("trend") || "Sideways") as any,
+        signal: (extractString("signal") || "WAIT") as any,
         confidence: extractNumber("confidence") || 0,
         recommendedTimeframe: extractString("recommendedTimeframe") || "",
         entryPrice: extractNumber("entryPrice"),
