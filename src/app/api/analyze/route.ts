@@ -28,9 +28,9 @@ export async function POST(req: NextRequest) {
     let dataTimestamp = Date.now();
     let dataAge = 0;
     
-    let primaryTimeframe = body.timeframe;
-    let confirmationTimeframe = "15m";
-    let trendTimeframe = "1h";
+    let primaryTimeframe = body.timeframe || "5m";
+    let confirmationTimeframe = body.confirmationTimeframe || "15m";
+    let trendTimeframe = body.trendTimeframe || "1h";
 
     try {
       const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
@@ -63,13 +63,15 @@ export async function POST(req: NextRequest) {
         swings = MarketStructureEngine.findSwings(ohlcv);
       }
 
-      // MTF Snapshots
-      if (body.timeframe === '5m') {
-         confirmationTimeframe = "15m";
-         trendTimeframe = "1h";
-      } else if (body.timeframe === '15m') {
-         confirmationTimeframe = "1h";
-         trendTimeframe = "4h";
+      // MTF Snapshots are based on requested timeframes instead of hardcoded
+      if (!body.confirmationTimeframe) {
+        if (body.timeframe === '5m') {
+           confirmationTimeframe = "15m";
+           trendTimeframe = "1h";
+        } else if (body.timeframe === '15m') {
+           confirmationTimeframe = "1h";
+           trendTimeframe = "4h";
+        }
       }
 
       if (confirmationTimeframe && confirmationTimeframe !== body.timeframe) {
@@ -103,6 +105,8 @@ export async function POST(req: NextRequest) {
       imageBase64: body.imageBase64,
       symbol: body.symbol,
       timeframe: body.timeframe,
+      platform: body.platform,
+      tradeDuration: body.tradeDuration,
       provider: body.provider || "gemini",
       model: body.model,
       marketData: {
