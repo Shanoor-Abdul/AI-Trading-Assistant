@@ -83,7 +83,24 @@ export function TradeTracker() {
             }
           }
 
-          if (tradeUpdated) updated = true;
+          if (tradeUpdated) {
+            updated = true;
+            
+            // If the trade just closed, trigger the AI Self-Review
+            if ((trade.status === "WON" || trade.status === "LOST") && trade.dbTradeId) {
+              fetch("/api/review", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                  tradeId: trade.dbTradeId,
+                  finalStatus: trade.status,
+                  pnl: trade.status === "WON" ? (trade.takeProfit! - trade.entryPrice!) : (trade.entryPrice! - trade.stopLoss!), // rough proxy
+                  maxFavorableMove: trade.maxFavorableMove,
+                  maxAdverseMove: trade.maxAdverseMove
+                })
+              }).catch(err => console.error("Failed to trigger review:", err));
+            }
+          }
 
         } catch (err) {
           console.error("Trade tracking error", err);

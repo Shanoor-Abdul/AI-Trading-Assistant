@@ -1,42 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-
 import { analyze } from "@/lib/ai";
-
-import { AnalyzeRequest } from "@/lib/types";
+import { AnalyzeRequest, TradingAnalysis } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as AnalyzeRequest;
 
     if (!body.imageBase64) {
-      return NextResponse.json(
-        {
-          error: "Image is required",
-        },
-        {
-          status: 400,
-        }
-      );
+      return NextResponse.json({ error: "Image is required" }, { status: 400 });
     }
 
     if (!body.symbol || body.symbol === "Auto-Detecting...") {
-      return NextResponse.json(
-        { error: "Trading symbol is required for exact market data fetching." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Trading symbol is required for exact market data fetching." }, { status: 400 });
     }
     
     if (!body.timeframe || body.timeframe === "Auto-Detecting...") {
-      return NextResponse.json(
-        { error: "Timeframe is required for exact market data fetching." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Timeframe is required for exact market data fetching." }, { status: 400 });
     }
 
     let marketData = null;
     let indicators = null;
     let marketRegime = null;
     let swings = null;
+    
+    let exchange = "unknown";
+    let marketProvider = "none";
+    let dataTimestamp = Date.now();
+    let dataAge = 0;
+    
+    let primaryTimeframe = body.timeframe;
+    let confirmationTimeframe = "15m";
+    let trendTimeframe = "1h";
 
     try {
       const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
@@ -44,8 +38,16 @@ export async function POST(req: NextRequest) {
       const { MarketStructureEngine } = await import("@/lib/engines/MarketStructureEngine");
       
       const provider = new CCXTProvider('binance');
+      exchange = "binance";
+      marketProvider = "ccxt";
+      
       const ohlcv = await provider.fetchOHLCV(body.symbol, body.timeframe, 200);
       const ticker = await provider.fetchTicker(body.symbol);
+      
+      if (ohlcv.length > 0) {
+        dataTimestamp = (ohlcv[ohlcv.length - 1] as unknown as number[])[0]; // timestamp of latest candle
+        dataAge = Math.floor((Date.now() - dataTimestamp) / 1000);
+      }
       
       const indData = IndicatorEngine.calculate(ohlcv);
       
@@ -61,25 +63,34 @@ export async function POST(req: NextRequest) {
         swings = MarketStructureEngine.findSwings(ohlcv);
       }
 
-      // Phase 4: Multi-Timeframe Analysis
-      if (body.timeframe !== '15m' && body.timeframe !== '1h' && body.timeframe !== '4h' && body.timeframe !== '1d') {
+      // MTF Snapshots
+      if (body.timeframe === '5m') {
+         confirmationTimeframe = "15m";
+         trendTimeframe = "1h";
+      } else if (body.timeframe === '15m') {
+         confirmationTimeframe = "1h";
+         trendTimeframe = "4h";
+      }
+
+      if (confirmationTimeframe && confirmationTimeframe !== body.timeframe) {
          try {
-           const ohlcv15m = await provider.fetchOHLCV(body.symbol, '15m', 50);
-           const ind15m = IndicatorEngine.calculate(ohlcv15m);
-           marketData.multiTimeframe['15m_regime'] = MarketStructureEngine.determineRegime(ohlcv15m, ind15m?.latest);
+           const ohlcvConf = await provider.fetchOHLCV(body.symbol, confirmationTimeframe, 50);
+           const indConf = IndicatorEngine.calculate(ohlcvConf);
+           marketData.multiTimeframe[`${confirmationTimeframe}_regime`] = MarketStructureEngine.determineRegime(ohlcvConf, indConf?.latest);
          } catch(e) {}
       }
-      if (body.timeframe !== '1h' && body.timeframe !== '4h' && body.timeframe !== '1d') {
+      
+      if (trendTimeframe && trendTimeframe !== body.timeframe && trendTimeframe !== confirmationTimeframe) {
          try {
-           const ohlcv1h = await provider.fetchOHLCV(body.symbol, '1h', 50);
-           const ind1h = IndicatorEngine.calculate(ohlcv1h);
-           marketData.multiTimeframe['1h_regime'] = MarketStructureEngine.determineRegime(ohlcv1h, ind1h?.latest);
+           const ohlcvTrend = await provider.fetchOHLCV(body.symbol, trendTimeframe, 50);
+           const indTrend = IndicatorEngine.calculate(ohlcvTrend);
+           marketData.multiTimeframe[`${trendTimeframe}_regime`] = MarketStructureEngine.determineRegime(ohlcvTrend, indTrend?.latest);
          } catch(e) {}
       }
       
     } catch (err: any) {
       console.warn("Failed to fetch exact market data from CCXT (Symbol might be OTC or invalid):", err.message);
-      // Fallback to Visual-Only analysis if market data fails (e.g., for OTC pairs on OlympTrade)
+      marketProvider = "visual_only";
     }
 
     let strategyRules = undefined;
@@ -88,7 +99,7 @@ export async function POST(req: NextRequest) {
       strategyRules = StrategyEngine.getStrategyRules(body.strategy as any).rules;
     }
 
-    const result = await analyze({
+    let result = await analyze({
       imageBase64: body.imageBase64,
       symbol: body.symbol,
       timeframe: body.timeframe,
@@ -103,67 +114,146 @@ export async function POST(req: NextRequest) {
       strategyRules
     } as any);
 
-    const { RiskEngine } = await import("@/lib/engines/RiskEngine");
-    const validatedResult = RiskEngine.validateRiskReward(result);
+    // Attach integrity metadata to result
+    result.exchange = exchange;
+    result.marketProvider = marketProvider;
+    result.dataTimestamp = dataTimestamp;
+    result.dataAge = dataAge;
+    result.primaryTimeframe = primaryTimeframe;
+    result.confirmationTimeframe = confirmationTimeframe;
+    result.trendTimeframe = trendTimeframe;
 
+    // Apply Risk Validation
+    const { RiskEngine } = await import("@/lib/engines/RiskEngine");
+    
+    // Auth & Database Integration
     try {
       const { createClient } = await import("@/lib/supabase/server");
       const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        // Fetch Profile Risk Config
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        
+        const riskConfig = {
+          minimumRiskReward: profile?.minimum_risk_reward || 2.0,
+          maxDailyLoss: profile?.max_daily_loss || 5.0,
+          maxOpenPositions: profile?.max_open_positions || 3,
+          maxConsecutiveLosses: 3, 
+          staleDataThresholdSeconds: 300 // 5 mins
+        };
+
+        const accountState = {
+          currentDailyLoss: 0, // Mock for now, would query today's trades PnL
+          openPositionsCount: 0, // Would query count of OPEN trades
+          consecutiveLosses: 0, 
+          inCooldown: false
+        };
+
+        // Strict validation overriding result if needed
+        result = RiskEngine.validate(result, riskConfig, accountState);
+
+        // Upload Screenshot to Storage (Base64 to Buffer)
+        let screenshotUrl = null;
+        if (body.imageBase64) {
+          const base64Data = body.imageBase64.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Data, 'base64');
+          
+          const filename = `analyses/${user.id}/${Date.now()}.png`;
+          const { data: storageData, error: storageError } = await supabase.storage
+            .from('screenshots')
+            .upload(filename, buffer, { contentType: 'image/png' });
+            
+          if (!storageError && storageData) {
+             const { data: publicUrlData } = supabase.storage.from('screenshots').getPublicUrl(storageData.path);
+             screenshotUrl = publicUrlData.publicUrl;
+          } else {
+             console.error("Storage upload failed:", storageError);
+          }
+        }
+
+        // Insert Analysis
         const { data: analysis } = await supabase.from('analyses').insert({
           user_id: user.id,
-          prompt_version: "v2",
+          prompt_version: "v3",
           strategy_version: body.strategy || "Standard",
-          indicator_version: "v1",
+          indicator_version: "v2",
           ai_model_version: body.model || "default",
           provider_version: body.provider || "default",
           symbol: body.symbol,
           timeframe: body.timeframe,
+          screenshot_url: screenshotUrl, // Use URL, NOT base64
           market_data: marketData,
           indicators: indicators,
           market_regime: marketRegime,
-          signal: validatedResult.signal,
-          confidence: validatedResult.confidence,
-          reason: validatedResult.explanation
+          signal: result.signal,
+          confidence: result.confidence,
+          reason: result.explanation,
+          exchange: exchange,
+          market_provider: marketProvider,
+          data_timestamp: new Date(dataTimestamp).toISOString(),
+          data_age: dataAge,
+          primary_timeframe: primaryTimeframe,
+          confirmation_timeframe: confirmationTimeframe,
+          trend_timeframe: trendTimeframe,
+          risk_decision: result.riskDecision
         }).select().single();
 
-        if (analysis && (validatedResult.signal === "BUY" || validatedResult.signal === "SELL")) {
-          // Calculate theoretical position size (Assume 10k capital and 1% risk for now)
-          const positionSize = RiskEngine.calculatePositionSize(10000, 1, validatedResult.entryPrice || 0, validatedResult.stopLoss || 0);
-          const riskRewardRatio = Math.abs((validatedResult.takeProfit || 0) - (validatedResult.entryPrice || 0)) / (Math.abs((validatedResult.entryPrice || 0) - (validatedResult.stopLoss || 0)) || 1);
+        const tradingMode = profile?.trading_mode || 'MANUAL';
+        let tradeStatus = 'OPEN';
+        
+        if (analysis && (result.signal === "BUY" || result.signal === "SELL")) {
+          const positionSize = RiskEngine.calculatePositionSize(profile?.capital || 10000, profile?.risk_percent || 1, result.entryPrice || 0, result.stopLoss || 0);
 
-          await supabase.from('trades').insert({
+          // Phase 9: LIVE Execution
+          if (tradingMode === 'LIVE') {
+            try {
+              const { data: keys } = await supabase.from('exchange_keys').select('*').eq('user_id', user.id).eq('exchange', 'binance').single();
+              if (keys && keys.api_key && keys.api_secret) {
+                 const { LiveExecutionProvider } = await import("@/lib/providers/execution/LiveExecutionProvider");
+                 const liveProvider = new LiveExecutionProvider('binance', keys.api_key, keys.api_secret, keys.api_passphrase);
+                 await liveProvider.connect();
+                 const liveResult = await liveProvider.executeTrade(body.symbol, result as any, positionSize);
+                 tradeStatus = liveResult.status;
+              } else {
+                 console.warn("No exchange keys found. Falling back to OPEN status.");
+              }
+            } catch (err: any) {
+              console.error("Live Execution Failed:", err);
+              tradeStatus = 'RISK_REJECTED'; // Or a new status like EXECUTION_FAILED
+            }
+          }
+
+          const { data: tradeData } = await supabase.from('trades').insert({
             user_id: user.id,
             analysis_id: analysis.id,
-            entry_price: validatedResult.entryPrice,
-            stop_loss: validatedResult.stopLoss,
-            take_profit: validatedResult.takeProfit,
-            risk_reward_ratio: riskRewardRatio,
+            entry_price: result.entryPrice,
+            stop_loss: result.stopLoss,
+            take_profit: result.takeProfit,
+            risk_reward_ratio: result.riskReward,
             position_size: positionSize,
-            execution_mode: 'manual',
-            status: 'OPEN'
-          });
+            execution_mode: tradingMode,
+            status: tradeStatus
+          }).select().single();
+          
+          if (tradeData) {
+            (result as any).dbTradeId = tradeData.id;
+          }
         }
+      } else {
+        // Fallback default config if not logged in
+        result = RiskEngine.validate(result, {
+          minimumRiskReward: 2.0, maxDailyLoss: 5, maxOpenPositions: 3, maxConsecutiveLosses: 3, staleDataThresholdSeconds: 300
+        }, { currentDailyLoss: 0, openPositionsCount: 0, consecutiveLosses: 0, inCooldown: false });
       }
     } catch (dbErr: any) {
       console.error("Failed to journal trade to Supabase:", dbErr);
     }
 
-    return NextResponse.json(validatedResult);
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error(error);
-
-    return NextResponse.json(
-      {
-        error:
-          error?.message ??
-          "Internal Server Error",
-      },
-      {
-        status: 500,
-      }
-    );
+    return NextResponse.json({ error: error?.message ?? "Internal Server Error" }, { status: 500 });
   }
 }

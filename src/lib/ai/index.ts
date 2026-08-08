@@ -9,7 +9,7 @@ export async function analyze(
   request: AnalyzeRequest
 ) {
   const payload = {
-    imageBase64: request.imageBase64,
+    imageBase64: request.imageBase64 || "",
     symbol: request.symbol || "Auto",
     timeframe: request.timeframe || "Auto",
     model: request.model,

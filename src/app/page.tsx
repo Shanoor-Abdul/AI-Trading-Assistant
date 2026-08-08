@@ -9,12 +9,14 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Play, Square, Activity, TrendingUp, TrendingDown, Minus, Calculator, Settings2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Play, Square, Activity, TrendingUp, TrendingDown, Minus, Calculator, Settings2, Loader2 } from "lucide-react";
 import { AI_MODELS, getModelsByProvider } from "@/config/models";
 import { toast } from "sonner";
 import { TradeTracker } from "@/components/TradeTracker";
 import { LogoutButton } from "@/components/LogoutButton";
 import { ChatInterface } from "@/components/ChatInterface";
+import { SettingsDialog } from "@/components/SettingsDialog";
 
 export default function Dashboard() {
   const { 
@@ -25,7 +27,9 @@ export default function Dashboard() {
     entryPrice, stopLoss, takeProfit, recommendedTimeframe,
     capital, setCapital, riskPercent, setRiskPercent,
     selectedProvider, selectedModel, setSelectedModel, apiFailCount, incrementFailCount, resetFailCount,
-    setLastImageBase64, tradeHistory
+    setLastImageBase64, tradeHistory,
+    isFetchingAnalysis, setIsFetchingAnalysis,
+    isAutoScan, setIsAutoScan
   } = useTradingStore();
 
   useEffect(() => {
@@ -59,10 +63,33 @@ export default function Dashboard() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Auto-polling removed based on user request. Analysis is now purely manual.
+  // Auto-Scan Logic
+  useEffect(() => {
+    if (!isAutoScan || !isAnalyzing || !stream) return;
+
+    let intervalMs = 300000; // Default 5 minutes
+    if (timeframe.endsWith("m")) {
+      intervalMs = parseInt(timeframe) * 60 * 1000;
+    } else if (timeframe.endsWith("h")) {
+      intervalMs = parseInt(timeframe) * 60 * 60 * 1000;
+    } else if (timeframe.endsWith("s")) {
+      intervalMs = parseInt(timeframe) * 1000;
+    }
+
+    const timer = setInterval(() => {
+      // Avoid overlapping calls if an analysis is still running
+      if (!useTradingStore.getState().isFetchingAnalysis) {
+        handleAnalyzeSnapshot();
+      }
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [isAutoScan, isAnalyzing, stream, timeframe]);
 
   const handleAnalyzeSnapshot = async () => {
     if (!videoRef.current || !canvasRef.current || !stream) return;
+    
+    if (useTradingStore.getState().isFetchingAnalysis) return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -78,11 +105,12 @@ export default function Dashboard() {
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
     setLastImageBase64(imageBase64);
     
+    setIsFetchingAnalysis(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64, symbol, timeframe, provider: selectedProvider, model: selectedModel })
+        body: JSON.stringify({ imageBase64, symbol, timeframe, provider: selectedProvider, model: selectedModel, strategy: useTradingStore.getState().strategy })
       });
       
       if (res.ok) {
@@ -109,6 +137,9 @@ export default function Dashboard() {
     } catch (err) {
       incrementFailCount();
       console.error("Analysis error:", err);
+      toast.error("API Error: Failed to analyze the chart. Please try again.");
+    } finally {
+      setIsFetchingAnalysis(false);
     }
   };
 
@@ -190,6 +221,42 @@ export default function Dashboard() {
                 </SelectGroup>
               </SelectContent>
             </Select>
+
+            <SettingsDialog />
+
+            <Select
+              value={useTradingStore.getState().strategy}
+              onValueChange={(val: string | null) => { if (val) useTradingStore.getState().setStrategy(val); }}
+            >
+              <SelectTrigger className="w-[180px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                <SelectValue placeholder="Strategy" />
+              </SelectTrigger>
+              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                <SelectItem value="Trend Following">Trend Following</SelectItem>
+                <SelectItem value="Scalping">Scalping</SelectItem>
+                <SelectItem value="Breakout">Breakout</SelectItem>
+                <SelectItem value="Mean Reversion">Mean Reversion</SelectItem>
+                <SelectItem value="SMC">SMC (Smart Money)</SelectItem>
+                <SelectItem value="ICT">ICT</SelectItem>
+                <SelectItem value="Swing">Swing Trading</SelectItem>
+                <SelectItem value="Custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={useTradingStore.getState().tradingMode}
+              onValueChange={(val: any) => useTradingStore.getState().setTradingMode(val)}
+            >
+              <SelectTrigger className="w-[140px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                <SelectValue placeholder="Trading Mode" />
+              </SelectTrigger>
+              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                <SelectItem value="MANUAL">MANUAL</SelectItem>
+                <SelectItem value="PAPER">PAPER TRADING</SelectItem>
+                <SelectItem value="LIVE">LIVE EXECUTON</SelectItem>
+              </SelectContent>
+            </Select>
+
           </div>
           <Badge variant={isAnalyzing ? "default" : "secondary"} className={isAnalyzing ? "bg-green-500/20 text-green-400 border-green-500/50" : ""}>
             {isAnalyzing ? "● AI Active" : "○ AI Idle"}
@@ -200,8 +267,16 @@ export default function Dashboard() {
             </Button>
           ) : (
             <>
-              <Button onClick={handleAnalyzeSnapshot} className="bg-purple-600 hover:bg-purple-700 text-white">
-                <Activity className="w-4 h-4 mr-2" /> Run AI Analysis
+              <div className="flex items-center gap-2 mr-2 bg-zinc-900/50 px-3 py-1.5 rounded-md border border-zinc-800">
+                <Switch checked={isAutoScan} onCheckedChange={setIsAutoScan} id="auto-scan" />
+                <Label htmlFor="auto-scan" className="text-zinc-300 text-sm font-medium cursor-pointer">Auto-Scan</Label>
+              </div>
+              <Button onClick={handleAnalyzeSnapshot} disabled={isFetchingAnalysis} className="bg-purple-600 hover:bg-purple-700 text-white min-w-[160px]">
+                {isFetchingAnalysis ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...</>
+                ) : (
+                  <><Activity className="w-4 h-4 mr-2" /> Run AI Analysis</>
+                )}
               </Button>
               <Button onClick={() => useTradingStore.getState().clearAnalysis()} variant="secondary" className="text-zinc-300">
                 Clear

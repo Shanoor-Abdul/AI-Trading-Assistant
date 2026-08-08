@@ -12,6 +12,10 @@ export interface TradingState {
   setStream: (stream: MediaStream | null) => void;
   lastImageBase64: string | null;
   setLastImageBase64: (val: string | null) => void;
+  isFetchingAnalysis: boolean;
+  setIsFetchingAnalysis: (val: boolean) => void;
+  isAutoScan: boolean;
+  setIsAutoScan: (val: boolean) => void;
   // Analysis results
   trend: "Bullish" | "Bearish" | "Sideways" | null;
   signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | null;
@@ -32,6 +36,10 @@ export interface TradingState {
   selectedProvider: string;
   selectedModel: string;
   setSelectedModel: (provider: string, model: string) => void;
+  strategy: string;
+  setStrategy: (val: string) => void;
+  tradingMode: "MANUAL" | "PAPER" | "LIVE";
+  setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
   apiFailCount: number;
   incrementFailCount: () => void;
   resetFailCount: () => void;
@@ -52,6 +60,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setStream: (stream) => set({ stream }),
   lastImageBase64: null,
   setLastImageBase64: (val) => set({ lastImageBase64: val }),
+  isFetchingAnalysis: false,
+  setIsFetchingAnalysis: (val) => set({ isFetchingAnalysis: val }),
+  isAutoScan: false,
+  setIsAutoScan: (val) => set({ isAutoScan: val }),
   trend: null,
   signal: null,
   confidence: 0,
@@ -71,6 +83,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   selectedProvider: "gemini",
   selectedModel: "gemini-2.5-flash",
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
+  strategy: "Trend Following",
+  setStrategy: (val) => set({ strategy: val }),
+  tradingMode: "MANUAL",
+  setTradingMode: (val) => set({ tradingMode: val }),
   apiFailCount: 0,
   incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })),
   resetFailCount: () => set({ apiFailCount: 0 }),
@@ -113,8 +129,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         high: newState.high || null,
         low: newState.low || null,
         close: newState.close || null,
-        status: "OPEN",
+        status: (newState.signal === "WAIT" || newState.signal === "NO_TRADE") ? "SKIPPED" : "OPEN",
         screenshotBase64: newState.lastImageBase64 || undefined,
+        dbTradeId: (data as any).dbTradeId, // Save the database UUID for reviews
       };
       
       newState.tradeHistory = [historyEntry, ...state.tradeHistory];
