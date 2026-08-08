@@ -167,45 +167,30 @@ export default function MobileDashboard() {
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Chart TF</Label>
-              <Select value={primaryTimeframe} onValueChange={val => setField("primaryTimeframe", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1m">1m</SelectItem>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={primaryTimeframe} 
+                onChange={e => setField("primaryTimeframe", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="5m"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Confirm TF</Label>
-              <Select value={confirmationTimeframe} onValueChange={val => setField("confirmationTimeframe", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                  <SelectItem value="4h">4h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={confirmationTimeframe} 
+                onChange={e => setField("confirmationTimeframe", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="15m"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Duration</Label>
-              <Select value={tradeDuration} onValueChange={val => setField("tradeDuration", val)}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1m">1m</SelectItem>
-                  <SelectItem value="5m">5m</SelectItem>
-                  <SelectItem value="15m">15m</SelectItem>
-                  <SelectItem value="1h">1h</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                value={tradeDuration} 
+                onChange={e => setField("tradeDuration", e.target.value)} 
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                placeholder="5m"
+              />
             </div>
           </div>
 
