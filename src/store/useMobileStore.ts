@@ -40,7 +40,7 @@ export const useMobileStore = create<MobileState>((set) => ({
   confirmationTimeframe: "15m",
   strategy: "Trend Following",
   selectedProvider: "gemini",
-  selectedModel: "gemini-2.5-flash",
+  selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",
   
   previewImageBase64: null,

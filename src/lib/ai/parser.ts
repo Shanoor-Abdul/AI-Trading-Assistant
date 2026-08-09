@@ -3,8 +3,8 @@ import { TradingAnalysis } from "../types";
 
 // Strict Zod schema for AI response validation
 const AIResponseSchema = z.object({
-  trend: z.enum(["Bullish", "Bearish", "Sideways"]),
-  signal: z.enum(["BUY", "SELL", "WAIT", "UNSURE", "NO_TRADE"]),
+  trend: z.preprocess((val) => typeof val === "string" ? val.trim().charAt(0).toUpperCase() + val.trim().slice(1).toLowerCase() : val, z.enum(["Bullish", "Bearish", "Sideways"])).catch("Sideways"),
+  signal: z.preprocess((val) => typeof val === "string" ? val.toUpperCase().trim().replace(" ", "_") : val, z.enum(["BUY", "SELL", "WAIT", "UNSURE", "NO_TRADE"])).catch("NO_TRADE"),
   confidence: z.coerce.number().min(0).max(100),
   recommendedTimeframe: z.string(),
   requiredTimeframe: z.string().optional(),
@@ -23,7 +23,7 @@ export function parseAIResponse(text: string): TradingAnalysis {
     // Extract JSON block from the text
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("No JSON payload found in AI response.");
+      throw new Error(`No JSON payload found in AI response. Raw output: ${text.substring(0, 200)}...`);
     }
     
     // Clean basic syntax errors that break JSON.parse before Zod gets it

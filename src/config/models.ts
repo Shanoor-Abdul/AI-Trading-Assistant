@@ -9,25 +9,6 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   // Google Gemini (Free Tier)
-
-  {
-    id: "gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
-    provider: "gemini",
-    isFree: true,
-  },
-  {
-    id: "gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    provider: "gemini",
-    isFree: true,
-  },
-  {
-    id: "gemini-2.5-flash-lite",
-    name: "Gemini 2.5 Flash Lite",
-    provider: "gemini",
-    isFree: true,
-  },
   {
     id: "gemini-2.0-flash",
     name: "Gemini 2.0 Flash",
@@ -52,10 +33,17 @@ export const AI_MODELS: AIModel[] = [
   // OpenRouter (Free Vision Models)
   {
     id: "nvidia/nemotron-nano-12b-v2-vl:free",
-    name: "Nemotron Nano 12B VL (Free)",
+    name: "Nemotron Nano 12B VL",
     provider: "openrouter",
     isFree: true,
   },
+  {
+    id: "openrouter/free",
+    name: "OpenRouter Free Router",
+    provider: "openrouter",
+    isFree: true,
+  },
+  
 
   // OpenAI (Paid / Credits Required)
   { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", isFree: false },

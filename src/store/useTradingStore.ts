@@ -87,7 +87,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   riskPercent: 1,
   setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini",
-  selectedModel: "gemini-2.5-flash",
+  selectedModel: "gemini-2.0-flash",
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
   strategy: "Trend Following",
   setStrategy: (val) => set({ strategy: val }),

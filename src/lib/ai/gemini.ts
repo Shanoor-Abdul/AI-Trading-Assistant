@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,7 +63,7 @@ export async function analyzeWithGemini({
   const models = [
     model,
     DEFAULT_MODEL,
-    "gemini-2.5-pro",
+    "gemini-2.0-flash-lite",
   ].filter(Boolean) as string[];
 
   let lastError: unknown;

@@ -133,7 +133,7 @@ export default function Dashboard() {
         resetFailCount();
         const data = await res.json();
 
-        if (data.marketProvider === "visual_only") {
+        if (data.marketDataStatus === "fallback") {
           toast("Live data not found for this symbol. Falling back to Visual-Only mode.", {
             icon: "👀",
           });
