@@ -22,7 +22,8 @@ export class RiskEngine {
   static validate(
     analysis: TradingAnalysis, 
     config: RiskConfig, 
-    account: AccountState
+    account: AccountState,
+    platform?: string
   ): TradingAnalysis {
     // 1. Data Freshness Check
     if (analysis.dataAge !== undefined && analysis.dataAge > config.staleDataThresholdSeconds) {
@@ -67,6 +68,12 @@ export class RiskEngine {
     }
 
     // 3. Trade Setup Validation (Prices & RR)
+    if (platform === "olymptrade") {
+      // OlympTrade is fixed-time binary options, SL/TP/RR don't apply.
+      analysis.riskDecision = "APPROVED";
+      return analysis;
+    }
+
     if (!analysis.entryPrice || !analysis.stopLoss || !analysis.takeProfit) {
       analysis.signal = "NO_TRADE";
       analysis.riskDecision = "MISSING_PRICES";
