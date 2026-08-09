@@ -22,6 +22,9 @@ export type TradeStatus =
   | "RISK_REJECTED"
   | "SKIPPED";
 
+export type MarketDataMode = "api" | "visual_only";
+export type MarketDataStatus = "available" | "unavailable" | "stale" | "not_requested";
+
 export interface AnalyzeRequest {
   imageBase64?: string;
   symbol?: string;
@@ -35,6 +38,7 @@ export interface AnalyzeRequest {
   tradeDuration?: string;
   confirmationTimeframe?: string;
   trendTimeframe?: string;
+  marketDataMode?: MarketDataMode;
 }
 
 export interface TradingAnalysis {
@@ -63,6 +67,9 @@ export interface TradingAnalysis {
   confirmationTimeframe?: string;
   trendTimeframe?: string;
   riskDecision?: string;
+  
+  marketDataMode?: MarketDataMode;
+  marketDataStatus?: MarketDataStatus;
 
   open?: number | null;
   high?: number | null;

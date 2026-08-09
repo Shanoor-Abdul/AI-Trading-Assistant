@@ -1,5 +1,6 @@
 import * as ccxt from 'ccxt';
 import { MarketProvider, OHLCV, Ticker } from './MarketProvider';
+import { MarketCache } from '../../cache/MarketCache';
 
 export class CCXTProvider implements MarketProvider {
   name: string;
@@ -14,7 +15,6 @@ export class CCXTProvider implements MarketProvider {
     }
 
     // Initialize the CCXT exchange dynamically
-    // We cast to any because ccxt exports exchange classes as properties
     const ExchangeClass = (ccxt as any)[exchangeId];
     this.exchange = new ExchangeClass({
       enableRateLimit: true,
@@ -23,13 +23,16 @@ export class CCXTProvider implements MarketProvider {
 
   async fetchOHLCV(symbol: string, timeframe: string, limit: number = 200): Promise<OHLCV[]> {
     try {
-      // CCXT expects uppercase standard symbols e.g. BTC/USDT
-      // We will assume the UI passes a normalized symbol, or we normalize here if needed.
       const normalizedSymbol = symbol.includes('/') ? symbol : symbol.replace(/([A-Z]+)(USDT|USD|BTC|ETH)$/, '$1/$2');
       
+      const cached = MarketCache.getOHLCV(this.name, normalizedSymbol, timeframe);
+      if (cached && cached.length >= limit) {
+        return cached;
+      }
+
       const ohlcvRaw = await this.exchange.fetchOHLCV(normalizedSymbol, timeframe, undefined, limit);
       
-      return ohlcvRaw.map(candle => ({
+      const formatted = ohlcvRaw.map(candle => ({
         openTime: candle[0] as number,
         open: candle[1] as number,
         high: candle[2] as number,
@@ -37,6 +40,9 @@ export class CCXTProvider implements MarketProvider {
         close: candle[4] as number,
         volume: candle[5] as number,
       }));
+
+      MarketCache.setOHLCV(this.name, normalizedSymbol, timeframe, formatted);
+      return formatted;
     } catch (error: any) {
       console.error(`CCXT fetchOHLCV Error [${this.name}]:`, error.message);
       throw error;
@@ -46,9 +52,13 @@ export class CCXTProvider implements MarketProvider {
   async fetchTicker(symbol: string): Promise<Ticker> {
     try {
       const normalizedSymbol = symbol.includes('/') ? symbol : symbol.replace(/([A-Z]+)(USDT|USD|BTC|ETH)$/, '$1/$2');
+      
+      const cached = MarketCache.getTicker(this.name, normalizedSymbol);
+      if (cached) return cached;
+
       const ticker = await this.exchange.fetchTicker(normalizedSymbol);
       
-      return {
+      const formatted = {
         symbol: ticker.symbol || symbol,
         last: ticker.last!,
         bid: ticker.bid,
@@ -57,6 +67,9 @@ export class CCXTProvider implements MarketProvider {
         low: ticker.low,
         volume: ticker.baseVolume,
       };
+
+      MarketCache.setTicker(this.name, normalizedSymbol, formatted);
+      return formatted;
     } catch (error: any) {
       console.error(`CCXT fetchTicker Error [${this.name}]:`, error.message);
       throw error;

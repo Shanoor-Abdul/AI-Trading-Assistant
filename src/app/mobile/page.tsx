@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
-import { Activity, Camera, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
 import { MobileHistory } from "@/components/mobile/MobileHistory";
@@ -16,7 +17,11 @@ import { LogoutButton } from "@/components/LogoutButton";
 export default function MobileDashboard() {
   const {
     platform, symbol, tradeDuration, primaryTimeframe, confirmationTimeframe,
-    strategy, selectedProvider, selectedModel, previewImageBase64,
+    strategy,
+    selectedProvider,
+    selectedModel,
+    marketDataMode,
+    previewImageBase64,
     isAnalyzing, analysisResult, pendingUnsureRequest, requestedTimeframe,
     previousAnalysisData, setField, clearAnalysis, resetAll
   } = useMobileStore();
@@ -79,6 +84,7 @@ export default function MobileDashboard() {
         provider: selectedProvider,
         model: selectedModel,
         strategy,
+        marketDataMode,
         previousData: pendingUnsureRequest ? previousAnalysisData : undefined
       };
 
@@ -130,6 +136,7 @@ export default function MobileDashboard() {
         
         // Clear preview image as requested (to not store base64 permanently)
         setField("previewImageBase64", null);
+        toast.success("Analysis complete!");
       }
     } catch (err) {
       console.error(err);
@@ -140,6 +147,7 @@ export default function MobileDashboard() {
   };
 
   return (
+    <TooltipProvider>
     <main className="p-4 flex flex-col gap-6 max-w-md mx-auto">
       <header className="flex justify-between items-center mb-2">
         <div>
@@ -153,28 +161,74 @@ export default function MobileDashboard() {
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Platform</Label>
-              <Input 
-                value={platform} 
-                onChange={e => setField("platform", e.target.value)} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm"
-                placeholder="OlympTrade, Binance..."
-              />
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Market Data</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent><p>API fetches from Binance; Visual Only skips CCXT for OTC/Indian Markets.</p></TooltipContent>
+                </Tooltip>
+              </div>
+              <Select 
+                value={marketDataMode} 
+                onValueChange={val => setField("marketDataMode", val)}
+              >
+                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="api">API Data</SelectItem>
+                  <SelectItem value="visual_only">Visual Only</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            {marketDataMode === "visual_only" && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Platform</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent><p>Trading platform being used (e.g. OlympTrade)</p></TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input 
+                  value={platform} 
+                  onChange={e => setField("platform", e.target.value)} 
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="OlympTrade"
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Asset / Symbol</Label>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Symbol</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent><p>Asset ticker pair (e.g. BTCUSDT)</p></TooltipContent>
+                </Tooltip>
+              </div>
               <Input 
                 value={symbol} 
                 onChange={e => setField("symbol", e.target.value.toUpperCase())} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm"
-                placeholder="AUD/CAD OTC"
+                className="h-9 bg-zinc-900 border-zinc-800 text-sm font-medium text-center"
+                placeholder="BTCUSDT"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Chart TF</Label>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Chart TF</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent><p>Primary chart timeframe (e.g. 5m)</p></TooltipContent>
+                </Tooltip>
+              </div>
               <Input 
                 value={primaryTimeframe} 
                 onChange={e => setField("primaryTimeframe", e.target.value)} 
@@ -182,28 +236,56 @@ export default function MobileDashboard() {
                 placeholder="5m"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Confirm TF</Label>
-              <Input 
-                value={confirmationTimeframe} 
-                onChange={e => setField("confirmationTimeframe", e.target.value)} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                placeholder="15m"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Duration</Label>
-              <Input 
-                value={tradeDuration} 
-                onChange={e => setField("tradeDuration", e.target.value)} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                placeholder="5m"
-              />
-            </div>
+            {marketDataMode === "api" && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Confirm TF</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent><p>Secondary timeframe for trend confirmation</p></TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input 
+                  value={confirmationTimeframe} 
+                  onChange={e => setField("confirmationTimeframe", e.target.value)} 
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="15m"
+                />
+              </div>
+            )}
+            {marketDataMode === "visual_only" && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Duration</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent><p>How long the trade should last</p></TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input 
+                  value={tradeDuration} 
+                  onChange={e => setField("tradeDuration", e.target.value)} 
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="5m"
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-zinc-400">AI Model</Label>
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-zinc-400">AI Model</Label>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-3 h-3 text-zinc-500" />
+                </TooltipTrigger>
+                <TooltipContent><p>Select the AI provider and model for analysis.</p></TooltipContent>
+              </Tooltip>
+            </div>
             <Select
               value={`${selectedProvider}:${selectedModel}`}
               onValueChange={(val) => {
@@ -333,5 +415,6 @@ export default function MobileDashboard() {
 
       <MobileHistory />
     </main>
+    </TooltipProvider>
   );
 }

@@ -40,6 +40,12 @@ export interface TradingState {
   setStrategy: (val: string) => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE";
   setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
+  marketDataMode: "api" | "visual_only";
+  setMarketDataMode: (val: "api" | "visual_only") => void;
+  platform: string;
+  setPlatform: (val: string) => void;
+  tradeDuration: string;
+  setTradeDuration: (val: string) => void;
   apiFailCount: number;
   incrementFailCount: () => void;
   resetFailCount: () => void;
@@ -87,6 +93,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setStrategy: (val) => set({ strategy: val }),
   tradingMode: "MANUAL",
   setTradingMode: (val) => set({ tradingMode: val }),
+  marketDataMode: "api",
+  setMarketDataMode: (val) => set({ marketDataMode: val }),
+  platform: "Binance",
+  setPlatform: (val) => set({ platform: val }),
+  tradeDuration: "5m",
+  setTradeDuration: (val) => set({ tradeDuration: val }),
   apiFailCount: 0,
   incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })),
   resetFailCount: () => set({ apiFailCount: 0 }),

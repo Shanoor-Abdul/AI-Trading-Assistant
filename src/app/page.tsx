@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Play, Square, Activity, TrendingUp, TrendingDown, Minus, Calculator, Settings2, Loader2 } from "lucide-react";
+import { Play, Square, Activity, Loader2, TrendingUp, TrendingDown, Minus, Clock, FileText, Image as ImageIcon, CheckCircle, Crosshair, Target, ShieldAlert, BarChart3, Settings2, Info, Calculator } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AI_MODELS, getModelsByProvider } from "@/config/models";
 import { toast } from "sonner";
 import { TradeTracker } from "@/components/TradeTracker";
@@ -107,10 +108,25 @@ export default function Dashboard() {
     
     setIsFetchingAnalysis(true);
     try {
+      const reqBody: any = { 
+        imageBase64, 
+        symbol, 
+        timeframe, 
+        provider: selectedProvider, 
+        model: selectedModel, 
+        strategy: useTradingStore.getState().strategy,
+        marketDataMode: useTradingStore.getState().marketDataMode
+      };
+      
+      if (useTradingStore.getState().marketDataMode === "visual_only") {
+        reqBody.platform = useTradingStore.getState().platform;
+        reqBody.tradeDuration = useTradingStore.getState().tradeDuration;
+      }
+      
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64, symbol, timeframe, provider: selectedProvider, model: selectedModel, strategy: useTradingStore.getState().strategy })
+        body: JSON.stringify(reqBody)
       });
       
       if (res.ok) {
@@ -137,6 +153,7 @@ export default function Dashboard() {
           low: data.low,
           close: data.close
         });
+        toast.success("Analysis complete!");
       } else {
         incrementFailCount();
       }
@@ -187,83 +204,151 @@ export default function Dashboard() {
           <p className="text-sm md:text-base text-zinc-400">Live AI chart analysis and probability-based signals</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 md:gap-4">
-          <div className="flex items-center gap-2">
-            <Select
-              value={`${selectedProvider}:${selectedModel}`}
-              onValueChange={(val) => {
-                if (!val) return;
-                const [provider, model] = val.split(":");
-                setSelectedModel(provider, model);
-              }}
-            >
-              <SelectTrigger className="w-[240px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                <Settings2 className="w-4 h-4 mr-2 text-zinc-400" />
-                <SelectValue placeholder="Select AI Model" />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500">Google (Free Tier)</SelectLabel>
-                  {getModelsByProvider("gemini").map(m => (
-                    <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 mt-2">Groq (Free Tier)</SelectLabel>
-                  {getModelsByProvider("groq").map(m => (
-                    <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 mt-2">OpenAI (Credits Required)</SelectLabel>
-                  {getModelsByProvider("openai").map(m => (
-                    <SelectItem key={m.id} value={`openai:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 mt-2">OpenRouter</SelectLabel>
-                  {getModelsByProvider("openrouter").map(m => (
-                    <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+          <TooltipProvider>
+            <div className="flex items-center gap-4 flex-wrap w-full md:w-auto">
+              <div className="flex flex-col space-y-1">
+                <div className="flex items-center gap-1">
+                  <Label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">AI Model</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <p>Select which AI provider and model will analyze your chart.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={`${selectedProvider}:${selectedModel}`}
+                  onValueChange={(val) => {
+                    if (!val) return;
+                    const [provider, model] = val.split(":");
+                    setSelectedModel(provider, model);
+                  }}
+                >
+                  <SelectTrigger className="w-[240px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                    <Settings2 className="w-4 h-4 mr-2 text-zinc-400" />
+                    <SelectValue placeholder="Select AI Model" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500">Google (Free Tier)</SelectLabel>
+                      {getModelsByProvider("gemini").map(m => (
+                        <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500 mt-2">Groq (Free Tier)</SelectLabel>
+                      {getModelsByProvider("groq").map(m => (
+                        <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500 mt-2">OpenAI (Credits Required)</SelectLabel>
+                      {getModelsByProvider("openai").map(m => (
+                        <SelectItem key={m.id} value={`openai:${m.id}`}>{m.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500 mt-2">OpenRouter</SelectLabel>
+                      {getModelsByProvider("openrouter").map(m => (
+                        <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <SettingsDialog />
+              <div className="flex flex-col justify-end">
+                <SettingsDialog />
+              </div>
 
-            <Select
-              value={useTradingStore.getState().strategy}
-              onValueChange={(val: string | null) => { if (val) useTradingStore.getState().setStrategy(val); }}
-            >
-              <SelectTrigger className="w-[180px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                <SelectValue placeholder="Strategy" />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                <SelectItem value="Trend Following">Trend Following</SelectItem>
-                <SelectItem value="Scalping">Scalping</SelectItem>
-                <SelectItem value="Breakout">Breakout</SelectItem>
-                <SelectItem value="Mean Reversion">Mean Reversion</SelectItem>
-                <SelectItem value="SMC">SMC (Smart Money)</SelectItem>
-                <SelectItem value="ICT">ICT</SelectItem>
-                <SelectItem value="Swing">Swing Trading</SelectItem>
-                <SelectItem value="Custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
+              <div className="flex flex-col space-y-1">
+                <div className="flex items-center gap-1">
+                  <Label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Strategy</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <p>Defines the specific trading rules and timeframes the AI follows.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={useTradingStore.getState().strategy}
+                  onValueChange={(val: string | null) => { if (val) useTradingStore.getState().setStrategy(val); }}
+                >
+                  <SelectTrigger className="w-[180px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                    <SelectValue placeholder="Strategy" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                    <SelectItem value="Trend Following">Trend Following</SelectItem>
+                    <SelectItem value="Scalping">Scalping</SelectItem>
+                    <SelectItem value="Breakout">Breakout</SelectItem>
+                    <SelectItem value="Mean Reversion">Mean Reversion</SelectItem>
+                    <SelectItem value="SMC">SMC (Smart Money)</SelectItem>
+                    <SelectItem value="ICT">ICT</SelectItem>
+                    <SelectItem value="Swing">Swing Trading</SelectItem>
+                    <SelectItem value="Custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <Select
-              value={useTradingStore.getState().tradingMode}
-              onValueChange={(val: any) => useTradingStore.getState().setTradingMode(val)}
-            >
-              <SelectTrigger className="w-[140px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                <SelectValue placeholder="Trading Mode" />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                <SelectItem value="MANUAL">MANUAL</SelectItem>
-                <SelectItem value="PAPER">PAPER TRADING</SelectItem>
-                <SelectItem value="LIVE">LIVE EXECUTON</SelectItem>
-              </SelectContent>
-            </Select>
+              <div className="flex flex-col space-y-1">
+                <div className="flex items-center gap-1">
+                  <Label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Data Mode</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <p>API connects to CCXT (Binance). Visual Only skips CCXT for OTC/Indian Markets.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={useTradingStore.getState().marketDataMode}
+                  onValueChange={(val: any) => useTradingStore.getState().setMarketDataMode(val)}
+                >
+                  <SelectTrigger className="w-[140px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                    <SelectValue placeholder="Market Data" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                    <SelectItem value="api">API Data</SelectItem>
+                    <SelectItem value="visual_only">Visual Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          </div>
+              <div className="flex flex-col space-y-1">
+                <div className="flex items-center gap-1">
+                  <Label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Execution</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <p>Live trading (auto-execution), Paper trading (demo money), or Manual (just signals).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={useTradingStore.getState().tradingMode}
+                  onValueChange={(val: any) => useTradingStore.getState().setTradingMode(val)}
+                >
+                  <SelectTrigger className="w-[140px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                    <SelectValue placeholder="Trading Mode" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                    <SelectItem value="MANUAL">MANUAL</SelectItem>
+                    <SelectItem value="PAPER">PAPER TRADING</SelectItem>
+                    <SelectItem value="LIVE">LIVE EXECUTON</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </TooltipProvider>
           <Badge variant={isAnalyzing ? "default" : "secondary"} className={isAnalyzing ? "bg-green-500/20 text-green-400 border-green-500/50" : ""}>
             {isAnalyzing ? "● AI Active" : "○ AI Idle"}
           </Badge>
@@ -316,6 +401,22 @@ export default function Dashboard() {
             )}
             {isAnalyzing && (
               <div className="absolute top-4 right-4 flex gap-2">
+                {useTradingStore.getState().marketDataMode === "visual_only" && (
+                  <>
+                    <Input
+                      className="bg-black/60 backdrop-blur-md text-white border-none w-24 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
+                      value={useTradingStore.getState().platform}
+                      onChange={(e) => useTradingStore.getState().setPlatform(e.target.value)}
+                      placeholder="Platform"
+                    />
+                    <Input
+                      className="bg-black/60 backdrop-blur-md text-white border-none w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
+                      value={useTradingStore.getState().tradeDuration}
+                      onChange={(e) => useTradingStore.getState().setTradeDuration(e.target.value)}
+                      placeholder="Duration"
+                    />
+                  </>
+                )}
                 <Input
                   className="bg-black/60 backdrop-blur-md text-white border-none w-32 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
                   value={symbol}

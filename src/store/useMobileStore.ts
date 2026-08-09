@@ -11,6 +11,7 @@ export interface MobileState {
   strategy: string;
   selectedProvider: string;
   selectedModel: string;
+  marketDataMode: "api" | "visual_only";
   
   // Image state
   previewImageBase64: string | null;
@@ -40,6 +41,7 @@ export const useMobileStore = create<MobileState>((set) => ({
   strategy: "Trend Following",
   selectedProvider: "gemini",
   selectedModel: "gemini-2.5-flash",
+  marketDataMode: "visual_only",
   
   previewImageBase64: null,
   
