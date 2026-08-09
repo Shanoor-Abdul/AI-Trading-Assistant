@@ -92,6 +92,12 @@ export default function MobileDashboard() {
 
       const data = await res.json();
 
+      if (data.marketProvider === "visual_only") {
+        toast("Live data not found for this symbol. Falling back to Visual-Only mode.", {
+          icon: "👀",
+        });
+      }
+
       if (data.signal === "UNSURE" && data.requiredTimeframe) {
         setField("pendingUnsureRequest", true);
         setField("requestedTimeframe", data.requiredTimeframe);
