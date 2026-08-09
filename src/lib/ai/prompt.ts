@@ -48,6 +48,10 @@ Use the screenshot ONLY for subjective visual pattern recognition that code cann
     dataInstruction = `
 No structured market data is available. Analyze the uploaded screenshot. 
 Do not invent OHLCV or live prices. Use only values that are clearly visible in the screenshot.
+Pay special attention to on-chart indicators if they are visible:
+- Bollinger Bands: Look for price interacting with the upper/lower bands (overbought/oversold) or band squeezes.
+- Moving Averages (EMA/SMA): Look for trend direction and price reacting to the moving average as dynamic support/resistance.
+Focus on identifying clear candlestick reversals (e.g., engulfing patterns, pin bars) interacting with these indicators, visible support/resistance zones, or trendlines. If you see strong visual patterns, increase your confidence score accordingly.
 `;
   }
 
@@ -69,9 +73,13 @@ Analyze:
 • Liquidity & Subjective Market Structure
 
 Strict Confidence Rules:
-- If Confidence >= 85, you may output BUY or SELL.
-- If Confidence is between 60 and 84, you MUST output WAIT (market needs confirmation).
-- If Confidence < 60, you MUST output UNSURE.
+${marketData 
+  ? `- If Confidence >= 85, you may output BUY or SELL.
+- If Confidence is between 60 and 84, you MUST output WAIT (market needs confirmation).`
+  : `- If Confidence >= 70, you may output BUY or SELL (Visual-Only Mode has a lower threshold).
+- If Confidence is between 50 and 69, you MUST output WAIT.`}
+- If the market is completely choppy and unreadable, output NO_TRADE.
+- If Confidence < 50, you MUST output UNSURE.
 
 Return ONLY JSON.
 
