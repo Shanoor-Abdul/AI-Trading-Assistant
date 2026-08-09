@@ -31,6 +31,25 @@ Macro Multi-Timeframe Trends:
 ` : ""}
 `;
   }
+  let dataInstruction = "";
+  if (marketData) {
+    dataInstruction = `
+Structured market data is available and should be prioritized for numerical analysis.
+DO NOT estimate prices from the screenshot. ALWAYS use the provided exact market data for RSI, EMAs, price, trends, and market regime.
+Use the screenshot ONLY for subjective visual pattern recognition that code cannot easily detect:
+- Order Blocks
+- Fair Value Gaps
+- Liquidity Sweeps / Liquidity Zones
+- Break of Structure / Change of Character
+- Supply/Demand Zones
+- Chart Drawings or user annotations.
+`;
+  } else {
+    dataInstruction = `
+No structured market data is available. Analyze the uploaded screenshot. 
+Do not invent OHLCV or live prices. Use only values that are clearly visible in the screenshot.
+`;
+  }
 
   return `
 You are an Expert Institutional Trader.
@@ -40,14 +59,7 @@ Analyze the trading chart image for visual patterns (candlesticks, support/resis
 ${marketContext}
 
 Hybrid Analysis Rule:
-DO NOT estimate prices from the screenshot. ALWAYS use the provided exact market data for RSI, EMAs, price, trends, and market regime.
-Use the screenshot ONLY for subjective visual pattern recognition that code cannot easily detect:
-- Order Blocks
-- Fair Value Gaps
-- Liquidity Sweeps / Liquidity Zones
-- Break of Structure / Change of Character
-- Supply/Demand Zones
-- Chart Drawings or user annotations.
+${dataInstruction}
 
 ${strategyRules ? `Strategy Rules:\n${strategyRules}\n` : ""}
 Analyze:
