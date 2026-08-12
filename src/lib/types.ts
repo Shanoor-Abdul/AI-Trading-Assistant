@@ -88,6 +88,7 @@ export interface TradingAnalysis {
   primaryTimeframe?: string;
   confirmationTimeframe?: string;
   trendTimeframe?: string;
+  tradeDuration?: string;
   riskDecision?: string;
   
   marketDataMode?: MarketDataMode;

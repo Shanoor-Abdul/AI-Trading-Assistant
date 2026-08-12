@@ -68,8 +68,8 @@ export class RiskEngine {
     }
 
     // 3. Trade Setup Validation (Prices & RR)
-    if (platform === "olymptrade") {
-      // OlympTrade is fixed-time binary options, SL/TP/RR don't apply.
+    if (platform === "olymptrade" || (analysis.marketDataMode === "visual_only" && !!analysis.tradeDuration)) {
+      // Fixed-time binary options or visual-only directional trades: SL/TP/RR don't apply.
       analysis.riskDecision = "APPROVED";
       return analysis;
     }

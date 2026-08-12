@@ -940,6 +940,10 @@ export async function POST(
     enrichedResult.trendTimeframe =
       trendTimeframe;
 
+    enrichedResult.marketDataMode = mode as any;
+    
+    enrichedResult.tradeDuration = body.tradeDuration;
+
     /*
      * ==========================================
      * 8. RISK ENGINE
