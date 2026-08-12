@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
-import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info } from "lucide-react";
+import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info, Layers, TrendingUp, TrendingDown, Minus, Calculator, Square, Play } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
@@ -21,6 +21,7 @@ export default function MobileDashboard() {
     selectedProvider,
     selectedModel,
     marketDataMode,
+    visibleIndicators,
     previewImageBase64,
     isAnalyzing, analysisResult, pendingUnsureRequest, requestedTimeframe,
     previousAnalysisData, setField, clearAnalysis, resetAll
@@ -84,7 +85,8 @@ export default function MobileDashboard() {
         provider: selectedProvider,
         model: selectedModel,
         strategy,
-        marketDataMode,
+        visibleIndicators,
+        marketDataMode: "visual_only",
         previousData: pendingUnsureRequest ? previousAnalysisData : undefined
       };
 
@@ -160,30 +162,6 @@ export default function MobileDashboard() {
       {!pendingUnsureRequest ? (
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-zinc-400">Market Data</Label>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="w-3 h-3 text-zinc-500" />
-                  </TooltipTrigger>
-                  <TooltipContent><p>API fetches from Binance; Visual Only skips CCXT for OTC/Indian Markets.</p></TooltipContent>
-                </Tooltip>
-              </div>
-              <Select 
-                value={marketDataMode} 
-                onValueChange={val => setField("marketDataMode", val)}
-              >
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="api">API Data</SelectItem>
-                  <SelectItem value="visual_only">Visual Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {marketDataMode === "visual_only" && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1">
                   <Label className="text-xs text-zinc-400">Platform</Label>
@@ -201,7 +179,6 @@ export default function MobileDashboard() {
                   placeholder="OlympTrade"
                 />
               </div>
-            )}
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
                 <Label className="text-xs text-zinc-400">Symbol</Label>
@@ -236,26 +213,6 @@ export default function MobileDashboard() {
                 placeholder="5m"
               />
             </div>
-            {marketDataMode === "api" && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1">
-                  <Label className="text-xs text-zinc-400">Confirm TF</Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="w-3 h-3 text-zinc-500" />
-                    </TooltipTrigger>
-                    <TooltipContent><p>Secondary timeframe for trend confirmation</p></TooltipContent>
-                  </Tooltip>
-                </div>
-                <Input 
-                  value={confirmationTimeframe} 
-                  onChange={e => setField("confirmationTimeframe", e.target.value)} 
-                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  placeholder="15m"
-                />
-              </div>
-            )}
-            {marketDataMode === "visual_only" && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1">
                   <Label className="text-xs text-zinc-400">Duration</Label>
@@ -273,7 +230,6 @@ export default function MobileDashboard() {
                   placeholder="5m"
                 />
               </div>
-            )}
           </div>
 
           <div className="space-y-1.5">
@@ -323,6 +279,49 @@ export default function MobileDashboard() {
                     <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
                   ))}
                 </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-zinc-400">Visible Indicators</Label>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-3 h-3 text-zinc-500" />
+                </TooltipTrigger>
+                <TooltipContent><p>Tell the AI what indicators are visible on your chart.</p></TooltipContent>
+              </Tooltip>
+            </div>
+            <Select
+              value={visibleIndicators.join(",")}
+              onValueChange={(val: string | null) => {
+                if (!val) return;
+                if (visibleIndicators.includes(val)) {
+                  setField("visibleIndicators", visibleIndicators.filter((i: string) => i !== val));
+                } else {
+                  setField("visibleIndicators", [...visibleIndicators, val]);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm focus:ring-0 focus:ring-offset-0">
+                <Layers className="w-4 h-4 mr-2 text-zinc-400" />
+                <SelectValue placeholder="Add Indicator" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                {["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"].map(ind => (
+                  <SelectItem key={ind} value={ind}>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleIndicators.includes(ind)}
+                        readOnly
+                        className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
+                      />
+                      {ind}
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

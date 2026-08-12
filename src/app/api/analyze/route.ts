@@ -126,7 +126,9 @@ async function fetchMarketData(
   mode: string,
   primaryTimeframe: string,
   confirmationTimeframe?: string,
-  trendTimeframe?: string
+  trendTimeframe?: string,
+  supabase?: any,
+  userId?: string
 ): Promise<{
   marketData: any;
   indicators: any;
@@ -184,9 +186,28 @@ async function fetchMarketData(
       "@/lib/engines/MarketStructureEngine"
     );
 
-    const provider = new CCXTProvider("binance");
+    let exchangeName = "binance";
+    let apiKey = undefined;
+    let apiSecret = undefined;
 
-    exchange = "binance";
+    if (body.activeConnectionId && supabase && userId) {
+      const { data: conn } = await supabase
+        .from("exchange_keys")
+        .select("*")
+        .eq("id", body.activeConnectionId)
+        .eq("user_id", userId)
+        .single();
+      
+      if (conn) {
+        exchangeName = conn.exchange;
+        apiKey = conn.api_key;
+        apiSecret = conn.api_secret;
+      }
+    }
+
+    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret);
+
+    exchange = exchangeName;
     marketProvider = "ccxt";
     marketDataStatus = "available";
 
@@ -363,7 +384,10 @@ async function fetchMarketData(
 }
 
 async function getStrategyRules(
-  strategy?: string
+  strategy?: string,
+  platform?: string,
+  tradeDuration?: string,
+  marketDataMode?: string
 ) {
   if (!strategy) {
     return undefined;
@@ -374,7 +398,10 @@ async function getStrategyRules(
   );
 
   return StrategyEngine.getStrategyRules(
-    strategy as any
+    strategy as any,
+    platform,
+    tradeDuration,
+    marketDataMode
   ).rules;
 }
 
@@ -584,13 +611,14 @@ async function persistAnalysis(
      */
     if (tradingMode === "LIVE") {
       try {
-        const { data: keys } =
-          await supabase
-            .from("exchange_keys")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("exchange", "binance")
-            .single();
+        const { data: exchangeKeys } = await supabase
+          .from("exchange_keys")
+          .select("*")
+          .eq("user_id", userId)
+          .in("exchange", ["binance", "binance_testnet"]);
+
+        // If they have demo keys saved, prioritize them, else use mainnet
+        const keys = exchangeKeys?.find((k: any) => k.exchange === "binance_testnet") || exchangeKeys?.find((k: any) => k.exchange === "binance");
 
         if (
           keys &&
@@ -605,7 +633,7 @@ async function persistAnalysis(
 
           const liveProvider =
             new LiveExecutionProvider(
-              "binance",
+              keys.exchange,
               keys.api_key,
               keys.api_secret,
               keys.api_passphrase
@@ -737,32 +765,35 @@ export async function POST(
 
     /*
      * ==========================================
-     * 2. MARKET DATA
+     * 2. SUPABASE + USER
+     * ==========================================
+     */
+    const supabase = await createSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    /*
+     * ==========================================
+     * 3. MARKET DATA
      * ==========================================
      */
 
-    const mode =
-      resolveMarketMode(body);
+    const mode = resolveMarketMode(body);
+    const primaryTimeframe = body.timeframe;
+    const { confirmationTimeframe, trendTimeframe } = resolveMTFTimeframes(body);
 
-    const primaryTimeframe =
-      body.timeframe;
+    const tMarketStart = performance.now();
 
-    const {
+    const marketContext = await fetchMarketData(
+      body,
+      mode,
+      primaryTimeframe,
       confirmationTimeframe,
       trendTimeframe,
-    } = resolveMTFTimeframes(body);
-
-    const tMarketStart =
-      performance.now();
-
-    const marketContext =
-      await fetchMarketData(
-        body,
-        mode,
-        primaryTimeframe,
-        confirmationTimeframe,
-        trendTimeframe
-      );
+      supabase,
+      user?.id
+    );
 
     timings.marketDataMs =
       performance.now() -
@@ -770,35 +801,20 @@ export async function POST(
 
     /*
      * ==========================================
-     * 3. STRATEGY RULES
+     * 4. STRATEGY RULES
      * ==========================================
      */
 
-    const tIndicatorStart =
-      performance.now();
+    const tIndicatorStart = performance.now();
 
-    const strategyRules =
-      await getStrategyRules(
-        body.strategy
-      );
+    const strategyRules = await getStrategyRules(
+      body.strategy,
+      body.platform,
+      body.tradeDuration,
+      body.marketDataMode
+    );
 
-    timings.indicatorMs =
-      performance.now() -
-      tIndicatorStart;
-
-    /*
-     * ==========================================
-     * 4. SUPABASE + USER
-     * ==========================================
-     */
-
-    const supabase =
-      await createSupabaseClient();
-
-    const {
-      data: { user },
-    } =
-      await supabase.auth.getUser();
+    timings.indicatorMs = performance.now() - tIndicatorStart;
 
     /*
      * ==========================================
@@ -827,19 +843,21 @@ export async function POST(
 
       provider:
         body.provider || "gemini",
+        
+      visibleIndicators: body.visibleIndicators,
 
       model:
         body.model,
 
-      marketData: {
-        ...marketContext.marketData,
-        indicators:
-          marketContext.indicators,
-        marketRegime:
-          marketContext.marketRegime,
-        swings:
-          marketContext.swings,
-      },
+      marketData:
+        marketContext.marketProvider === "visual_only"
+          ? undefined
+          : {
+              ...marketContext.marketData,
+              indicators: marketContext.indicators,
+              marketRegime: marketContext.marketRegime,
+              swings: marketContext.swings,
+            },
 
       strategyRules,
     } as any);
@@ -953,8 +971,13 @@ export async function POST(
           .single();
 
       const tradingMode =
+        body.tradingMode ||
         profile?.trading_mode ||
         "MANUAL";
+
+      if (body.tradingMode && body.tradingMode !== profile?.trading_mode) {
+        await supabase.from("profiles").update({ trading_mode: body.tradingMode }).eq("id", user.id);
+      }
 
       const tDbStart =
         performance.now();

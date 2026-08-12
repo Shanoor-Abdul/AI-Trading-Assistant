@@ -14,7 +14,7 @@ export interface StrategyContext {
 }
 
 export class StrategyEngine {
-  static getStrategyRules(strategy: StrategyType): StrategyContext {
+  static getStrategyRules(strategy: StrategyType, platform?: string, tradeDuration?: string, marketDataMode?: string): StrategyContext {
     let rules = "";
     
     switch (strategy) {
@@ -25,14 +25,15 @@ export class StrategyEngine {
 - Take profit at the nearest minor support/resistance.
 - Do not hold trades through major news events.
 - Stop loss must be extremely tight.
+${marketDataMode === 'visual_only' ? '- Focus on visually identifiable short-term momentum, candle structure, and visible indicators (like MACD, Bollinger Bands) for breakouts and rejection.' : ''}
 `;
         break;
       case "Trend Following":
         rules = `
-- Focus on the 15m, 1h, and 4h charts.
-- Identify the macro trend and strictly trade in the direction of that trend.
-- Enter on pullbacks (higher lows in an uptrend, lower highs in a downtrend).
-- Ride the trend until market structure breaks.
+- Identify the dominant trend on the chart.
+- Strictly trade in the direction of that trend.
+- Enter on pullbacks to dynamic support/resistance (like moving averages).
+- Avoid trading in sideways, choppy markets.
 `;
         break;
       case "Breakout":
@@ -56,6 +57,7 @@ export class StrategyEngine {
 - Wait for a Change of Character (ChoCh) or Break of Structure (BOS) before entering.
 - Target major liquidity pools (equal highs/lows) for Take Profit.
 - Stop loss tightly behind the defining Order Block.
+${marketDataMode === 'visual_only' ? '- Focus ONLY on visually identifiable liquidity, BOS, CHoCH, displacement, FVG, and Order Blocks. DO NOT fabricate SMC structures.' : ''}
 `;
         break;
       case "ICT":
@@ -64,6 +66,7 @@ export class StrategyEngine {
 - Look for liquidity sweeps during London or NY open.
 - Identify Market Structure Shifts (MSS) leaving behind an FVG.
 - Enter on the return to the FVG (the "Unicorn" setup).
+${marketDataMode === 'visual_only' ? '- Focus ONLY on visually identifiable ICT concepts from the screenshot. DO NOT fabricate them.' : ''}
 `;
         break;
       case "Swing":
@@ -81,6 +84,15 @@ export class StrategyEngine {
         break;
       default:
         rules = "- Standard hybrid analysis combining price action and technical indicators.";
+    }
+
+    if (marketDataMode === 'visual_only' || tradeDuration) {
+      rules += `\n
+CRITICAL PLATFORM RULE (Fixed-Time / Binary Options):
+- The user is trading on ${platform || 'a visual-only platform'} with a trade duration of ${tradeDuration || 'a few minutes'}.
+- You are trading Fixed-Time options where you only need to predict if the price will be HIGHER or LOWER at the end of the duration.
+- DO NOT wait for macro trends or perfect setups. If there is clear short-term momentum or a high-probability candlestick reversal on the current chart, YOU MUST issue a BUY or SELL signal.
+- Be decisive. Do not be overly conservative.`;
     }
 
     return {

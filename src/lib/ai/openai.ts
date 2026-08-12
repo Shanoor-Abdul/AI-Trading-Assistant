@@ -14,6 +14,7 @@ export async function analyzeWithOpenAI({
   model,
   marketData,
   strategyRules,
+  visibleIndicators,
 }: {
   imageBase64: string;
   symbol: string;
@@ -21,8 +22,9 @@ export async function analyzeWithOpenAI({
   model?: string;
   marketData?: any;
   strategyRules?: string;
+  visibleIndicators?: string[];
 }): Promise<TradingAnalysis> {
-  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules);
+  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules, visibleIndicators);
 
   const image = imageBase64.includes(",")
     ? imageBase64.split(",")[1]
@@ -31,28 +33,21 @@ export async function analyzeWithOpenAI({
   const currentModel = model || "gpt-4o-mini";
 
   try {
+    const messagesContent: any[] = [{ type: "text", text: prompt }];
+
+    if (!marketData && image) {
+      messagesContent.push({
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${image}` },
+      });
+    }
+
     const response = await openai.chat.completions.create({
       model: currentModel,
       response_format: {
         type: "json_object",
       },
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: prompt,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${image}`,
-              },
-            },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content: messagesContent }],
     });
 
     const text = response.choices[0]?.message?.content ?? "";
