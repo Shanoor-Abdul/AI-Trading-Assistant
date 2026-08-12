@@ -20,16 +20,23 @@ export function TradeTracker() {
         if (trade.status !== "OPEN" || trade.signal === "WAIT" || trade.signal === "UNSURE") continue;
 
         try {
-          // Fetch latest price data for this symbol
+          // Fetch latest price data dynamically via our backend CCXT provider
           const symbol = trade.symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
           
-          // Binance public API doesn't support OTC pairs, so don't attempt to track them to avoid 400 errors
-          if (symbol.includes("OTC")) continue;
+          // CCXT programmatic tracking skips Forex/OTC and Visual Only mode
+          if (symbol.includes("OTC") || useTradingStore.getState().marketDataMode === "visual_only") {
+            continue;
+          }
 
-          const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+          const activeConnectionId = useTradingStore.getState().activeConnectionId;
+          const url = `/api/ticker?symbol=${symbol}${activeConnectionId ? `&connectionId=${activeConnectionId}` : ''}`;
+          
+          const res = await fetch(url);
           if (!res.ok) continue;
           
           const data = await res.json();
+          if (!data.price) continue;
+          
           const currentPrice = parseFloat(data.price);
 
           const entry = trade.entryPrice;

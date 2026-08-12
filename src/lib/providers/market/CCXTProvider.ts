@@ -6,7 +6,7 @@ export class CCXTProvider implements MarketProvider {
   name: string;
   private exchange: ccxt.Exchange;
 
-  constructor(exchangeId: string = 'binance') {
+  constructor(exchangeId: string = 'binance', apiKey?: string, apiSecret?: string, apiPassphrase?: string) {
     this.name = exchangeId;
     
     // Check if exchange is supported
@@ -18,7 +18,19 @@ export class CCXTProvider implements MarketProvider {
     const ExchangeClass = (ccxt as any)[exchangeId];
     this.exchange = new ExchangeClass({
       enableRateLimit: true,
+      apiKey: apiKey,
+      secret: apiSecret,
+      password: apiPassphrase,
     });
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      await this.exchange.fetchBalance();
+      return true;
+    } catch (error) {
+      throw error;
+    }
   }
 
   async fetchOHLCV(symbol: string, timeframe: string, limit: number = 200): Promise<OHLCV[]> {

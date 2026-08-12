@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Play, Square, Activity, Loader2, TrendingUp, TrendingDown, Minus, Clock, FileText, Image as ImageIcon, CheckCircle, Crosshair, Target, ShieldAlert, BarChart3, Settings2, Info, Calculator } from "lucide-react";
+import { Play, Square, Activity, Loader2, TrendingUp, TrendingDown, Minus, Clock, FileText, Image as ImageIcon, CheckCircle, Crosshair, Target, ShieldAlert, BarChart3, Settings2, Info, Calculator, Layers } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AI_MODELS, getModelsByProvider } from "@/config/models";
 import { toast } from "sonner";
@@ -115,7 +115,8 @@ export default function Dashboard() {
         provider: selectedProvider, 
         model: selectedModel, 
         strategy: useTradingStore.getState().strategy,
-        marketDataMode: useTradingStore.getState().marketDataMode
+        marketDataMode: useTradingStore.getState().marketDataMode,
+        tradingMode: useTradingStore.getState().tradingMode
       };
       
       if (useTradingStore.getState().marketDataMode === "visual_only") {
@@ -259,9 +260,11 @@ export default function Dashboard() {
                 </Select>
               </div>
 
-              <div className="flex flex-col justify-end">
-                <SettingsDialog />
-              </div>
+              {useTradingStore.getState().marketDataMode === "api" && (
+                <div className="flex flex-col justify-end">
+                  <SettingsDialog />
+                </div>
+              )}
 
               <div className="flex flex-col space-y-1">
                 <div className="flex items-center gap-1">
@@ -347,6 +350,54 @@ export default function Dashboard() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {useTradingStore.getState().marketDataMode === "visual_only" && (
+                <div className="flex flex-col space-y-1 relative">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Visible Indicators</Label>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                        <p>Tell the AI what indicators are visible on your chart.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Select
+                    value={useTradingStore.getState().visibleIndicators.join(",")}
+                    onValueChange={(val: string | null) => {
+                      if (!val) return;
+                      const current = useTradingStore.getState().visibleIndicators;
+                      if (current.includes(val)) {
+                        useTradingStore.getState().setVisibleIndicators(current.filter(i => i !== val));
+                      } else {
+                        useTradingStore.getState().setVisibleIndicators([...current, val]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-[160px] bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <Layers className="w-4 h-4 mr-2 text-zinc-400" />
+                      <SelectValue placeholder="Add Indicator" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      {["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"].map(ind => (
+                        <SelectItem key={ind} value={ind}>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="checkbox" 
+                              checked={useTradingStore.getState().visibleIndicators.includes(ind)}
+                              readOnly
+                              className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
+                            />
+                            {ind}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </TooltipProvider>
           <Badge variant={isAnalyzing ? "default" : "secondary"} className={isAnalyzing ? "bg-green-500/20 text-green-400 border-green-500/50" : ""}>
@@ -384,54 +435,63 @@ export default function Dashboard() {
         {/* Left Column: Screen Capture & Chat */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="glass-card border-none overflow-hidden h-[500px] flex flex-col relative">
-            {!stream ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-zinc-500">
-                <Activity className="w-16 h-16 mb-4 opacity-50" />
-                <p>No trading chart connected.</p>
-                <p className="text-sm">Click "Start Analysis" to select a browser tab.</p>
-              </div>
-            ) : (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-            )}
-            {isAnalyzing && (
-              <div className="absolute top-4 right-4 flex gap-2">
-                {useTradingStore.getState().marketDataMode === "visual_only" && (
-                  <>
-                    <Input
-                      className="bg-black/60 backdrop-blur-md text-white border-none w-24 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
-                      value={useTradingStore.getState().platform}
-                      onChange={(e) => useTradingStore.getState().setPlatform(e.target.value)}
-                      placeholder="Platform"
-                    />
-                    <Input
-                      className="bg-black/60 backdrop-blur-md text-white border-none w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
-                      value={useTradingStore.getState().tradeDuration}
-                      onChange={(e) => useTradingStore.getState().setTradeDuration(e.target.value)}
-                      placeholder="Duration"
-                    />
-                  </>
-                )}
-                <Input
-                  className="bg-black/60 backdrop-blur-md text-white border-none w-32 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
-                  value={symbol}
-                  onChange={(e) => useTradingStore.getState().setSymbol(e.target.value.toUpperCase())}
-                  placeholder="Pair (e.g. BTCUSDT)"
+              {useTradingStore.getState().marketDataMode === "api" && (
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-zinc-400 z-10 backdrop-blur-sm">
+                  <Activity className="w-16 h-16 mb-4 opacity-50" />
+                  <p className="font-medium text-lg text-white">API Data Mode Active</p>
+                  <p className="text-sm mt-2 text-center max-w-sm">
+                    Visual chart capture is disabled. Analysis is running entirely on live programmatic data from your Exchange Connection.
+                  </p>
+                </div>
+              )}
+              {!stream && useTradingStore.getState().marketDataMode === "visual_only" ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-zinc-500">
+                  <Activity className="w-16 h-16 mb-4 opacity-50" />
+                  <p>No trading chart connected.</p>
+                  <p className="text-sm">Click "Connect Chart" to select a browser tab.</p>
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
                 />
-                <Input
-                  className="bg-black/60 backdrop-blur-md text-white border-none w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20"
-                  value={timeframe}
-                  onChange={(e) => useTradingStore.getState().setTimeframe(e.target.value)}
-                  placeholder="Time (e.g. 5m)"
-                />
-              </div>
-            )}
-          </Card>
+              )}
+              {isAnalyzing && useTradingStore.getState().marketDataMode === "visual_only" && (
+                <div className="absolute top-6 right-4 flex gap-2 z-20">
+                  <Input
+                    style={{ backgroundColor: 'rgba(24, 24, 27, 0.95)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+                    className="w-24 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
+                    value={useTradingStore.getState().platform}
+                    onChange={(e) => useTradingStore.getState().setPlatform(e.target.value)}
+                    placeholder="Platform"
+                  />
+                  <Input
+                    style={{ backgroundColor: 'rgba(24, 24, 27, 0.95)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+                    className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
+                    value={useTradingStore.getState().tradeDuration}
+                    onChange={(e) => useTradingStore.getState().setTradeDuration(e.target.value)}
+                    placeholder="Duration"
+                  />
+                  <Input
+                    style={{ backgroundColor: 'rgba(24, 24, 27, 0.95)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+                    className="w-32 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
+                    value={symbol}
+                    onChange={(e) => useTradingStore.getState().setSymbol(e.target.value.toUpperCase())}
+                    placeholder="Pair (e.g. BTCUSDT)"
+                  />
+                  <Input
+                    style={{ backgroundColor: 'rgba(24, 24, 27, 0.95)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+                    className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
+                    value={timeframe}
+                    onChange={(e) => useTradingStore.getState().setTimeframe(e.target.value)}
+                    placeholder="Time (e.g. 5m)"
+                  />
+                </div>
+              )}
+            </Card>
           
           <ChatInterface />
         </div>
@@ -495,6 +555,12 @@ export default function Dashboard() {
               
               <div>
                 <span className="text-sm text-zinc-400 block mb-2">Reasoning</span>
+                {useTradingStore.getState().requestedIndicators && useTradingStore.getState().requestedIndicators!.length > 0 && (
+                  <div className="mb-3 p-3 bg-orange-500/10 border border-orange-500/30 rounded-md text-orange-400 text-sm">
+                    <strong>AI Request:</strong> I need you to add the following indicators to your chart for confirmation before I can give a valid signal: <br/>
+                    {useTradingStore.getState().requestedIndicators!.join(", ")}
+                  </div>
+                )}
                 <p className="text-sm text-zinc-300 bg-black/40 p-3 rounded-md border border-white/5">
                   {explanation || "Awaiting chart data to analyze market structure and indicators..."}
                 </p>

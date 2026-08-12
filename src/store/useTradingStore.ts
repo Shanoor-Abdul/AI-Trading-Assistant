@@ -24,6 +24,7 @@ export interface TradingState {
   stopLoss: number | null;
   takeProfit: number | null;
   recommendedTimeframe: string | null;
+  requestedIndicators: string[] | null;
   open: number | null;
   high: number | null;
   low: number | null;
@@ -46,6 +47,10 @@ export interface TradingState {
   setPlatform: (val: string) => void;
   tradeDuration: string;
   setTradeDuration: (val: string) => void;
+  visibleIndicators: string[];
+  setVisibleIndicators: (val: string[]) => void;
+  activeConnectionId: string | null;
+  setActiveConnectionId: (val: string | null) => void;
   apiFailCount: number;
   incrementFailCount: () => void;
   resetFailCount: () => void;
@@ -58,7 +63,7 @@ export interface TradingState {
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false,
   setIsAnalyzing: (val) => set({ isAnalyzing: val }),
-  symbol: "BTC/USDT",
+  symbol: "",
   setSymbol: (val) => set({ symbol: val }),
   timeframe: "5m",
   setTimeframe: (val) => set({ timeframe: val }),
@@ -77,6 +82,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   stopLoss: null,
   takeProfit: null,
   recommendedTimeframe: null,
+  requestedIndicators: null,
   open: null,
   high: null,
   low: null,
@@ -99,6 +105,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setPlatform: (val) => set({ platform: val }),
   tradeDuration: "5m",
   setTradeDuration: (val) => set({ tradeDuration: val }),
+  visibleIndicators: [],
+  setVisibleIndicators: (val) => set({ visibleIndicators: val }),
+  activeConnectionId: null,
+  setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0,
   incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })),
   resetFailCount: () => set({ apiFailCount: 0 }),
@@ -112,6 +122,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     stopLoss: null,
     takeProfit: null,
     recommendedTimeframe: null,
+    requestedIndicators: null,
     open: null,
     high: null,
     low: null,

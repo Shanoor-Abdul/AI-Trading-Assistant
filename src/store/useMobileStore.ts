@@ -12,6 +12,7 @@ export interface MobileState {
   selectedProvider: string;
   selectedModel: string;
   marketDataMode: "api" | "visual_only";
+  visibleIndicators: string[];
   
   // Image state
   previewImageBase64: string | null;
@@ -42,6 +43,7 @@ export const useMobileStore = create<MobileState>((set) => ({
   selectedProvider: "gemini",
   selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",
+  visibleIndicators: [],
   
   previewImageBase64: null,
   

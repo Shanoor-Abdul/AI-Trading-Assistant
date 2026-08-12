@@ -15,6 +15,7 @@ export async function analyzeWithOpenRouter({
   model,
   marketData,
   strategyRules,
+  visibleIndicators,
 }: {
   imageBase64: string;
   symbol: string;
@@ -22,8 +23,9 @@ export async function analyzeWithOpenRouter({
   model?: string;
   marketData?: any;
   strategyRules?: string;
+  visibleIndicators?: string[];
 }): Promise<TradingAnalysis> {
-  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules);
+  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules, visibleIndicators);
 
   const image = imageBase64.includes(",")
     ? imageBase64.split(",")[1]
@@ -35,36 +37,32 @@ export async function analyzeWithOpenRouter({
   }
 
   try {
+    const messagesContent: any[] = [{ type: "text", text: prompt }];
+
+    // Branch logic as per user request:
+    // API Mode (marketData exists) -> Text Only (No Image)
+    // Visual Only Mode (!marketData) -> Image + Text
+    if (!marketData && image) {
+      messagesContent.push({
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${image}` },
+      });
+    }
+
     const response = await openai.chat.completions.create({
       model: currentModel,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: prompt,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${image}`,
-              },
-            },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content: messagesContent }],
     });
 
     if (!response?.choices?.length) {
       console.error("OpenRouter invalid response:", JSON.stringify(response, null, 2));
-      throw new Error(`Model ${currentModel} returned an invalid response (it may be down or rejecting images).`);
+      throw new Error(`Model ${currentModel} returned an invalid response (it may be down).`);
     }
 
     const text = response.choices[0]?.message?.content ?? "";
     return parseAIResponse(text);
-  } catch (error) {
-    console.warn(`OpenRouter model failed: ${currentModel}`);
+  } catch (error: any) {
+    console.warn(`OpenRouter model failed: ${currentModel} - ${error.message}`);
     try {
       const fs = require("fs");
       fs.appendFileSync("api-errors.log", `[${new Date().toISOString()}] OpenRouter Error (${currentModel}): ${error?.toString()}\n`);

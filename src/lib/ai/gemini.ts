@@ -16,24 +16,26 @@ async function sleep(ms: number) {
 async function generate(
   model: string,
   prompt: string,
-  image: string
+  image: string,
+  marketData: any
 ) {
+  const parts: any[] = [{ text: prompt }];
+
+  if (!marketData && image) {
+    parts.push({
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: image,
+      },
+    });
+  }
+
   return ai.models.generateContent({
     model,
     contents: [
       {
         role: "user",
-        parts: [
-          {
-            text: prompt,
-          },
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: image,
-            },
-          },
-        ],
+        parts,
       },
     ],
   });
@@ -46,6 +48,7 @@ export async function analyzeWithGemini({
   model,
   marketData,
   strategyRules,
+  visibleIndicators,
 }: {
   imageBase64: string;
   symbol: string;
@@ -53,8 +56,9 @@ export async function analyzeWithGemini({
   model?: string;
   marketData?: any;
   strategyRules?: string;
+  visibleIndicators?: string[];
 }): Promise<TradingAnalysis> {
-  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules);
+  const prompt = buildTradingPrompt(symbol, timeframe, marketData, strategyRules, visibleIndicators);
 
   const image = imageBase64.includes(",")
     ? imageBase64.split(",")[1]
@@ -73,7 +77,8 @@ export async function analyzeWithGemini({
       const response = await generate(
         currentModel,
         prompt,
-        image
+        image,
+        marketData
       );
 
       const text =

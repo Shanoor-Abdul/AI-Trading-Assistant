@@ -14,7 +14,8 @@ export async function analyze(
     timeframe: request.timeframe || "Auto",
     model: request.model,
     marketData: request.marketData,
-    strategyRules: request.strategyRules
+    strategyRules: request.strategyRules,
+    visibleIndicators: request.visibleIndicators
   };
 
   switch (request.provider) {

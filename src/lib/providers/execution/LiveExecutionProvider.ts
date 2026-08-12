@@ -6,11 +6,18 @@ export class LiveExecutionProvider implements ExecutionProvider {
   private client: Exchange;
 
   constructor(exchangeId: string, apiKey: string, secret: string, passphrase?: string) {
-    if (!(ccxt as any)[exchangeId]) {
-      throw new Error(`Unsupported exchange: ${exchangeId}`);
+    let isTestnet = false;
+    let actualExchangeId = exchangeId;
+    if (exchangeId.endsWith("_testnet")) {
+      isTestnet = true;
+      actualExchangeId = exchangeId.replace("_testnet", "");
     }
 
-    const ExchangeClass = (ccxt as any)[exchangeId];
+    if (!(ccxt as any)[actualExchangeId]) {
+      throw new Error(`Unsupported exchange: ${actualExchangeId}`);
+    }
+
+    const ExchangeClass = (ccxt as any)[actualExchangeId];
     
     this.client = new ExchangeClass({
       apiKey,
@@ -21,6 +28,10 @@ export class LiveExecutionProvider implements ExecutionProvider {
         defaultType: 'future', // Default to perpetual futures for shorting capability
       }
     });
+
+    if (isTestnet) {
+      this.client.setSandboxMode(true);
+    }
   }
 
   async connect(): Promise<void> {
