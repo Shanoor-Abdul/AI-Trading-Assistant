@@ -57,6 +57,8 @@ export interface TradingState {
   apiFailCount: number;
   incrementFailCount: () => void;
   resetFailCount: () => void;
+  observationFrequency: number;
+  setObservationFrequency: (val: number) => void;
   updateAnalysis: (data: Partial<TradingState>) => void;
   
   tradeHistory: TradeHistoryEntry[];
@@ -67,9 +69,19 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false,
   setIsAnalyzing: (val) => set({ isAnalyzing: val }),
   symbol: "",
-  setSymbol: (val) => set({ symbol: val }),
+  setSymbol: (val) => set((state) => {
+    if (state.symbol !== val) {
+      return { symbol: val, observations: [] };
+    }
+    return { symbol: val };
+  }),
   timeframe: "5m",
-  setTimeframe: (val) => set({ timeframe: val }),
+  setTimeframe: (val) => set((state) => {
+    if (state.timeframe !== val) {
+      return { timeframe: val, observations: [] };
+    }
+    return { timeframe: val };
+  }),
   stream: null,
   setStream: (stream) => set({ stream }),
   lastImageBase64: null,
@@ -100,15 +112,34 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
   selectedStrategies: ["Trend Following"],
   setSelectedStrategies: (val) => set({ selectedStrategies: val }),
+  observationFrequency: 15,
+  setObservationFrequency: (val) => set({ observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
-    // Keep max 5 observations to prevent memory leaks and payload bloat
     const newObs = { timestamp: Date.now(), imageBase64 };
     let updated = [...state.observations, newObs];
-    // If the new one is basically identical to the previous one in time, we could filter it, 
-    // but a simple length boundary is safer and handles periodic snapshots well.
-    if (updated.length > 5) {
-      updated = updated.slice(updated.length - 5); // keep last 5
+    
+    // Dynamically calculate max cache size
+    let tfSecs = 300;
+    const tfMatch = state.timeframe.match(/(\d+)([mhd])/);
+    if (tfMatch) {
+      if (tfMatch[2] === 'm') tfSecs = parseInt(tfMatch[1]) * 60;
+      if (tfMatch[2] === 'h') tfSecs = parseInt(tfMatch[1]) * 3600;
+    }
+    
+    let tdSecs = 300;
+    const tdMatch = state.tradeDuration.match(/(\d+)([mhd])/);
+    if (tdMatch) {
+      if (tdMatch[2] === 'm') tdSecs = parseInt(tdMatch[1]) * 60;
+      if (tdMatch[2] === 'h') tdSecs = parseInt(tdMatch[1]) * 3600;
+    }
+    
+    const targetSecs = Math.max(tfSecs, tdSecs);
+    let maxCacheSize = Math.max(5, Math.ceil(targetSecs / state.observationFrequency));
+    maxCacheSize = Math.min(120, maxCacheSize); // hard limit to prevent memory bloat
+    
+    if (updated.length > maxCacheSize) {
+      updated = updated.slice(updated.length - maxCacheSize);
     }
     return { observations: updated };
   }),
