@@ -218,8 +218,15 @@ Null values MUST be explicitly null, not missing. Empty arrays MUST be [].
 
 {
   "trend": "Bullish | Bearish | Sideways",
-  "signal": "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL",
+  "signal": "${req.isProgressive ? "WAIT" : "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL"}",
   "confidence": 90,
+  "marketState": "Summarize the exact current state of the market visually.",
+  "changesFromPrevious": "What has changed since the previous analysis history?",
+  "momentum": "Increasing | Decreasing | Weak | Strong",
+  "candlestickBehavior": "Description of recent visible candles",
+  "indicatorState": { "MACD": "status", "RSI": "status" },
+  "strategyConsensus": "Bullish | Bearish | Neutral | Mixed",
+  "strategyConflicts": ["List of conflicting strategies, or empty array"],
   "recommendedTimeframe": "${req.primaryTimeframe}",
   "requiredTimeframe": null,
   "requestedIndicators": [],
@@ -238,9 +245,9 @@ Null values MUST be explicitly null, not missing. Empty arrays MUST be [].
 `;
   }
 
-  // --- 5-FRAME CHART SEQUENCE ANALYSIS (Web Live Mode) ---
+  // --- 20-FRAME CHART SEQUENCE ANALYSIS (Web Live Mode) ---
   return `
-UNIVERSAL AI — 5-FRAME CHART SEQUENCE ANALYSIS
+UNIVERSAL AI — ${req.isProgressive ? 'PROGRESSIVE BACKGROUND MARKET OBSERVATION (20-FRAME BATCH)' : 'FINAL CHART SEQUENCE ANALYSIS'}
 
 IMPORTANT:
 
@@ -249,16 +256,17 @@ Do not explain what a candlestick is.
 Do not explain what a timeframe is.
 Do not teach trading concepts to the user.
 
-Your job is to ANALYZE the provided chart frames and produce the best possible evidence-based trading signal using the information available.
+Your job is to ANALYZE the provided chart frames and produce the best possible evidence-based ${req.isProgressive ? 'market observation' : 'trading signal'} using the information available.
+
 
 ==================================================
 CORE OBJECTIVE
 ==================================================
-The user provides up to 5 recent chart frames captured from the same trading session.
-These frames represent the recent evolution of the SAME market/chart.
+The user provides a sequence of chart frames (up to 20 frames in a batch) captured from the same trading session.
+These frames represent the chronological evolution of the SAME market/chart.
 
-When the user clicks ANALYZE:
-1. Analyze all available frames.
+When the user clicks ANALYZE (or during a background batch):
+1. Analyze all available frames in the chronological sequence.
 2. Compare them chronologically.
 3. Identify what changed between frames.
 4. Determine current market direction and momentum.
@@ -274,10 +282,8 @@ FRAME ORDER
 ==================================================
 The screenshots are provided in chronological order.
 Frame 1 -> oldest
-Frame 2
-Frame 3
-Frame 4
-Frame 5 -> newest/current
+...
+Frame N -> newest/current
 
 The LAST frame is the current market state. Older frames provide historical context.
 The newest frame has the highest importance.
@@ -294,6 +300,18 @@ Use the older frames to determine:
 - Market changes
 
 Never treat an older frame as the current price state.
+
+${req.progressiveState && req.progressiveState.length > 0 ? `
+==================================================
+PREVIOUS PROGRESSIVE AI ANALYSES
+==================================================
+The AI has been observing this chart progressively in the background.
+Here are the previous recent market state summaries (oldest to newest):
+
+${JSON.stringify(req.progressiveState, null, 2)}
+
+You MUST compare the current frames against this historical context to understand how the market has evolved.
+` : ''}
 
 ==================================================
 FRAME COMPARISON
@@ -346,7 +364,7 @@ Use ONLY the selected strategies.
 Do not automatically apply every strategy.
 
 For each selected strategy:
-1. Analyze the 5-frame sequence.
+1. Analyze the entire chronological sequence.
 2. Determine whether the current setup satisfies the strategy.
 3. Determine whether the strategy supports BUY, SELL, WAIT, or UNSURE.
 4. Identify conflicts between strategies.
@@ -369,6 +387,21 @@ Current trend, Current momentum, Current structure, Current candle behavior, Cur
 Then use previous frames to confirm whether the current condition is:
 - Developing, Strengthening, Weakening, Reversing, Continuing, Breaking down, Breaking out, Unclear.
 
+${req.isProgressive ? `
+==================================================
+PROGRESSIVE OBSERVATION GOAL
+==================================================
+This is a BACKGROUND PROGRESSIVE ANALYSIS.
+Do NOT force a final trading decision.
+The purpose of this call is to maintain an updated market state summary for the user to view.
+Set the "signal" to "WAIT", but comprehensively fill out the "marketState", "changesFromPrevious", "momentum", "candlestickBehavior", and "indicatorState" fields.
+` : `
+==================================================
+FINAL TRADING SIGNAL GOAL
+==================================================
+This is a FINAL USER-TRIGGERED ANALYSIS.
+You must synthesize the previous background context (if any) and the current latest frames to generate the final "STRONG_BUY", "BUY", "SELL", "STRONG_SELL", "WAIT", or "UNSURE" signal.
+`}
 ==================================================
 FIXED-TIME TRADING
 ==================================================

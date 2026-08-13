@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { TradeHistoryEntry } from '@/lib/types';
+import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation } from '@/lib/types';
+import { calculateMaxObservationFrames } from '@/lib/observation/calculation';
 
 export interface TradingState {
   isAnalyzing: boolean;
@@ -39,7 +40,7 @@ export interface TradingState {
   setSelectedModel: (provider: string, model: string) => void;
   selectedStrategies: string[];
   setSelectedStrategies: (val: string[]) => void;
-  observations: Array<{ timestamp: number; imageBase64: string }>;
+  observations: Observation[];
   addObservation: (imageBase64: string) => void;
   clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE";
@@ -63,6 +64,23 @@ export interface TradingState {
   
   tradeHistory: TradeHistoryEntry[];
   clearAnalysis: () => void;
+
+  // Progressive Analysis
+  analysisSessionKey: string | null;
+  setAnalysisSessionKey: (key: string | null) => void;
+  progressiveAnalyses: ProgressiveAnalysisSummary[];
+  addProgressiveAnalysis: (summary: ProgressiveAnalysisSummary) => void;
+  isProgressiveAnalyzing: boolean;
+  setIsProgressiveAnalyzing: (val: boolean) => void;
+  lastAnalyzedObservationIndex: number;
+  setLastAnalyzedObservationIndex: (val: number) => void;
+  totalFramesCaptured: number;
+  currentBatchId: number;
+  incrementTotalFrames: () => void;
+  incrementBatchId: () => void;
+  lastObservationTimestamp: number;
+  setLastObservationTimestamp: (val: number) => void;
+  clearProgressiveSession: () => void;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -71,14 +89,14 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   symbol: "",
   setSymbol: (val) => set((state) => {
     if (state.symbol !== val) {
-      return { symbol: val, observations: [] };
+      return { symbol: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1 };
     }
     return { symbol: val };
   }),
   timeframe: "5m",
   setTimeframe: (val) => set((state) => {
     if (state.timeframe !== val) {
-      return { timeframe: val, observations: [] };
+      return { timeframe: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1 };
     }
     return { timeframe: val };
   }),
@@ -116,34 +134,40 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setObservationFrequency: (val) => set({ observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
-    const newObs = { timestamp: Date.now(), imageBase64 };
-    let updated = [...state.observations, newObs];
-    
-    // Dynamically calculate max cache size
     let tfSecs = 300;
     const tfMatch = state.timeframe.match(/(\d+)([mhd])/);
     if (tfMatch) {
       if (tfMatch[2] === 'm') tfSecs = parseInt(tfMatch[1]) * 60;
       if (tfMatch[2] === 'h') tfSecs = parseInt(tfMatch[1]) * 3600;
     }
+    // We only need to keep enough frames for the next 20-frame batch.
+    const maxCacheSize = calculateMaxObservationFrames(); 
     
-    let tdSecs = 300;
-    const tdMatch = state.tradeDuration.match(/(\d+)([mhd])/);
-    if (tdMatch) {
-      if (tdMatch[2] === 'm') tdSecs = parseInt(tdMatch[1]) * 60;
-      if (tdMatch[2] === 'h') tdSecs = parseInt(tdMatch[1]) * 3600;
-    }
+    const newObs = { timestamp: Date.now(), imageBase64 };
+    let updated = [...state.observations, newObs];
     
-    const targetSecs = Math.max(tfSecs, tdSecs);
-    let maxCacheSize = Math.max(5, Math.ceil(targetSecs / state.observationFrequency));
-    maxCacheSize = Math.min(120, maxCacheSize); // hard limit to prevent memory bloat
-    
+    // Adjust lastAnalyzedObservationIndex when rolling
+    let newIndex = state.lastAnalyzedObservationIndex;
     if (updated.length > maxCacheSize) {
       updated = updated.slice(updated.length - maxCacheSize);
+      newIndex = Math.max(-1, newIndex - (updated.length - maxCacheSize));
     }
-    return { observations: updated };
+    
+    return { 
+      observations: updated, 
+      lastAnalyzedObservationIndex: newIndex, 
+      totalFramesCaptured: state.totalFramesCaptured + 1,
+      lastObservationTimestamp: newObs.timestamp
+    };
   }),
-  clearObservations: () => set({ observations: [] }),
+  clearObservations: () => set({ 
+    observations: [], 
+    progressiveAnalyses: [], 
+    lastAnalyzedObservationIndex: -1, 
+    totalFramesCaptured: 0, 
+    currentBatchId: 1,
+    lastObservationTimestamp: 0
+  }),
   tradingMode: "MANUAL",
   setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api",
@@ -175,6 +199,36 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     low: null,
     close: null,
     explanation: "",
+  }),
+
+  // Progressive Analysis initial state
+  analysisSessionKey: null,
+  setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
+  progressiveAnalyses: [],
+  addProgressiveAnalysis: (summary) => set((state) => {
+    // DO NOT limit to 10. The user said keep history for current session.
+    // We will limit it to something reasonable but high like 50 so we don't crash, 
+    // but we don't arbitrarily delete Batch 1 when Batch 2 comes.
+    const updated = [...state.progressiveAnalyses, summary].slice(-50);
+    return { progressiveAnalyses: updated };
+  }),
+  isProgressiveAnalyzing: false,
+  setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
+  lastAnalyzedObservationIndex: -1,
+  setLastAnalyzedObservationIndex: (val) => set({ lastAnalyzedObservationIndex: val }),
+  totalFramesCaptured: 0,
+  currentBatchId: 1,
+  lastObservationTimestamp: 0,
+  setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
+  incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
+  incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
+  clearProgressiveSession: () => set({
+    observations: [],
+    progressiveAnalyses: [],
+    lastAnalyzedObservationIndex: -1,
+    totalFramesCaptured: 0,
+    currentBatchId: 1,
+    lastObservationTimestamp: 0
   }),
 
   updateAnalysis: (data) => set((state) => {

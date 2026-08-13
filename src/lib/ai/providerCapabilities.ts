@@ -9,7 +9,7 @@ export const PROVIDER_CAPABILITIES: Record<string, AIProviderCapability> = {
   "gemini": {
     vision: true,
     structuredOutput: true,
-    maxImageCount: 5,
+    maxImageCount: 20,
     maxOutputTokens: 8192
   },
   "openai": {

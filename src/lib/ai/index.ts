@@ -48,11 +48,28 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     visibleIndicators: req.visibleIndicators || [],
     marketData: req.marketData,
     previousAnalysis: req.previousData,
+    isProgressive: req.isProgressive,
+    progressiveState: req.progressiveState,
   };
 
   if ((req as any).screenshots && (req as any).screenshots.length > 0) {
     const maxImages = cap.maxImageCount || 1;
-    const limitedScreenshots = (req as any).screenshots.slice(-maxImages);
+    let limitedScreenshots = (req as any).screenshots;
+    
+    // Uniformly downsample frames if the batch exceeds provider limits
+    if (limitedScreenshots.length > maxImages) {
+      if (maxImages === 1) {
+        limitedScreenshots = [limitedScreenshots[limitedScreenshots.length - 1]];
+      } else {
+        const step = (limitedScreenshots.length - 1) / (maxImages - 1);
+        const sampled = [];
+        for (let i = 0; i < maxImages - 1; i++) {
+          sampled.push(limitedScreenshots[Math.floor(i * step)]);
+        }
+        sampled.push(limitedScreenshots[limitedScreenshots.length - 1]); // Always include the very last frame
+        limitedScreenshots = sampled;
+      }
+    }
 
     universalReq.screenshots = limitedScreenshots.map((shot: any) => {
       let b64 = shot.base64 || "";

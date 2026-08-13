@@ -836,28 +836,16 @@ export async function POST(
     const aiPromise = analyze({
       imageBase64: body.imageBase64,
       screenshots: (body as any).screenshots,
-
-      symbol:
-        body.symbol,
-
-      timeframe:
-        body.timeframe,
-
-      platform:
-        body.platform,
-
-      tradeDuration:
-        body.tradeDuration,
-
-      provider:
-        body.provider || "gemini",
-        
+      symbol: body.symbol,
+      timeframe: body.timeframe,
+      platform: body.platform,
+      tradeDuration: body.tradeDuration,
+      provider: body.provider || "gemini",
       visibleIndicators: body.visibleIndicators,
       selectedStrategies: body.selectedStrategies,
-
-      model:
-        body.model,
-
+      model: body.model,
+      isProgressive: body.isProgressive,
+      progressiveState: body.progressiveState,
       marketData:
         marketContext.marketProvider === "visual_only"
           ? undefined
@@ -867,7 +855,6 @@ export async function POST(
               marketRegime: marketContext.marketRegime,
               swings: marketContext.swings,
             },
-
       strategyRules,
       previousData: body.previousData,
     } as any);

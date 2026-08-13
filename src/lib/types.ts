@@ -63,6 +63,8 @@ export interface AnalyzeRequest {
   visibleIndicators?: string[];
   activeConnectionId?: string;
   previousData?: any;
+  isProgressive?: boolean;
+  progressiveState?: any;
 }
 
 export interface TradingAnalysis {
@@ -87,6 +89,13 @@ export interface TradingAnalysis {
 
   riskReward?: number;
   marketRegime?: string;
+  marketState?: string;
+  changesFromPrevious?: string;
+  momentum?: string;
+  candlestickBehavior?: string;
+  indicatorState?: Record<string, string>;
+  strategyConsensus?: string;
+  strategyConflicts?: string[];
 
   // Metadata
   analysisId?: string;
@@ -128,4 +137,40 @@ export interface TradeHistoryEntry extends TradingAnalysis {
 
 export interface AIProviderResponse {
   text: string;
+}
+
+export interface ProgressiveAnalysisSummary {
+  analysisId: string;
+  batchId: number;
+  timestamp: string;
+  frameStart: number;
+  frameEnd: number;
+  trend: string;
+  momentum: string;
+  marketState: string;
+  candlestickBehavior: string;
+  indicatorState: Record<string, string>;
+  strategyConsensus: string;
+  strategyConflicts: string[];
+  changesFromPrevious: string;
+  confidence: number;
+}
+
+export interface Observation {
+  timestamp: number;
+  imageBase64: string;
+}
+
+export interface ObservationSessionConfig {
+  platform: string;
+  symbol: string;
+  timeframe: string;
+  tradeDuration: string;
+  selectedStrategies: string[];
+  visibleIndicators: string[];
+  marketDataMode: string;
+  activeConnectionId: string | null;
+  provider: string;
+  model: string;
+  observationFrequency: number;
 }

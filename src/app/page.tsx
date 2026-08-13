@@ -18,6 +18,8 @@ import { TradeTracker } from "@/components/TradeTracker";
 import { LogoutButton } from "@/components/LogoutButton";
 import { ChatInterface } from "@/components/ChatInterface";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { calculateExpectedFrames } from "@/lib/observation/calculation";
+import { createObservationSessionKey } from "@/lib/observation/session";
 
 export default function Dashboard() {
   const { 
@@ -34,13 +36,20 @@ export default function Dashboard() {
     marketDataMode, setMarketDataMode,
     observations, clearObservations,
     observationFrequency, setObservationFrequency,
-    tradeDuration
+    tradeDuration,
+    platform, setPlatform,
+    selectedStrategies, setSelectedStrategies,
+    visibleIndicators, setVisibleIndicators
   } = useTradingStore();
 
   const [filterSignal, setFilterSignal] = useState<string>("ALL");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [selectedTrades, setSelectedTrades] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // High-frequency timing state for UI
+  const [timeSinceLastFrame, setTimeSinceLastFrame] = useState<number>(0);
+  const [timeUntilNextFrame, setTimeUntilNextFrame] = useState<number>(observationFrequency);
 
   useEffect(() => {
     const fetchTrades = async () => {
@@ -111,39 +120,21 @@ export default function Dashboard() {
     }
   }
 
-  let maxCacheSize = 5;
+  let expectedFrames = 60;
   if (marketDataMode === 'visual_only') {
-    let tfSecs = 300;
-    const tfMatch = timeframe.match(/(\d+)([mhd])/);
-    if (tfMatch) {
-      if (tfMatch[2] === 'm') tfSecs = parseInt(tfMatch[1]) * 60;
-      if (tfMatch[2] === 'h') tfSecs = parseInt(tfMatch[1]) * 3600;
-    }
-    
-    let tdSecs = 300;
-    const tdMatch = tradeDuration.match(/(\d+)([mhd])/);
-    if (tdMatch) {
-      if (tdMatch[2] === 'm') tdSecs = parseInt(tdMatch[1]) * 60;
-      if (tdMatch[2] === 'h') tdSecs = parseInt(tdMatch[1]) * 3600;
-    }
-    
-    const targetSecs = Math.max(tfSecs, tdSecs);
-    maxCacheSize = Math.max(5, Math.ceil(targetSecs / observationFrequency));
-    maxCacheSize = Math.min(120, maxCacheSize);
+    expectedFrames = calculateExpectedFrames(timeframe, tradeDuration, observationFrequency);
   }
 
   let analysisReadiness = "NOT READY";
   let estimatedConfidence = "LOW";
   let readinessMessage = "Collect more chart data before analyzing.";
   let isAnalyzeDisabled = true;
-  let aiAnalysisFrames = 1;
 
-  if (marketDataMode === 'visual_only' && observations.length > 0) {
-    const frameCount = observations.length;
-    aiAnalysisFrames = Math.min(10, frameCount);
-    const ratio = frameCount / maxCacheSize;
+  if (marketDataMode === 'visual_only' && useTradingStore.getState().totalFramesCaptured > 0) {
+    const frameCount = useTradingStore.getState().totalFramesCaptured;
+    const ratio = frameCount / expectedFrames;
 
-    if (frameCount <= 1) {
+    if (frameCount === 0) {
       analysisReadiness = "NOT READY";
       estimatedConfidence = "LOW";
       readinessMessage = "Collecting more chart history...";
@@ -158,10 +149,15 @@ export default function Dashboard() {
       estimatedConfidence = "MEDIUM";
       readinessMessage = "Enough recent chart history for analysis.";
       isAnalyzeDisabled = false;
-    } else {
-      analysisReadiness = "EXCELLENT";
+    } else if (ratio < 1) {
+      analysisReadiness = "VERY GOOD";
       estimatedConfidence = "HIGH";
       readinessMessage = "Strong visual history available.";
+      isAnalyzeDisabled = false;
+    } else {
+      analysisReadiness = "READY / COMPLETE";
+      estimatedConfidence = "HIGH";
+      readinessMessage = "Full visual history available.";
       isAnalyzeDisabled = false;
     }
   }
@@ -199,15 +195,40 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [isAutoScan, isAnalyzing, stream, timeframe]);
 
+  // High-Frequency UI Timing Loop
+  useEffect(() => {
+    if (!stream || marketDataMode !== "visual_only" || !isAnalyzing) return;
+    
+    const uiTimer = setInterval(() => {
+      const lastTs = useTradingStore.getState().lastObservationTimestamp;
+      if (lastTs === 0) {
+        setTimeSinceLastFrame(0);
+        setTimeUntilNextFrame(observationFrequency);
+        return;
+      }
+      
+      const elapsedSecs = (Date.now() - lastTs) / 1000;
+      setTimeSinceLastFrame(elapsedSecs);
+      setTimeUntilNextFrame(Math.max(0, observationFrequency - elapsedSecs));
+    }, 100);
+    
+    return () => clearInterval(uiTimer);
+  }, [stream, marketDataMode, isAnalyzing, observationFrequency]);
+
   // Background Screen Capture for Live Observation
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only") return;
+    if (!stream || marketDataMode !== "visual_only" || !isAnalyzing) return;
+    
+    // We intentionally do not stop capturing to maintain a continuous observation circle.
     
     const captureObservation = () => {
       if (!videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (video.videoWidth === 0) return;
+      
+      // Ensure we maintain a continuous circle
+      
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
@@ -224,7 +245,114 @@ export default function Dashboard() {
       clearTimeout(initialTimer);
       clearInterval(intervalTimer);
     };
-  }, [stream, marketDataMode, observationFrequency]);
+  }, [stream, marketDataMode, isAnalyzing, observationFrequency, expectedFrames]);
+
+  // Session Key Management
+  useEffect(() => {
+    if (marketDataMode !== "visual_only") return;
+    
+    // Create a stable serialized key from analysis-defining inputs
+    const newKey = createObservationSessionKey({
+      platform,
+      symbol,
+      timeframe,
+      tradeDuration,
+      selectedStrategies,
+      visibleIndicators,
+      marketDataMode,
+      activeConnectionId: useTradingStore.getState().activeConnectionId,
+      provider: selectedProvider,
+      model: selectedModel,
+      observationFrequency
+    });
+    
+    const state = useTradingStore.getState();
+    
+    if (state.analysisSessionKey !== null && state.analysisSessionKey !== newKey) {
+      // Configuration changed, reset session
+      state.clearProgressiveSession();
+    }
+    
+    state.setAnalysisSessionKey(newKey);
+    
+  }, [platform, symbol, timeframe, tradeDuration, selectedStrategies, visibleIndicators, marketDataMode, selectedProvider, selectedModel, useTradingStore.getState().activeConnectionId, observationFrequency]);
+
+  // Progressive Analysis Loop
+  useEffect(() => {
+    const state = useTradingStore.getState();
+    if (!stream || marketDataMode !== "visual_only") return;
+    if (state.isProgressiveAnalyzing || state.isFetchingAnalysis) return;
+
+    const unanalyzedCount = state.observations.length - (state.lastAnalyzedObservationIndex === -1 ? 0 : state.lastAnalyzedObservationIndex + 1);
+    
+    // We aim for batches of exactly 20 frames
+    if (unanalyzedCount >= 20 && state.observations.length >= 20) {
+      
+      const runProgressiveAnalysis = async () => {
+        state.setIsProgressiveAnalyzing(true);
+        
+        // Grab exactly 20 frames for the batch
+        const startIndex = (state.lastAnalyzedObservationIndex === -1 ? 0 : state.lastAnalyzedObservationIndex + 1);
+        const endIndex = startIndex + 19;
+        const framesToAnalyze = state.observations.slice(startIndex, endIndex + 1);
+        const batchId = state.currentBatchId;
+        
+        try {
+          const reqBody: any = { 
+            symbol, 
+            timeframe, 
+            platform, 
+            tradeDuration, 
+            provider: selectedProvider, 
+            model: selectedModel, 
+            marketDataMode, 
+            visibleIndicators, 
+            selectedStrategies,
+            isProgressive: true,
+            progressiveState: state.progressiveAnalyses,
+            screenshots: framesToAnalyze.map(obs => ({ base64: obs.imageBase64, mimeType: "image/jpeg" }))
+          };
+          
+          const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody)
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.marketState) {
+              const summary = {
+                analysisId: data.analysisId || Date.now().toString(),
+                batchId: batchId,
+                timestamp: new Date().toLocaleTimeString(),
+                frameStart: startIndex + 1, // 1-indexed for display
+                frameEnd: endIndex + 1,
+                trend: data.trend || "Unknown",
+                momentum: data.momentum || "Unknown",
+                marketState: data.marketState,
+                candlestickBehavior: data.candlestickBehavior || "Unknown",
+                indicatorState: data.indicatorState || {},
+                strategyConsensus: data.strategyConsensus || "Unknown",
+                strategyConflicts: data.strategyConflicts || [],
+                changesFromPrevious: data.changesFromPrevious || "None",
+                confidence: data.confidence || 0
+              };
+              useTradingStore.getState().addProgressiveAnalysis(summary);
+              useTradingStore.getState().setLastAnalyzedObservationIndex(endIndex);
+              useTradingStore.getState().incrementBatchId();
+            }
+          }
+        } catch (error) {
+          console.error("Progressive analysis failed:", error);
+        } finally {
+          useTradingStore.getState().setIsProgressiveAnalyzing(false);
+        }
+      };
+      
+      runProgressiveAnalysis();
+    }
+  }, [observations.length, stream, marketDataMode]);
 
   const handleAnalyzeSnapshot = async () => {
     if (!videoRef.current || !canvasRef.current || !stream) return;
@@ -254,7 +382,9 @@ export default function Dashboard() {
         selectedStrategies: useTradingStore.getState().selectedStrategies,
         marketDataMode: useTradingStore.getState().marketDataMode,
         tradingMode: useTradingStore.getState().tradingMode,
-        visibleIndicators: useTradingStore.getState().visibleIndicators
+        visibleIndicators: useTradingStore.getState().visibleIndicators,
+        isProgressive: false,
+        progressiveState: useTradingStore.getState().progressiveAnalyses
       };
 
       if (useTradingStore.getState().marketDataMode === "visual_only") {
@@ -338,7 +468,7 @@ export default function Dashboard() {
           low: data.low,
           close: data.close
         });
-        clearObservations(); // RESET CACHE FOR NEXT TRADE
+        // We no longer call clearObservations() here so the progressive circle continues seamlessly
         toast.success("Analysis complete!");
       } else {
         incrementFailCount();
@@ -613,38 +743,66 @@ export default function Dashboard() {
 
           {stream && marketDataMode === "visual_only" && (
             <div className="flex-1 flex flex-col md:flex-row items-start md:items-center gap-4 lg:border-l lg:border-zinc-800 lg:pl-4 justify-end">
-              <div className="flex flex-col text-[10px] text-zinc-400 min-w-[120px]">
+              <div className="flex flex-col text-[10px] text-zinc-400 min-w-[140px] space-y-1">
                 <div className="flex items-center gap-1.5 font-semibold text-green-400 mb-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                   LIVE OBSERVATION
                 </div>
+                
                 <div className="flex items-center justify-between gap-4">
-                  <span>Frames:</span>
-                  <span className="text-zinc-200">{observations.length} / {maxCacheSize}</span>
+                  <span>Status:</span>
+                  <span className="text-green-400">
+                    ● ACTIVE
+                  </span>
                 </div>
+                
                 <div className="flex items-center justify-between gap-4">
-                  <span>AI Inputs:</span>
-                  <span className="text-zinc-200">{aiAnalysisFrames} / 10</span>
+                  <span>Current Frames:</span>
+                  <span className="text-zinc-200">{useTradingStore.getState().totalFramesCaptured}</span>
+                </div>
+                
+                <div className="flex items-center justify-between gap-4">
+                  <span>Current Batch:</span>
+                  <span className="text-zinc-200">{
+                    useTradingStore.getState().observations.length - (useTradingStore.getState().lastAnalyzedObservationIndex === -1 ? 0 : useTradingStore.getState().lastAnalyzedObservationIndex + 1)
+                  } / 20</span>
+                </div>
+                
+                <div className="flex items-center justify-between gap-4">
+                  <span>Completed AI Analyses:</span>
+                  <span className="text-zinc-200">{useTradingStore.getState().progressiveAnalyses.length}</span>
                 </div>
               </div>
               
-              <div className="flex flex-col text-[10px] text-zinc-400 md:border-l md:border-zinc-800 md:pl-4 min-w-[150px]">
-                <div className="flex items-center justify-between gap-4 font-medium mb-1">
+              <div className="flex flex-col text-[10px] text-zinc-400 md:border-l md:border-zinc-800 md:pl-4 min-w-[140px] space-y-1">
+                <div className="flex items-center justify-between gap-4 mb-2">
+                  <span>Next Frame:</span>
+                  <span className="text-zinc-200">{`${timeUntilNextFrame.toFixed(2)}s`}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
                   <span>Readiness:</span>
-                  <span className={`${
-                    analysisReadiness === 'EXCELLENT' ? 'text-green-400' :
+                  <span className={`font-medium ${
+                    analysisReadiness.includes('EXCELLENT') || analysisReadiness.includes('COMPLETE') || analysisReadiness.includes('VERY GOOD') ? 'text-green-400' :
                     analysisReadiness === 'GOOD' ? 'text-blue-400' :
                     analysisReadiness === 'FAIR' ? 'text-yellow-400' : 'text-red-400'
                   }`}>{analysisReadiness}</span>
                 </div>
+                
+                <div className="flex items-center justify-between gap-4">
+                  <span>Estimated Confidence:</span>
+                  <span className="text-zinc-200">{estimatedConfidence}</span>
+                </div>
+                
                 {!useTradingStore.getState().signal && (
-                  <>
-                    <div className="flex items-center justify-between gap-4">
-                      <span>Est. Confidence:</span>
-                      <span className="text-zinc-200">{estimatedConfidence}</span>
-                    </div>
-                    <div className="text-[9px] text-zinc-500 italic mt-0.5">{readinessMessage}</div>
-                  </>
+                  <div className="flex items-center justify-between gap-4 mt-1">
+                    <span>Latest Analysis:</span>
+                    <span className="text-zinc-200 truncate max-w-[80px]" title={useTradingStore.getState().progressiveAnalyses.length > 0 ? `Batch #${useTradingStore.getState().progressiveAnalyses[useTradingStore.getState().progressiveAnalyses.length - 1].batchId}` : "Observing..."}>
+                      {useTradingStore.getState().progressiveAnalyses.length > 0 ? 
+                        `Batch #${useTradingStore.getState().progressiveAnalyses[useTradingStore.getState().progressiveAnalyses.length - 1].batchId}` : 
+                        "Observing..."}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

@@ -10,6 +10,8 @@ export const UniversalAIRequestSchema = z.object({
   confirmationTimeframe: z.string().optional(),
   trendTimeframe: z.string().optional(),
   tradeDuration: z.string().optional(),
+  isProgressive: z.boolean().optional(),
+  progressiveState: z.any().optional(),
   selectedStrategies: z.array(z.string()).optional(),
   strategyRules: z.string().optional(),
   visibleIndicators: z.array(z.string()).default([]),
