@@ -44,6 +44,18 @@ export const AI_MODELS: AIModel[] = [
     isFree: true,
   },
   {
+    id: "google/gemma-4-31b-it:free",
+    name: "Gemma 4 31B (OpenRouter)",
+    provider: "openrouter",
+    isFree: true,
+  },
+  {
+    id: "google/gemma-4-26b-a4b-it:free",
+    name: "Gemma 4 26B (OpenRouter)",
+    provider: "openrouter",
+    isFree: true,
+  },
+  {
     id: "nvidia/nemotron-nano-12b-v2-vl:free",
     name: "Nemotron Nano 12B VL",
     provider: "openrouter",
