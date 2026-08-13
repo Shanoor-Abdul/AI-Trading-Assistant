@@ -146,11 +146,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const newObs = { timestamp: Date.now(), imageBase64 };
     let updated = [...state.observations, newObs];
     
-    // Adjust lastAnalyzedObservationIndex when rolling
     let newIndex = state.lastAnalyzedObservationIndex;
     if (updated.length > maxCacheSize) {
-      updated = updated.slice(updated.length - maxCacheSize);
-      newIndex = Math.max(-1, newIndex - (updated.length - maxCacheSize));
+      const excess = updated.length - maxCacheSize;
+      updated = updated.slice(excess);
+      newIndex = Math.max(-1, newIndex - excess);
     }
     
     return { 

@@ -339,7 +339,9 @@ export default function Dashboard() {
                 confidence: data.confidence || 0
               };
               useTradingStore.getState().addProgressiveAnalysis(summary);
-              useTradingStore.getState().setLastAnalyzedObservationIndex(endIndex);
+              useTradingStore.getState().setLastAnalyzedObservationIndex(
+                useTradingStore.getState().lastAnalyzedObservationIndex + framesToAnalyze.length
+              );
               useTradingStore.getState().incrementBatchId();
             }
           }
