@@ -84,7 +84,7 @@ ${marketData
 - If the market is completely choppy and unreadable, output NO_TRADE.
 - If Confidence < 40, you MUST output UNSURE.
 
-Return ONLY JSON.
+Return ONLY valid JSON. Do not include any prefixes, markdown formatting, conversational text, or safety warnings like "User Safety: safe".
 
 {
   "trend":"Bullish | Bearish | Sideways",

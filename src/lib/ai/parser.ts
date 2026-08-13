@@ -23,6 +23,9 @@ export function parseAIResponse(text: string): TradingAnalysis {
     // Extract JSON block from the text
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      if (text.includes("User Safety:")) {
+        throw new Error(`The selected free model's safety filter blocked the chart analysis or it failed to format its response. Please try using a different AI model (like Gemini). Raw: ${text}`);
+      }
       throw new Error(`No JSON payload found in AI response. Raw output: ${text.substring(0, 200)}...`);
     }
     
