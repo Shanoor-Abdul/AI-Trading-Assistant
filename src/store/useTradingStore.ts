@@ -81,6 +81,7 @@ export interface TradingState {
   lastObservationTimestamp: number;
   setLastObservationTimestamp: (val: number) => void;
   clearProgressiveSession: () => void;
+  resetFramesButKeepSession: () => void;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -229,6 +230,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     totalFramesCaptured: 0,
     currentBatchId: 1,
     lastObservationTimestamp: 0
+  }),
+  resetFramesButKeepSession: () => set({
+    observations: [],
+    lastAnalyzedObservationIndex: -1,
+    totalFramesCaptured: 0,
+    // Keep progressiveAnalyses, currentBatchId, and lastObservationTimestamp as they are
   }),
 
   updateAnalysis: (data) => set((state) => {

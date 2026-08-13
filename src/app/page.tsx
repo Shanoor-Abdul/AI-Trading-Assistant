@@ -326,7 +326,13 @@ export default function Dashboard() {
             selectedStrategies,
             isProgressive: true,
             progressiveState: state.progressiveAnalyses,
-            screenshots: framesToAnalyze.map(obs => ({ base64: obs.imageBase64, mimeType: "image/jpeg" }))
+            screenshots: framesToAnalyze.map(obs => ({ 
+              timestamp: new Date(obs.timestamp).toISOString(),
+              mimeType: "image/jpeg",
+              base64: obs.imageBase64,
+              platform: platform,
+              symbol: symbol
+            }))
           };
           
           const response = await fetch('/api/analyze', {
@@ -462,7 +468,9 @@ export default function Dashboard() {
           reqBody.screenshots = selected.map(o => ({
             timestamp: new Date(o.timestamp).toISOString(),
             mimeType: "image/jpeg",
-            base64: o.imageBase64
+            base64: o.imageBase64,
+            platform: platform,
+            symbol: symbol
           }));
         } else {
           reqBody.imageBase64 = currentImageBase64;
@@ -502,7 +510,13 @@ export default function Dashboard() {
           low: data.low,
           close: data.close
         });
-        // We no longer call clearObservations() here so the progressive circle continues seamlessly
+        
+        // Reset the visual frames back to 0 so the next cycle starts fresh, 
+        // but KEEP the progressive state (the AI's previous thoughts).
+        if (useTradingStore.getState().marketDataMode === "visual_only") {
+          useTradingStore.getState().resetFramesButKeepSession();
+        }
+        
         toast.success("Analysis complete!");
       } else {
         incrementFailCount();
