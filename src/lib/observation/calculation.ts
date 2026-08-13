@@ -1,15 +1,28 @@
 import { parseDurationToSeconds } from "./timeframe";
 
-export function calculateExpectedFrames(chartTimeframe: string, tradeDuration: string, frequencySecs: number): number {
+export const PROGRESSIVE_BATCH_SIZE = 20;
+export const OBSERVATION_CACHE_SIZE = PROGRESSIVE_BATCH_SIZE * 2;
+
+export function calculateExpectedFrames(
+  chartTimeframe: string,
+  tradeDuration: string,
+  frequencySecs: number,
+): number {
+  if (!Number.isFinite(frequencySecs) || frequencySecs <= 0) return 0;
+
   const tfSeconds = parseDurationToSeconds(chartTimeframe);
   const durationSeconds = parseDurationToSeconds(tradeDuration);
-  
   const targetSeconds = Math.max(tfSeconds, durationSeconds);
+
   return Math.ceil(targetSeconds / frequencySecs);
 }
 
+/**
+ * The browser keeps two progressive batches in memory at most.
+ * Older frames are evicted after their progressive analysis has been saved.
+ * This keeps base64 image memory bounded while allowing the next 20-frame
+ * batch to be collected and analyzed continuously.
+ */
 export function calculateMaxObservationFrames(): number {
-  // We need at most the current batch size + whatever is accumulated
-  // To be safe and prevent memory leak, max is 40. The 20-frame batch will pull from this.
-  return 40;
+  return OBSERVATION_CACHE_SIZE;
 }
