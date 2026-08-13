@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
-import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info, Layers, TrendingUp, TrendingDown, Minus, Calculator, Square, Play } from "lucide-react";
+import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info, Layers, TrendingUp, TrendingDown, Minus, Calculator, Square, Play, Target } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
@@ -17,7 +17,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 export default function MobileDashboard() {
   const {
     platform, symbol, tradeDuration, primaryTimeframe, confirmationTimeframe,
-    strategy,
+    selectedStrategies,
     selectedProvider,
     selectedModel,
     marketDataMode,
@@ -84,7 +84,7 @@ export default function MobileDashboard() {
         confirmationTimeframe: confirmationTimeframe?.trim(),
         provider: selectedProvider,
         model: selectedModel,
-        strategy,
+        selectedStrategies,
         visibleIndicators,
         marketDataMode: "visual_only",
         previousData: pendingUnsureRequest ? previousAnalysisData : undefined
@@ -176,7 +176,7 @@ export default function MobileDashboard() {
                   value={platform} 
                   onChange={e => setField("platform", e.target.value)} 
                   className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  placeholder="OlympTrade"
+                  placeholder="e.g. Binomo"
                 />
               </div>
             <div className="space-y-1.5">
@@ -193,7 +193,7 @@ export default function MobileDashboard() {
                 value={symbol} 
                 onChange={e => setField("symbol", e.target.value.toUpperCase())} 
                 className="h-9 bg-zinc-900 border-zinc-800 text-sm font-medium text-center"
-                placeholder="BTCUSDT"
+                placeholder="e.g. EUR/USD"
               />
             </div>
             <div className="space-y-1.5">
@@ -210,7 +210,7 @@ export default function MobileDashboard() {
                 value={primaryTimeframe} 
                 onChange={e => setField("primaryTimeframe", e.target.value)} 
                 className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                placeholder="5m"
+                placeholder="e.g. 5m"
               />
             </div>
               <div className="space-y-1.5">
@@ -227,7 +227,7 @@ export default function MobileDashboard() {
                   value={tradeDuration} 
                   onChange={e => setField("tradeDuration", e.target.value)} 
                   className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  placeholder="5m"
+                  placeholder="e.g. 5m"
                 />
               </div>
           </div>
@@ -279,6 +279,49 @@ export default function MobileDashboard() {
                     <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
                   ))}
                 </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-zinc-400">Selected Strategies</Label>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-3 h-3 text-zinc-500" />
+                </TooltipTrigger>
+                <TooltipContent><p>Select one or more trading strategies for the AI to apply.</p></TooltipContent>
+              </Tooltip>
+            </div>
+            <Select
+              value={selectedStrategies.join(",")}
+              onValueChange={(val: string | null) => {
+                if (!val) return;
+                if (selectedStrategies.includes(val)) {
+                  setField("selectedStrategies", selectedStrategies.filter((s: string) => s !== val));
+                } else {
+                  setField("selectedStrategies", [...selectedStrategies, val]);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm focus:ring-0 focus:ring-offset-0">
+                <Target className="w-4 h-4 mr-2 text-zinc-400" />
+                <SelectValue placeholder="Add Strategy" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                {["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading"].map(strat => (
+                  <SelectItem key={strat} value={strat}>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedStrategies.includes(strat)}
+                        readOnly
+                        className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
+                      />
+                      {strat}
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

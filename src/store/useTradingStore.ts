@@ -37,8 +37,11 @@ export interface TradingState {
   selectedProvider: string;
   selectedModel: string;
   setSelectedModel: (provider: string, model: string) => void;
-  strategy: string;
-  setStrategy: (val: string) => void;
+  selectedStrategies: string[];
+  setSelectedStrategies: (val: string[]) => void;
+  observations: Array<{ timestamp: number; imageBase64: string }>;
+  addObservation: (imageBase64: string) => void;
+  clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE";
   setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
   marketDataMode: "api" | "visual_only";
@@ -95,8 +98,21 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   selectedProvider: "gemini",
   selectedModel: "gemini-2.0-flash",
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
-  strategy: "Trend Following",
-  setStrategy: (val) => set({ strategy: val }),
+  selectedStrategies: ["Trend Following"],
+  setSelectedStrategies: (val) => set({ selectedStrategies: val }),
+  observations: [],
+  addObservation: (imageBase64) => set((state) => {
+    // Keep max 5 observations to prevent memory leaks and payload bloat
+    const newObs = { timestamp: Date.now(), imageBase64 };
+    let updated = [...state.observations, newObs];
+    // If the new one is basically identical to the previous one in time, we could filter it, 
+    // but a simple length boundary is safer and handles periodic snapshots well.
+    if (updated.length > 5) {
+      updated = updated.slice(updated.length - 5); // keep last 5
+    }
+    return { observations: updated };
+  }),
+  clearObservations: () => set({ observations: [] }),
   tradingMode: "MANUAL",
   setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api",
@@ -138,23 +154,32 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       const historyEntry: TradeHistoryEntry = {
         id: Math.random().toString(36).substring(2, 9),
         timestamp: Date.now(),
-        symbol: newState.symbol,
-        timeframe: newState.timeframe,
+        symbol: (data as any).detectedSymbol || newState.symbol,
+        timeframe: (data as any).recommendedTimeframe || newState.timeframe,
         trend: newState.trend,
         signal: newState.signal,
         confidence: newState.confidence,
-        recommendedTimeframe: newState.recommendedTimeframe || newState.timeframe,
+        recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
         entryPrice: newState.entryPrice,
         stopLoss: newState.stopLoss,
         takeProfit: newState.takeProfit,
         explanation: newState.explanation,
-        open: newState.open || null,
-        high: newState.high || null,
-        low: newState.low || null,
-        close: newState.close || null,
         status: (newState.signal === "WAIT" || newState.signal === "NO_TRADE") ? "SKIPPED" : "OPEN",
+        open: newState.open,
+        high: newState.high,
+        low: newState.low,
+        close: newState.close,
         screenshotBase64: newState.lastImageBase64 || undefined,
-        dbTradeId: (data as any).dbTradeId, // Save the database UUID for reviews
+        dbTradeId: (data as any).dbTradeId,
+        requiredTimeframe: (data as any).requiredTimeframe,
+        requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
+        detectedSymbol: (data as any).detectedSymbol,
+        detectedTimeframe: (data as any).detectedTimeframe,
+        exchange: (data as any).exchange,
+        marketProvider: (data as any).marketProvider,
+        riskDecision: (data as any).riskDecision,
+        reasoning: (data as any).reasoning,
+        dataConfidence: (data as any).dataConfidence,
       };
       
       newState.tradeHistory = [historyEntry, ...state.tradeHistory];

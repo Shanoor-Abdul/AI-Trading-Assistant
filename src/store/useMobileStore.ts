@@ -8,7 +8,7 @@ export interface MobileState {
   tradeDuration: string;
   primaryTimeframe: string;
   confirmationTimeframe: string;
-  strategy: string;
+  selectedStrategies: string[];
   selectedProvider: string;
   selectedModel: string;
   marketDataMode: "api" | "visual_only";
@@ -39,7 +39,7 @@ export const useMobileStore = create<MobileState>((set) => ({
   tradeDuration: "5m",
   primaryTimeframe: "5m",
   confirmationTimeframe: "15m",
-  strategy: "Trend Following",
+  selectedStrategies: ["Trend Following"],
   selectedProvider: "gemini",
   selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",

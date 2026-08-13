@@ -22,8 +22,10 @@ export interface ExchangeConnection {
 export type Trend = "Bullish" | "Bearish" | "Sideways";
 
 export type Signal =
+  | "STRONG_BUY"
   | "BUY"
   | "SELL"
+  | "STRONG_SELL"
   | "WAIT"
   | "UNSURE"
   | "NO_TRADE";
@@ -49,7 +51,7 @@ export interface AnalyzeRequest {
   timeframe?: string; // Also serves as primaryTimeframe
   provider: AIProvider;
   model?: string;
-  strategy?: string;
+  selectedStrategies?: string[];
   strategyRules?: string;
   marketData?: any;
   platform?: string;
@@ -60,6 +62,7 @@ export interface AnalyzeRequest {
   tradingMode?: TradingMode;
   visibleIndicators?: string[];
   activeConnectionId?: string;
+  previousData?: any;
 }
 
 export interface TradingAnalysis {
@@ -67,29 +70,32 @@ export interface TradingAnalysis {
   signal: Signal;
   confidence: number;
   recommendedTimeframe: string;
-  requiredTimeframe?: string;
+  requiredTimeframe: string | null;
   entryPrice: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
-  riskReward?: number;
   explanation: string;
+  requestedIndicators: string[];
+  
+  detectedSymbol: string | null;
+  detectedTimeframe: string | null;
+  exchange: string | null;
+  marketProvider: "unknown" | "visual_only" | "ccxt" | "broker_api";
+  riskDecision: string;
+  reasoning: string;
+  dataConfidence: number;
+
+  riskReward?: number;
   marketRegime?: string;
-  requestedIndicators?: string[];
 
-  detectedSymbol?: string;
-  detectedTimeframe?: string;
-
-  // New Phase 8 Metadata
+  // Metadata
   analysisId?: string;
-  exchange?: string;
-  marketProvider?: string;
   dataTimestamp?: number;
   dataAge?: number;
   primaryTimeframe?: string;
   confirmationTimeframe?: string;
   trendTimeframe?: string;
   tradeDuration?: string;
-  riskDecision?: string;
   
   marketDataMode?: MarketDataMode;
   marketDataStatus?: MarketDataStatus;

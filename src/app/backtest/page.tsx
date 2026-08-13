@@ -10,7 +10,7 @@ import { Play, Activity } from "lucide-react";
 import { toast } from "sonner";
 
 export default function BacktestPage() {
-  const { symbol, timeframe, strategy, selectedProvider, selectedModel } = useTradingStore();
+  const { symbol, timeframe, selectedStrategies, selectedProvider, selectedModel } = useTradingStore();
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<any>(null);
 
@@ -24,7 +24,7 @@ export default function BacktestPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          symbol, timeframe, strategy, provider: selectedProvider, model: selectedModel, days: 30
+          symbol, timeframe, selectedStrategies, provider: selectedProvider, model: selectedModel, days: 30
         })
       });
       
@@ -61,7 +61,7 @@ export default function BacktestPage() {
            </div>
            <div>
              <span className="text-xs text-zinc-400 block mb-1">Strategy</span>
-             <Input value={strategy} disabled className="bg-zinc-900/50" />
+             <Input value={selectedStrategies?.join(", ")} disabled className="bg-zinc-900/50" />
            </div>
            <Button onClick={handleRunBacktest} disabled={isRunning} className="bg-purple-600 hover:bg-purple-700 w-full">
              {isRunning ? <Activity className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}

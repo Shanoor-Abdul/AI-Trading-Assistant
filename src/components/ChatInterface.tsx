@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Loader2, Bot, User } from "lucide-react";
 import { useTradingStore } from "@/store/useTradingStore";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   role: "user" | "assistant";
@@ -18,15 +19,13 @@ export function ChatInterface() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { lastImageBase64, selectedProvider, selectedModel } = useTradingStore();
 
   // Auto scroll to bottom
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const handleSend = async () => {
@@ -78,13 +77,19 @@ export function ChatInterface() {
         <CardDescription>Ask specific questions about the live chart</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col overflow-hidden p-0">
-        <ScrollArea className="flex-1 px-4" ref={scrollRef}>
+        <ScrollArea className="flex-1 px-4">
           <div className="space-y-4 pb-4">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-lg p-3 text-sm flex gap-3 ${m.role === "user" ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-200"}`}>
                   {m.role === "assistant" && <Bot className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />}
-                  <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                  {m.role === "assistant" ? (
+                    <div className="markdown-body space-y-2 [&>h3]:text-md [&>h3]:font-bold [&>h4]:font-semibold [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&_strong]:text-purple-400 [&_a]:text-blue-400">
+                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                  )}
                   {m.role === "user" && <User className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />}
                 </div>
               </div>
@@ -97,6 +102,7 @@ export function ChatInterface() {
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
         <div className="p-4 mt-auto border-t border-zinc-800/50">

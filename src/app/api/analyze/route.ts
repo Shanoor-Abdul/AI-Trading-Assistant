@@ -41,10 +41,10 @@ function createTimings(): AnalysisTimings {
   };
 }
 
-function validateRequest(body: AnalyzeRequest) {
-  if (!body.imageBase64) {
+function validateRequest(body: any) {
+  if (!body.imageBase64 && (!body.screenshots || body.screenshots.length === 0)) {
     return NextResponse.json(
-      { error: "Image is required" },
+      { error: "Image(s) are required" },
       { status: 400 }
     );
   }
@@ -86,7 +86,8 @@ function resolveMTFTimeframes(
   let trendTimeframe = body.trendTimeframe;
 
   if (!confirmationTimeframe) {
-    const strategy = body.strategy || "Trend Following";
+    const strategies = (body as any).selectedStrategies || [];
+    const strategy = strategies.length > 0 ? strategies[0] : (body as any).strategy || "Trend Following";
     const primaryTimeframe = body.timeframe;
 
     if (strategy === "Scalping") {
@@ -535,7 +536,7 @@ async function persistAnalysis(
           user_id: userId,
           prompt_version: "v3",
           strategy_version:
-            body.strategy || "Standard",
+            (body as any).strategy || (body.selectedStrategies ? body.selectedStrategies.join(",") : "Standard"),
           indicator_version: "v2",
           ai_model_version:
             body.model || "default",
@@ -660,7 +661,7 @@ async function persistAnalysis(
       }
     }
 
-    await supabase
+    const { data: insertedTrade } = await supabase
       .from("trades")
       .insert({
         user_id: userId,
@@ -674,7 +675,13 @@ async function persistAnalysis(
           calculatedPositionSize,
         execution_mode: tradingMode,
         status: tradeStatus,
-      });
+      })
+      .select()
+      .single();
+
+    if (insertedTrade) {
+      (result as any).dbTradeId = insertedTrade.id;
+    }
   } catch (error) {
     console.error(
       "Failed to journal trade to Supabase:",
@@ -807,8 +814,9 @@ export async function POST(
 
     const tIndicatorStart = performance.now();
 
+    const strategyStr = body.selectedStrategies ? body.selectedStrategies.join(", ") : (body as any).strategy;
     const strategyRules = await getStrategyRules(
-      body.strategy,
+      strategyStr,
       body.platform,
       body.tradeDuration,
       body.marketDataMode
@@ -826,8 +834,8 @@ export async function POST(
       performance.now();
 
     const aiPromise = analyze({
-      imageBase64:
-        body.imageBase64,
+      imageBase64: body.imageBase64,
+      screenshots: (body as any).screenshots,
 
       symbol:
         body.symbol,
@@ -845,6 +853,7 @@ export async function POST(
         body.provider || "gemini",
         
       visibleIndicators: body.visibleIndicators,
+      selectedStrategies: body.selectedStrategies,
 
       model:
         body.model,
@@ -860,6 +869,7 @@ export async function POST(
             },
 
       strategyRules,
+      previousData: body.previousData,
     } as any);
 
     /*
@@ -871,11 +881,13 @@ export async function POST(
     const tStorageStart =
       performance.now();
 
+    const screenshotToUpload = body.imageBase64 || ((body as any).screenshots && (body as any).screenshots.length > 0 ? (body as any).screenshots[(body as any).screenshots.length - 1].base64 : undefined);
+    
     const screenshotUrlPromise =
       uploadScreenshot(
         supabase,
         user?.id,
-        body.imageBase64
+        screenshotToUpload
       );
 
     /*
@@ -904,20 +916,7 @@ export async function POST(
      * ==========================================
      */
 
-    const enrichedResult =
-      result as TradingAnalysis & {
-        exchange?: string;
-        marketProvider?: string;
-        dataTimestamp?: number;
-        dataAge?: number;
-        symbol?: string;
-        primaryTimeframe?: string;
-        confirmationTimeframe?: string;
-        trendTimeframe?: string;
-        marketDataMode?: string;
-        marketDataStatus?: string;
-        timings?: AnalysisTimings;
-      };
+    const enrichedResult = result as any;
 
     enrichedResult.exchange =
       marketContext.exchange;
