@@ -32,6 +32,18 @@ export const AI_MODELS: AIModel[] = [
 
   // OpenRouter (Free Vision Models)
   {
+    id: "qwen/qwen-2-vl-7b-instruct:free",
+    name: "Qwen 2 VL 7B (Best Free)",
+    provider: "openrouter",
+    isFree: true,
+  },
+  {
+    id: "google/gemini-2.0-flash-lite-preview-02-05:free",
+    name: "Gemini Flash Lite (OpenRouter)",
+    provider: "openrouter",
+    isFree: true,
+  },
+  {
     id: "nvidia/nemotron-nano-12b-v2-vl:free",
     name: "Nemotron Nano 12B VL",
     provider: "openrouter",
@@ -43,7 +55,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "openrouter",
     isFree: true,
   },
-  
 
   // OpenAI (Paid / Credits Required)
   { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", isFree: false },
