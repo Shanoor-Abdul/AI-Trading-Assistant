@@ -1,25 +1,23 @@
-export const PROGRESSIVE_BATCH_SIZE = 20;
+import { PROGRESSIVE_BATCH_SIZE } from "./calculation";
 
-export function getBatchProgress(
-  totalFramesCaptured: number,
-  lastAnalyzedObservationIndex: number,
+export { PROGRESSIVE_BATCH_SIZE };
+
+export function getUnanalyzedBatchCount(
   observationCount: number,
+  lastAnalyzedObservationIndex: number,
 ): number {
-  if (observationCount === 0) return 0;
+  if (observationCount <= 0) return 0;
 
-  const analyzedThrough = lastAnalyzedObservationIndex >= 0
+  const analyzedCount = lastAnalyzedObservationIndex >= 0
     ? lastAnalyzedObservationIndex + 1
     : 0;
 
-  return Math.max(0, Math.min(
-    PROGRESSIVE_BATCH_SIZE,
-    totalFramesCaptured - Math.max(0, totalFramesCaptured - observationCount) - analyzedThrough,
-  ));
+  return Math.max(0, observationCount - analyzedCount);
 }
 
 export function hasCompleteBatch(
-  observationsAvailableForBatch: number,
-  batchSize = PROGRESSIVE_BATCH_SIZE,
+  observationCount: number,
+  lastAnalyzedObservationIndex: number,
 ): boolean {
-  return observationsAvailableForBatch >= batchSize;
+  return getUnanalyzedBatchCount(observationCount, lastAnalyzedObservationIndex) >= PROGRESSIVE_BATCH_SIZE;
 }
