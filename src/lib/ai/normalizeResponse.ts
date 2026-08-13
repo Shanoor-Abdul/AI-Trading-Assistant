@@ -52,6 +52,13 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       riskDecision: rawObj.riskDecision || rawObj.risk_decision || "UNSURE",
       reasoning: rawObj.reasoning || rawObj.reason || "No reasoning provided",
       dataConfidence: rawObj.dataConfidence || rawObj.data_confidence || rawObj.confidence || 0,
+      marketState: rawObj.marketState || rawObj.market_state,
+      changesFromPrevious: rawObj.changesFromPrevious || rawObj.changes_from_previous,
+      momentum: rawObj.momentum,
+      candlestickBehavior: rawObj.candlestickBehavior || rawObj.candlestick_behavior,
+      indicatorState: rawObj.indicatorState || rawObj.indicator_state,
+      strategyConsensus: rawObj.strategyConsensus || rawObj.strategy_consensus,
+      strategyConflicts: rawObj.strategyConflicts || rawObj.strategy_conflicts,
     };
 
     return UniversalAIResponseSchema.parse(normalized);

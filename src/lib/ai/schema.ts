@@ -50,6 +50,13 @@ export const UniversalAIResponseSchema = z.object({
   reasoning: z.string().default("No reasoning provided"),
   dataConfidence: z.coerce.number().min(0).max(100).default(0),
   riskReward: z.number().optional(),
+  marketState: z.string().optional(),
+  changesFromPrevious: z.string().optional(),
+  momentum: z.string().optional(),
+  candlestickBehavior: z.string().optional(),
+  indicatorState: z.any().optional(),
+  strategyConsensus: z.string().optional(),
+  strategyConflicts: z.any().optional(),
 });
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;
