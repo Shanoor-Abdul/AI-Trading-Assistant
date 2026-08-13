@@ -234,6 +234,22 @@ export default function Dashboard() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Add reference watermark for AI validation
+      const state = useTradingStore.getState();
+      const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
+      const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
+      
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+      
+      ctx.fillStyle = "#4ade80"; // green-400
+      ctx.font = "bold 18px Arial";
+      ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+      
+      ctx.fillStyle = "#e4e4e7"; // zinc-200
+      ctx.font = "16px Arial";
+      ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
       useTradingStore.getState().addObservation(imageBase64);
     };
@@ -372,6 +388,22 @@ export default function Dashboard() {
     if (!ctx) return;
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Add reference watermark for AI validation
+    const state = useTradingStore.getState();
+    const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
+    const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
+    
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+    
+    ctx.fillStyle = "#4ade80"; // green-400
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+    
+    ctx.fillStyle = "#e4e4e7"; // zinc-200
+    ctx.font = "16px Arial";
+    ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
     setLastImageBase64(imageBase64);
     
