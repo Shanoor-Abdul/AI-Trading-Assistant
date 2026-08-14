@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TradeCountdown } from "@/components/TradeCountdown";
 
 export function MobileHistory() {
-  const { tradeHistory } = useMobileStore();
+  const { tradeHistory, setField } = useMobileStore();
 
   if (tradeHistory.length === 0) {
     return (
@@ -81,6 +81,21 @@ export function MobileHistory() {
                     startedAt={startedAt}
                     duration={duration}
                     compact
+                    onComplete={() => {
+                      const current = useMobileStore.getState().tradeHistory;
+                      setField(
+                        "tradeHistory",
+                        current.map((item) =>
+                          item.id === trade.id && item.status === "OPEN"
+                            ? {
+                                ...item,
+                                status: "CLOSED",
+                                paperTradeExpiresAt: startedAt + Date.now() - Date.now() + 0,
+                              }
+                            : item,
+                        ),
+                      );
+                    }}
                   />
                 </div>
               )}
