@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { TradingAnalysis, TradeHistoryEntry } from '@/lib/types';
 
 export interface MobileState {
-  // Form state
   platform: string;
   symbol: string;
   tradeDuration: string;
@@ -13,21 +12,13 @@ export interface MobileState {
   selectedModel: string;
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
-  
-  // Image state
   previewImageBase64: string | null;
-  
-  // App state
   isAnalyzing: boolean;
   analysisResult: TradingAnalysis | null;
   tradeHistory: TradeHistoryEntry[];
-  
-  // Unsure workflow state
   pendingUnsureRequest: boolean;
   requestedTimeframe: string | null;
   previousAnalysisData: any | null;
-
-  // Actions
   setField: (field: keyof MobileState, value: any) => void;
   clearAnalysis: () => void;
   resetAll: () => void;
@@ -44,19 +35,26 @@ export const useMobileStore = create<MobileState>((set) => ({
   selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",
   visibleIndicators: [],
-  
   previewImageBase64: null,
-  
   isAnalyzing: false,
   analysisResult: null,
   tradeHistory: [],
-  
   pendingUnsureRequest: false,
   requestedTimeframe: null,
   previousAnalysisData: null,
 
-  setField: (field, value) => set({ [field]: value }),
-  
+  setField: (field, value) =>
+    set((state) => {
+      if (field === "tradeHistory" && Array.isArray(value)) {
+        const history = (value as TradeHistoryEntry[]).map((trade) => ({
+          ...trade,
+          tradeDuration: trade.tradeDuration || state.tradeDuration,
+        }));
+        return { tradeHistory: history };
+      }
+      return { [field]: value } as Partial<MobileState>;
+    }),
+
   clearAnalysis: () => set({
     previewImageBase64: null,
     analysisResult: null,
@@ -64,13 +62,12 @@ export const useMobileStore = create<MobileState>((set) => ({
     requestedTimeframe: null,
     previousAnalysisData: null,
   }),
-  
+
   resetAll: () => set({
     previewImageBase64: null,
     analysisResult: null,
     pendingUnsureRequest: false,
     requestedTimeframe: null,
     previousAnalysisData: null,
-    // Note: intentionally not clearing tradeHistory
   })
 }));
