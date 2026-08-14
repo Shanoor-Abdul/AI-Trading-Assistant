@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 import { TradingAnalysis, TradeHistoryEntry } from '@/lib/types';
+import {
+  appendMobileObservation,
+  MOBILE_VISUAL_HISTORY_LIMIT,
+  MobileVisualObservation,
+} from '@/lib/mobile/visualHistory';
 
 export interface MobileState {
-  // Form state
   platform: string;
   symbol: string;
   tradeDuration: string;
@@ -13,22 +17,21 @@ export interface MobileState {
   selectedModel: string;
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
-  
-  // Image state
+
   previewImageBase64: string | null;
-  
-  // App state
+  visualHistory: MobileVisualObservation[];
+
   isAnalyzing: boolean;
   analysisResult: TradingAnalysis | null;
   tradeHistory: TradeHistoryEntry[];
-  
-  // Unsure workflow state
+
   pendingUnsureRequest: boolean;
   requestedTimeframe: string | null;
-  previousAnalysisData: any | null;
+  previousAnalysisData: TradingAnalysis | null;
 
-  // Actions
-  setField: (field: keyof MobileState, value: any) => void;
+  setField: <K extends keyof MobileState>(field: K, value: MobileState[K]) => void;
+  addVisualObservation: (base64: string) => void;
+  clearVisualHistory: () => void;
   clearAnalysis: () => void;
   resetAll: () => void;
 }
@@ -44,33 +47,49 @@ export const useMobileStore = create<MobileState>((set) => ({
   selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",
   visibleIndicators: [],
-  
+
   previewImageBase64: null,
-  
+  visualHistory: [],
+
   isAnalyzing: false,
   analysisResult: null,
   tradeHistory: [],
-  
+
   pendingUnsureRequest: false,
   requestedTimeframe: null,
   previousAnalysisData: null,
 
   setField: (field, value) => set({ [field]: value }),
-  
+
+  addVisualObservation: (base64) => set((state) => ({
+    previewImageBase64: base64,
+    visualHistory: appendMobileObservation(state.visualHistory, {
+      timestamp: Date.now(),
+      base64,
+      timeframe: state.primaryTimeframe,
+    }, MOBILE_VISUAL_HISTORY_LIMIT),
+  })),
+
+  clearVisualHistory: () => set({
+    previewImageBase64: null,
+    visualHistory: [],
+  }),
+
   clearAnalysis: () => set({
     previewImageBase64: null,
+    visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
     requestedTimeframe: null,
     previousAnalysisData: null,
   }),
-  
+
   resetAll: () => set({
     previewImageBase64: null,
+    visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
     requestedTimeframe: null,
     previousAnalysisData: null,
-    // Note: intentionally not clearing tradeHistory
-  })
+  }),
 }));
