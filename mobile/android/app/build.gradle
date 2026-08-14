@@ -1,0 +1,30 @@
+plugins {
+  id "com.android.application"
+  id "org.jetbrains.kotlin.android"
+  id "com.facebook.react"
+}
+
+react { autolinkLibrariesWithApp() }
+
+android {
+  namespace "com.aitradingassistant"
+  compileSdk 35
+
+  defaultConfig {
+    applicationId "com.aitradingassistant"
+    minSdk 26
+    targetSdk 35
+    versionCode 1
+    versionName "0.1.0"
+  }
+
+  buildTypes {
+    debug { minifyEnabled false }
+    release { minifyEnabled false; proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro" }
+  }
+}
+
+dependencies {
+  implementation("com.facebook.react:react-android")
+  implementation("com.facebook.react:hermes-android")
+}
