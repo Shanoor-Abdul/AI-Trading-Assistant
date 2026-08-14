@@ -1,33 +1,38 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { useMobileStore } from "@/store/useMobileStore";
+import { selectMobileAnalysisFrames } from "@/lib/mobile/visualHistory";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
-import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info, Layers, TrendingUp, TrendingDown, Minus, Calculator, Square, Play, Target } from "lucide-react";
+import { Activity, Camera, Loader2, RefreshCw, AlertTriangle, Info, Layers, Target, Trash2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
 import { MobileHistory } from "@/components/mobile/MobileHistory";
-import { AI_MODELS, getModelsByProvider } from "@/config/models";
+import { getModelsByProvider } from "@/config/models";
 import { LogoutButton } from "@/components/LogoutButton";
+
+const STRATEGIES = ["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading"];
+const INDICATORS = ["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"];
 
 export default function MobileDashboard() {
   const {
     platform, symbol, tradeDuration, primaryTimeframe, confirmationTimeframe,
-    selectedStrategies,
-    selectedProvider,
-    selectedModel,
-    marketDataMode,
-    visibleIndicators,
-    previewImageBase64,
-    isAnalyzing, analysisResult, pendingUnsureRequest, requestedTimeframe,
-    previousAnalysisData, setField, clearAnalysis, resetAll
+    selectedStrategies, selectedProvider, selectedModel, visibleIndicators,
+    previewImageBase64, visualHistory, isAnalyzing, analysisResult,
+    pendingUnsureRequest, requestedTimeframe, previousAnalysisData,
+    setField, addVisualObservation, clearVisualHistory, clearAnalysis,
   } = useMobileStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resetContext = <K extends keyof ReturnType<typeof useMobileStore>>(field: K, value: ReturnType<typeof useMobileStore>[K]) => {
+    clearAnalysis();
+    setField(field, value);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -40,108 +45,105 @@ export default function MobileDashboard() {
         const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-        
-        // Scale down if too large (max 1920px)
-        const MAX_SIZE = 1920;
-        if (width > height && width > MAX_SIZE) {
-          height *= MAX_SIZE / width;
-          width = MAX_SIZE;
-        } else if (height > MAX_SIZE) {
-          width *= MAX_SIZE / height;
-          height = MAX_SIZE;
+        const maxSize = 1920;
+
+        if (width > height && width > maxSize) {
+          height *= maxSize / width;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width *= maxSize / height;
+          height = maxSize;
         }
-        
+
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-          setField("previewImageBase64", compressedBase64);
-        }
+        if (!ctx) return;
+
+        ctx.drawImage(img, 0, 0, width, height);
+        addVisualObservation(canvas.toDataURL("image/jpeg", 0.7));
       };
-      img.src = event.target?.result as string;
+      img.src = String(event.target?.result ?? "");
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const handleAnalyze = async () => {
-    if (!previewImageBase64) {
-      toast.error("Please upload a chart screenshot first.");
+    const frames = selectMobileAnalysisFrames(visualHistory);
+    if (frames.length === 0) {
+      toast.error("Upload at least one chart screenshot first.");
       return;
     }
 
     setField("isAnalyzing", true);
 
     try {
-      // Build request payload
+      const screenshots = frames.map((frame) => ({
+        timeframe: frame.timeframe,
+        mimeType: "image/jpeg" as const,
+        base64: frame.base64,
+      }));
+
       const payload = {
-        imageBase64: previewImageBase64,
-        platform: platform?.trim() || "OlympTrade",
-        symbol: symbol?.trim().toUpperCase(),
-        timeframe: (pendingUnsureRequest && requestedTimeframe ? requestedTimeframe : primaryTimeframe)?.trim() || "5m",
-        tradeDuration: tradeDuration?.trim(),
-        confirmationTimeframe: confirmationTimeframe?.trim(),
+        imageBase64: frames[frames.length - 1].base64,
+        screenshots,
+        platform: platform.trim(),
+        symbol: symbol.trim().toUpperCase(),
+        timeframe: (pendingUnsureRequest && requestedTimeframe ? requestedTimeframe : primaryTimeframe).trim(),
+        tradeDuration: tradeDuration.trim(),
+        confirmationTimeframe: confirmationTimeframe.trim(),
         provider: selectedProvider,
         model: selectedModel,
         selectedStrategies,
         visibleIndicators,
         marketDataMode: "visual_only",
-        previousData: pendingUnsureRequest ? previousAnalysisData : undefined
+        previousData: previousAnalysisData ?? undefined,
       };
 
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error("API request failed");
-
       const data = await res.json();
-
-      if (data.marketDataStatus === "fallback") {
-        toast("Live data not found for this symbol. Falling back to Visual-Only mode.", {
-          icon: "👀",
-        });
-      }
 
       if (data.signal === "UNSURE" && data.requiredTimeframe) {
         setField("pendingUnsureRequest", true);
         setField("requestedTimeframe", data.requiredTimeframe);
         setField("previousAnalysisData", data);
-        setField("previewImageBase64", null); // Clear image for new upload
         toast("Additional confirmation needed.");
-      } else {
-        setField("analysisResult", data);
-        setField("pendingUnsureRequest", false);
-        setField("requestedTimeframe", null);
-        
-        // Add to history
-        const newTrade = {
-          id: Math.random().toString(36).substring(2, 9),
-          timestamp: Date.now(),
-          symbol,
-          timeframe: primaryTimeframe,
-          trend: data.trend,
-          signal: data.signal,
-          confidence: data.confidence,
-          recommendedTimeframe: data.recommendedTimeframe,
-          entryPrice: data.entryPrice,
-          stopLoss: data.stopLoss,
-          takeProfit: data.takeProfit,
-          explanation: data.explanation,
-          status: (data.signal === "WAIT" || data.signal === "NO_TRADE") ? "SKIPPED" : "OPEN"
-        };
-        const currentHistory = useMobileStore.getState().tradeHistory;
-        setField("tradeHistory", [newTrade, ...currentHistory]);
-        
-        // Clear preview image as requested (to not store base64 permanently)
-        setField("previewImageBase64", null);
-        toast.success("Analysis complete!");
+        return;
       }
-    } catch (err) {
-      console.error(err);
+
+      setField("analysisResult", data);
+      setField("pendingUnsureRequest", false);
+      setField("requestedTimeframe", null);
+      setField("previousAnalysisData", data);
+
+      const newTrade = {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        symbol,
+        timeframe: primaryTimeframe,
+        trend: data.trend,
+        signal: data.signal,
+        confidence: data.confidence,
+        recommendedTimeframe: data.recommendedTimeframe,
+        entryPrice: data.entryPrice,
+        stopLoss: data.stopLoss,
+        takeProfit: data.takeProfit,
+        explanation: data.explanation,
+        status: data.signal === "WAIT" || data.signal === "NO_TRADE" ? "SKIPPED" : "OPEN",
+      };
+
+      const history = useMobileStore.getState().tradeHistory;
+      setField("tradeHistory", [newTrade, ...history]);
+      toast.success(`Analysis complete using ${frames.length} frame${frames.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      console.error(error);
       toast.error("Failed to analyze chart.");
     } finally {
       setField("isAnalyzing", false);
@@ -150,313 +152,112 @@ export default function MobileDashboard() {
 
   return (
     <TooltipProvider>
-    <main className="p-4 flex flex-col gap-6 max-w-md mx-auto">
-      <header className="flex justify-between items-center mb-2">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">AI Assistant</h1>
-          <p className="text-xs text-zinc-400">Mobile Scanner</p>
-        </div>
-        <LogoutButton />
-      </header>
-
-      {!pendingUnsureRequest ? (
-        <section className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1">
-                  <Label className="text-xs text-zinc-400">Platform</Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="w-3 h-3 text-zinc-500" />
-                    </TooltipTrigger>
-                    <TooltipContent><p>Trading platform being used (e.g. OlympTrade)</p></TooltipContent>
-                  </Tooltip>
-                </div>
-                <Input 
-                  value={platform} 
-                  onChange={e => setField("platform", e.target.value)} 
-                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  placeholder="e.g. Binomo"
-                />
-              </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-zinc-400">Symbol</Label>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="w-3 h-3 text-zinc-500" />
-                  </TooltipTrigger>
-                  <TooltipContent><p>Asset ticker pair (e.g. BTCUSDT)</p></TooltipContent>
-                </Tooltip>
-              </div>
-              <Input 
-                value={symbol} 
-                onChange={e => setField("symbol", e.target.value.toUpperCase())} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm font-medium text-center"
-                placeholder="e.g. EUR/USD"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-zinc-400">Chart TF</Label>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="w-3 h-3 text-zinc-500" />
-                  </TooltipTrigger>
-                  <TooltipContent><p>Primary chart timeframe (e.g. 5m)</p></TooltipContent>
-                </Tooltip>
-              </div>
-              <Input 
-                value={primaryTimeframe} 
-                onChange={e => setField("primaryTimeframe", e.target.value)} 
-                className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                placeholder="e.g. 5m"
-              />
-            </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1">
-                  <Label className="text-xs text-zinc-400">Duration</Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="w-3 h-3 text-zinc-500" />
-                    </TooltipTrigger>
-                    <TooltipContent><p>How long the trade should last</p></TooltipContent>
-                  </Tooltip>
-                </div>
-                <Input 
-                  value={tradeDuration} 
-                  onChange={e => setField("tradeDuration", e.target.value)} 
-                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  placeholder="e.g. 5m"
-                />
-              </div>
+      <main className="p-4 flex flex-col gap-5 max-w-md mx-auto">
+        <header className="flex justify-between items-center">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">AI Assistant</h1>
+            <p className="text-xs text-zinc-400">Mobile Visual Scanner</p>
           </div>
+          <LogoutButton />
+        </header>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1">
+        {!pendingUnsureRequest && (
+          <section className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Platform", platform, "platform", "e.g. Binomo"],
+                ["Symbol", symbol, "symbol", "e.g. EUR/USD"],
+                ["Chart TF", primaryTimeframe, "primaryTimeframe", "e.g. 5m"],
+                ["Duration", tradeDuration, "tradeDuration", "e.g. 5m"],
+              ].map(([label, value, field, placeholder]) => (
+                <div className="space-y-1.5" key={field}>
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs text-zinc-400">{label}</Label>
+                    <Tooltip><TooltipTrigger><Info className="w-3 h-3 text-zinc-500" /></TooltipTrigger><TooltipContent><p>Changing this starts a new visual analysis context.</p></TooltipContent></Tooltip>
+                  </div>
+                  <Input
+                    value={value}
+                    onChange={(e) => resetContext(field as keyof ReturnType<typeof useMobileStore>, e.target.value)}
+                    placeholder={placeholder}
+                    className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">AI Model</Label>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Info className="w-3 h-3 text-zinc-500" />
-                </TooltipTrigger>
-                <TooltipContent><p>Select the AI provider and model for analysis.</p></TooltipContent>
-              </Tooltip>
-            </div>
-            <Select
-              value={`${selectedProvider}:${selectedModel}`}
-              onValueChange={(val) => {
-                if (!val) return;
-                const [provider, model] = val.split(":");
-                setField("selectedProvider", provider);
+              <Select value={`${selectedProvider}:${selectedModel}`} onValueChange={(value) => {
+                const [provider, model] = value.split(":");
+                resetContext("selectedProvider", provider);
                 setField("selectedModel", model);
-              }}
-            >
-              <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 text-xs">Google (Free Tier)</SelectLabel>
-                  {getModelsByProvider("gemini").map(m => (
-                    <SelectItem key={m.id} value={`gemini:${m.id}`}>{m.name}</SelectItem>
+              }}>
+                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {["gemini", "groq", "openai", "openrouter"].map((provider) => (
+                    <SelectGroup key={provider}>
+                      <SelectLabel>{provider}</SelectLabel>
+                      {getModelsByProvider(provider).map((model) => <SelectItem key={model.id} value={`${provider}:${model.id}`}>{model.name}</SelectItem>)}
+                    </SelectGroup>
                   ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 text-xs mt-2">Groq (Free Tier)</SelectLabel>
-                  {getModelsByProvider("groq").map(m => (
-                    <SelectItem key={m.id} value={`groq:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenAI (Credits Required)</SelectLabel>
-                  {getModelsByProvider("openai").map(m => (
-                    <SelectItem key={m.id} value={`openai:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
-                  {getModelsByProvider("openrouter").map(m => (
-                    <SelectItem key={m.id} value={`openrouter:${m.id}`}>{m.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1">
+            <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Selected Strategies</Label>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Info className="w-3 h-3 text-zinc-500" />
-                </TooltipTrigger>
-                <TooltipContent><p>Select one or more trading strategies for the AI to apply.</p></TooltipContent>
-              </Tooltip>
+              <Select value="__strategy__" onValueChange={(value) => {
+                if (selectedStrategies.includes(value)) resetContext("selectedStrategies", selectedStrategies.filter((item) => item !== value));
+                else resetContext("selectedStrategies", [...selectedStrategies, value]);
+              }}>
+                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><Target className="w-4 h-4 mr-2" /><SelectValue placeholder={selectedStrategies.join(", ") || "Add Strategy"} /></SelectTrigger>
+                <SelectContent>{STRATEGIES.map((item) => <SelectItem key={item} value={item}><div className="flex gap-2"><input type="checkbox" checked={selectedStrategies.includes(item)} readOnly />{item}</div></SelectItem>)}</SelectContent>
+              </Select>
             </div>
-            <Select
-              value={selectedStrategies.join(",")}
-              onValueChange={(val: string | null) => {
-                if (!val) return;
-                if (selectedStrategies.includes(val)) {
-                  setField("selectedStrategies", selectedStrategies.filter((s: string) => s !== val));
-                } else {
-                  setField("selectedStrategies", [...selectedStrategies, val]);
-                }
-              }}
-            >
-              <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm focus:ring-0 focus:ring-offset-0">
-                <Target className="w-4 h-4 mr-2 text-zinc-400" />
-                <SelectValue placeholder="Add Strategy" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                {["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading"].map(strat => (
-                  <SelectItem key={strat} value={strat}>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedStrategies.includes(strat)}
-                        readOnly
-                        className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
-                      />
-                      {strat}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1">
+            <div className="space-y-1.5">
               <Label className="text-xs text-zinc-400">Visible Indicators</Label>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Info className="w-3 h-3 text-zinc-500" />
-                </TooltipTrigger>
-                <TooltipContent><p>Tell the AI what indicators are visible on your chart.</p></TooltipContent>
-              </Tooltip>
+              <Select value="__indicator__" onValueChange={(value) => {
+                if (visibleIndicators.includes(value)) resetContext("visibleIndicators", visibleIndicators.filter((item) => item !== value));
+                else resetContext("visibleIndicators", [...visibleIndicators, value]);
+              }}>
+                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><Layers className="w-4 h-4 mr-2" /><SelectValue placeholder={visibleIndicators.join(", ") || "Add Indicator"} /></SelectTrigger>
+                <SelectContent>{INDICATORS.map((item) => <SelectItem key={item} value={item}><div className="flex gap-2"><input type="checkbox" checked={visibleIndicators.includes(item)} readOnly />{item}</div></SelectItem>)}</SelectContent>
+              </Select>
             </div>
-            <Select
-              value={visibleIndicators.join(",")}
-              onValueChange={(val: string | null) => {
-                if (!val) return;
-                if (visibleIndicators.includes(val)) {
-                  setField("visibleIndicators", visibleIndicators.filter((i: string) => i !== val));
-                } else {
-                  setField("visibleIndicators", [...visibleIndicators, val]);
-                }
-              }}
-            >
-              <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800 text-sm focus:ring-0 focus:ring-offset-0">
-                <Layers className="w-4 h-4 mr-2 text-zinc-400" />
-                <SelectValue placeholder="Add Indicator" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                {["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"].map(ind => (
-                  <SelectItem key={ind} value={ind}>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        checked={visibleIndicators.includes(ind)}
-                        readOnly
-                        className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
-                      />
-                      {ind}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </section>
-      ) : (
-        <section className="bg-orange-500/10 border border-orange-500/50 p-4 rounded-lg space-y-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-bold text-orange-400 text-sm">Confirmation Needed</h3>
-              <p className="text-xs text-orange-200/80 mt-1">
-                The {primaryTimeframe} chart does not provide enough confirmation. Please switch your chart to <strong>{requestedTimeframe}</strong> and upload a new screenshot.
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" className="w-full text-xs h-8 border-orange-500/30" onClick={() => clearAnalysis()}>
-            Cancel Analysis
+          </section>
+        )}
+
+        {pendingUnsureRequest && (
+          <section className="bg-orange-500/10 border border-orange-500/50 p-4 rounded-lg space-y-3">
+            <div className="flex items-start gap-2"><AlertTriangle className="w-5 h-5 text-orange-400" /><div><h3 className="font-bold text-orange-400 text-sm">Confirmation Needed</h3><p className="text-xs text-orange-200/80 mt-1">Upload a {requestedTimeframe} chart screenshot for additional confirmation.</p></div></div>
+            <Button variant="outline" className="w-full" onClick={() => clearAnalysis()}>Cancel Analysis</Button>
+          </section>
+        )}
+
+        <section className="space-y-3">
+          <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+          <Button onClick={() => fileInputRef.current?.click()} className="w-full h-20 border-2 border-dashed border-zinc-700 bg-zinc-900/50" variant="outline">
+            <Camera className="w-5 h-5 mr-2" /> Add Chart Frame
           </Button>
-        </section>
-      )}
 
-      {!analysisResult && (
-        <section className="space-y-4">
-          <input 
-            type="file" 
-            accept="image/*" 
-            className="hidden" 
-            ref={fileInputRef} 
-            onChange={handleFileChange}
-          />
-          
-          {!previewImageBase64 ? (
-            <Button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="w-full h-24 border-2 border-dashed border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800 flex flex-col gap-2 text-zinc-400"
-              variant="outline"
-            >
-              <Camera className="w-6 h-6" />
-              <span>Upload Chart Screenshot {pendingUnsureRequest && `(${requestedTimeframe})`}</span>
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="relative rounded-lg overflow-hidden border border-zinc-800 h-40">
-                <img src={previewImageBase64} alt="Chart Preview" className="w-full h-full object-cover" />
-                <Button 
-                  size="sm" 
-                  variant="secondary" 
-                  className="absolute top-2 right-2 h-7 text-xs bg-black/60 backdrop-blur"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" /> Replace
-                </Button>
-              </div>
-              <Button 
-                onClick={handleAnalyze} 
-                disabled={isAnalyzing}
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold h-12 text-base shadow-[0_0_20px_rgba(147,51,234,0.3)]"
-              >
-                {isAnalyzing ? (
-                  <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Analyzing...</>
-                ) : (
-                  <><Activity className="w-5 h-5 mr-2" /> Run AI Analysis</>
-                )}
-              </Button>
+          {previewImageBase64 && <div className="relative rounded-lg overflow-hidden border border-zinc-800 h-44"><img src={previewImageBase64} alt="Current chart" className="w-full h-full object-cover" /><Button size="sm" variant="secondary" className="absolute top-2 right-2 h-7" onClick={() => fileInputRef.current?.click()}><RefreshCw className="w-3 h-3 mr-1" /> Add New</Button></div>}
+
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2">
+            <div className="flex justify-between text-xs"><span className="text-zinc-400">Visual history</span><span className="font-mono">{visualHistory.length} / 5 frames</span></div>
+            <div className="flex gap-1.5 overflow-x-auto">
+              {visualHistory.map((frame, index) => <img key={frame.timestamp} src={frame.base64} alt={`Observation ${index + 1}`} className={`w-16 h-12 object-cover rounded border ${index === visualHistory.length - 1 ? "border-purple-500" : "border-zinc-800"}`} />)}
             </div>
-          )}
-        </section>
-      )}
-
-      {analysisResult && (
-        <div className="space-y-4">
-          <MobileResultCard />
-          <div className="flex gap-2">
-            <Button 
-              className="flex-1 bg-blue-600 hover:bg-blue-700" 
-              onClick={() => toast.success("Paper trade started!")}
-            >
-              Start Paper Trade
-            </Button>
-            <Button 
-              variant="outline" 
-              className="flex-1"
-              onClick={clearAnalysis}
-            >
-              Scan Again
-            </Button>
+            <p className="text-[10px] text-zinc-500">The latest frame is always included. Up to 5 recent frames are sent to the visual model.</p>
           </div>
-        </div>
-      )}
 
-      <MobileHistory />
-    </main>
+          {visualHistory.length > 0 && <div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={clearVisualHistory}><Trash2 className="w-4 h-4 mr-2" />Clear Frames</Button><Button disabled={isAnalyzing} className="flex-[2] bg-purple-600 hover:bg-purple-700" onClick={handleAnalyze}>{isAnalyzing ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Analyzing {visualHistory.length} frames...</> : <><Activity className="w-5 h-5 mr-2" />Run AI Analysis</>}</Button></div>}
+        </section>
+
+        {analysisResult && <div className="space-y-3"><MobileResultCard /><Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={() => toast.success("Paper trade started!")}>Start Paper Trade</Button><Button variant="outline" className="w-full" onClick={clearAnalysis}>New Visual Session</Button></div>}
+
+        <MobileHistory />
+      </main>
     </TooltipProvider>
   );
 }
