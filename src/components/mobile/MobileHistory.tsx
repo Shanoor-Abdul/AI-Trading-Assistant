@@ -3,6 +3,7 @@
 import { useMobileStore } from "@/store/useMobileStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { TradeCountdown } from "@/components/TradeCountdown";
+import { parseTradeDurationMs } from "@/lib/tradeDuration";
 
 export function MobileHistory() {
   const { tradeHistory, setField } = useMobileStore();
@@ -90,7 +91,7 @@ export function MobileHistory() {
                             ? {
                                 ...item,
                                 status: "CLOSED",
-                                paperTradeExpiresAt: startedAt + Date.now() - Date.now() + 0,
+                                paperTradeExpiresAt: startedAt + parseTradeDurationMs(duration),
                               }
                             : item,
                         ),
