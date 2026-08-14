@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { formatTradeCountdown, parseTradeDurationMs } from "@/lib/tradeDuration";
 
@@ -21,13 +21,17 @@ export function TradeCountdown({
   const [remaining, setRemaining] = useState(() =>
     Math.max(0, startedAt + durationMs - Date.now()),
   );
+  const completedRef = useRef(false);
 
   useEffect(() => {
+    completedRef.current = false;
+
     const update = () => {
       const next = Math.max(0, startedAt + durationMs - Date.now());
       setRemaining(next);
 
-      if (next === 0) {
+      if (next === 0 && !completedRef.current) {
+        completedRef.current = true;
         onComplete?.();
       }
     };
