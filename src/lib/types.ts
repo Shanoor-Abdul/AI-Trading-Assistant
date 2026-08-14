@@ -48,7 +48,7 @@ export type MarketDataStatus = "available" | "unavailable" | "stale" | "not_requ
 export interface AnalyzeRequest {
   imageBase64?: string;
   symbol?: string;
-  timeframe?: string; // Also serves as primaryTimeframe
+  timeframe?: string;
   provider: AIProvider;
   model?: string;
   selectedStrategies?: string[];
@@ -78,7 +78,7 @@ export interface TradingAnalysis {
   takeProfit: number | null;
   explanation: string;
   requestedIndicators: string[];
-  
+
   detectedSymbol: string | null;
   detectedTimeframe: string | null;
   exchange: string | null;
@@ -97,7 +97,6 @@ export interface TradingAnalysis {
   strategyConsensus?: string;
   strategyConflicts?: string[];
 
-  // Metadata
   analysisId?: string;
   dataTimestamp?: number;
   dataAge?: number;
@@ -105,7 +104,7 @@ export interface TradingAnalysis {
   confirmationTimeframe?: string;
   trendTimeframe?: string;
   tradeDuration?: string;
-  
+
   marketDataMode?: MarketDataMode;
   marketDataStatus?: MarketDataStatus;
 
@@ -121,14 +120,19 @@ export interface TradeHistoryEntry extends TradingAnalysis {
   symbol: string;
   timeframe: string;
   status: TradeStatus;
-  
+
+  /** When a paper trade was started from the UI. */
+  paperTradeStartedAt?: number;
+  /** Absolute timestamp at which the fixed-duration paper trade ends. */
+  paperTradeExpiresAt?: number;
+
   maxFavorableMove?: number;
   maxAdverseMove?: number;
   slippage?: number;
   fees?: number;
   duration?: number;
   pnl?: number;
-  
+
   screenshotBase64?: string;
   screenshotUrl?: string;
   indicators?: any;
@@ -173,4 +177,4 @@ export interface ObservationSessionConfig {
   provider: string;
   model: string;
   observationFrequency: number;
-}
+}
