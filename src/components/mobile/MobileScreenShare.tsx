@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -28,8 +28,6 @@ export function MobileScreenShare({ frequencySeconds = 15 }: MobileScreenSharePr
     setField,
   } = useMobileStore();
 
-  const [sessionReady, setSessionReady] = useState(false);
-
   const sessionKey = useMemo(
     () => JSON.stringify({
       platform,
@@ -44,6 +42,8 @@ export function MobileScreenShare({ frequencySeconds = 15 }: MobileScreenSharePr
     [platform, symbol, primaryTimeframe, tradeDuration, selectedStrategies, visibleIndicators, selectedProvider, selectedModel],
   );
 
+  const previousSessionKeyRef = useRef(sessionKey);
+
   const {
     videoRef,
     canvasRef,
@@ -56,20 +56,18 @@ export function MobileScreenShare({ frequencySeconds = 15 }: MobileScreenSharePr
     stopSharing,
     clearObservations,
     maxObservations,
-  } = useMobileScreenShare();
+  } = useMobileScreenShare(undefined, frequencySeconds);
 
   useEffect(() => {
-    if (!sessionReady) {
-      setSessionReady(true);
-      return;
-    }
+    if (previousSessionKeyRef.current === sessionKey) return;
+    previousSessionKeyRef.current = sessionKey;
 
     clearObservations();
     setField("previousAnalysisData", null);
     setField("analysisResult", null);
     setField("previewImageBase64", null);
     toast("Mobile analysis session reset because the trading configuration changed.");
-  }, [sessionKey, clearObservations, setField, sessionReady]);
+  }, [sessionKey, clearObservations, setField]);
 
   const handleAnalyzeCapturedFrames = async () => {
     if (observations.length === 0) {
