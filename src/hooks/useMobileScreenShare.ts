@@ -74,13 +74,12 @@ export function useMobileScreenShare(
     }
 
     try {
+      // Keep the options to the widely-supported MediaTrackConstraints that
+      // TypeScript and mobile browsers understand. The browser's native picker
+      // controls whether the user shares a tab, window, or entire screen.
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 1, max: 5 } },
         audio: false,
-        preferCurrentTab: false,
-        selfBrowserSurface: "exclude",
-        monitorTypeSurfaces: "include",
-        surfaceSwitching: "include",
       });
 
       streamRef.current = stream;
