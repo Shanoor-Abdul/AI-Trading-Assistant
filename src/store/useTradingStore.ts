@@ -77,6 +77,7 @@ export interface TradingState {
   lastObservationTimestamp: number;
   setLastObservationTimestamp: (val: number) => void;
   clearProgressiveSession: () => void;
+  resetFramesButKeepSession: () => void;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({

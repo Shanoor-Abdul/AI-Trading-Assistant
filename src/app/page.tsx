@@ -234,6 +234,22 @@ export default function Dashboard() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Add reference watermark for AI validation
+      const state = useTradingStore.getState();
+      const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
+      const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
+      
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+      
+      ctx.fillStyle = "#4ade80"; // green-400
+      ctx.font = "bold 18px Arial";
+      ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+      
+      ctx.fillStyle = "#e4e4e7"; // zinc-200
+      ctx.font = "16px Arial";
+      ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
       useTradingStore.getState().addObservation(imageBase64);
     };
@@ -310,7 +326,13 @@ export default function Dashboard() {
             selectedStrategies,
             isProgressive: true,
             progressiveState: state.progressiveAnalyses,
-            screenshots: framesToAnalyze.map(obs => ({ base64: obs.imageBase64, mimeType: "image/jpeg" }))
+            screenshots: framesToAnalyze.map(obs => ({ 
+              timestamp: new Date(obs.timestamp).toISOString(),
+              mimeType: "image/jpeg",
+              base64: obs.imageBase64,
+              platform: platform,
+              symbol: symbol
+            }))
           };
           
           const response = await fetch('/api/analyze', {
@@ -339,7 +361,9 @@ export default function Dashboard() {
                 confidence: data.confidence || 0
               };
               useTradingStore.getState().addProgressiveAnalysis(summary);
-              useTradingStore.getState().setLastAnalyzedObservationIndex(endIndex);
+              useTradingStore.getState().setLastAnalyzedObservationIndex(
+                useTradingStore.getState().lastAnalyzedObservationIndex + framesToAnalyze.length
+              );
               useTradingStore.getState().incrementBatchId();
             }
           }
@@ -370,6 +394,22 @@ export default function Dashboard() {
     if (!ctx) return;
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Add reference watermark for AI validation
+    const state = useTradingStore.getState();
+    const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
+    const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
+    
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+    
+    ctx.fillStyle = "#4ade80"; // green-400
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+    
+    ctx.fillStyle = "#e4e4e7"; // zinc-200
+    ctx.font = "16px Arial";
+    ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
     setLastImageBase64(imageBase64);
     
@@ -428,7 +468,9 @@ export default function Dashboard() {
           reqBody.screenshots = selected.map(o => ({
             timestamp: new Date(o.timestamp).toISOString(),
             mimeType: "image/jpeg",
-            base64: o.imageBase64
+            base64: o.imageBase64,
+            platform: platform,
+            symbol: symbol
           }));
         } else {
           reqBody.imageBase64 = currentImageBase64;
@@ -468,7 +510,13 @@ export default function Dashboard() {
           low: data.low,
           close: data.close
         });
-        // We no longer call clearObservations() here so the progressive circle continues seamlessly
+        
+        // Reset the visual frames back to 0 so the next cycle starts fresh, 
+        // but KEEP the progressive state (the AI's previous thoughts).
+        if (useTradingStore.getState().marketDataMode === "visual_only") {
+          useTradingStore.getState().resetFramesButKeepSession();
+        }
+        
         toast.success("Analysis complete!");
       } else {
         incrementFailCount();
