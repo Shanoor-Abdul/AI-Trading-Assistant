@@ -1,6 +1,10 @@
-import { create } from 'zustand';
-import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation } from '@/lib/types';
-import { calculateMaxObservationFrames } from '@/lib/observation/calculation';
+import { create } from "zustand";
+import {
+  TradeHistoryEntry,
+  ProgressiveAnalysisSummary,
+  Observation,
+} from "@/lib/types";
+import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 
 export interface TradingState {
   isAnalyzing: boolean;
@@ -84,13 +88,35 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false,
   setIsAnalyzing: (val) => set({ isAnalyzing: val }),
   symbol: "",
-  setSymbol: (val) => set((state) => state.symbol !== val
-    ? { symbol: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0 }
-    : { symbol: val }),
+  setSymbol: (val) =>
+    set((state) =>
+      state.symbol !== val
+        ? {
+            symbol: val,
+            observations: [],
+            progressiveAnalyses: [],
+            lastAnalyzedObservationIndex: -1,
+            totalFramesCaptured: 0,
+            currentBatchId: 1,
+            lastObservationTimestamp: 0,
+          }
+        : { symbol: val },
+    ),
   timeframe: "5m",
-  setTimeframe: (val) => set((state) => state.timeframe !== val
-    ? { timeframe: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0 }
-    : { timeframe: val }),
+  setTimeframe: (val) =>
+    set((state) =>
+      state.timeframe !== val
+        ? {
+            timeframe: val,
+            observations: [],
+            progressiveAnalyses: [],
+            lastAnalyzedObservationIndex: -1,
+            totalFramesCaptured: 0,
+            currentBatchId: 1,
+            lastObservationTimestamp: 0,
+          }
+        : { timeframe: val },
+    ),
   stream: null,
   setStream: (stream) => set({ stream }),
   lastImageBase64: null,
@@ -118,46 +144,55 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini",
   selectedModel: "gemini-2.0-flash",
-  setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
+  setSelectedModel: (provider, model) =>
+    set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
   selectedStrategies: ["Trend Following"],
   setSelectedStrategies: (val) => set({ selectedStrategies: val }),
   observationFrequency: 15,
   setObservationFrequency: (val) => set({ observationFrequency: val }),
   observations: [],
-  addObservation: (imageBase64) => set((state) => {
-    const maxCacheSize = calculateMaxObservationFrames();
-    const newObservation: Observation = { timestamp: Date.now(), imageBase64 };
-    const previousLength = state.observations.length;
-    let observations = [...state.observations, newObservation];
-    let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
+  addObservation: (imageBase64) =>
+    set((state) => {
+      const maxCacheSize = calculateMaxObservationFrames();
+      const newObservation: Observation = {
+        timestamp: Date.now(),
+        imageBase64,
+      };
+      const previousLength = state.observations.length;
+      let observations = [...state.observations, newObservation];
+      let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
 
-    // Keep a bounded rolling window. The progressive analysis index is relative
-    // to this rolling window, so it must move left by exactly the number of
-    // evicted frames. This fixes the continuous 20-frame batch cycle after the
-    // cache reaches its limit.
-    const evictedCount = Math.max(0, observations.length - maxCacheSize);
-    if (evictedCount > 0) {
-      observations = observations.slice(evictedCount);
-      if (lastAnalyzedObservationIndex >= 0) {
-        lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
+      // Keep a bounded rolling window. The progressive analysis index is relative
+      // to this rolling window, so it must move left by exactly the number of
+      // evicted frames. This fixes the continuous 20-frame batch cycle after the
+      // cache reaches its limit.
+      const evictedCount = Math.max(0, observations.length - maxCacheSize);
+      if (evictedCount > 0) {
+        observations = observations.slice(evictedCount);
+        if (lastAnalyzedObservationIndex >= 0) {
+          lastAnalyzedObservationIndex = Math.max(
+            -1,
+            lastAnalyzedObservationIndex - evictedCount,
+          );
+        }
       }
-    }
 
-    return {
-      observations,
-      lastAnalyzedObservationIndex,
-      totalFramesCaptured: state.totalFramesCaptured + 1,
-      lastObservationTimestamp: newObservation.timestamp,
-    };
-  }),
-  clearObservations: () => set({
-    observations: [],
-    progressiveAnalyses: [],
-    lastAnalyzedObservationIndex: -1,
-    totalFramesCaptured: 0,
-    currentBatchId: 1,
-    lastObservationTimestamp: 0,
-  }),
+      return {
+        observations,
+        lastAnalyzedObservationIndex,
+        totalFramesCaptured: state.totalFramesCaptured + 1,
+        lastObservationTimestamp: newObservation.timestamp,
+      };
+    }),
+  clearObservations: () =>
+    set({
+      observations: [],
+      progressiveAnalyses: [],
+      lastAnalyzedObservationIndex: -1,
+      totalFramesCaptured: 0,
+      currentBatchId: 1,
+      lastObservationTimestamp: 0,
+    }),
   tradingMode: "MANUAL",
   setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api",
@@ -171,83 +206,109 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   activeConnectionId: null,
   setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0,
-  incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })),
+  incrementFailCount: () =>
+    set((state) => ({ apiFailCount: state.apiFailCount + 1 })),
   resetFailCount: () => set({ apiFailCount: 0 }),
   tradeHistory: [],
-  clearAnalysis: () => set({
-    trend: null,
-    signal: null,
-    confidence: 0,
-    entryPrice: null,
-    stopLoss: null,
-    takeProfit: null,
-    recommendedTimeframe: null,
-    requestedIndicators: null,
-    open: null,
-    high: null,
-    low: null,
-    close: null,
-    explanation: "",
-  }),
+  clearAnalysis: () =>
+    set({
+      trend: null,
+      signal: null,
+      confidence: 0,
+      entryPrice: null,
+      stopLoss: null,
+      takeProfit: null,
+      recommendedTimeframe: null,
+      requestedIndicators: null,
+      open: null,
+      high: null,
+      low: null,
+      close: null,
+      explanation: "",
+    }),
   analysisSessionKey: null,
   setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
-  addProgressiveAnalysis: (summary) => set((state) => ({
-    progressiveAnalyses: [...state.progressiveAnalyses, summary].slice(-50),
-  })),
+  addProgressiveAnalysis: (summary) =>
+    set((state) => ({
+      progressiveAnalyses: [...state.progressiveAnalyses, summary].slice(-50),
+    })),
   isProgressiveAnalyzing: false,
   setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
   lastAnalyzedObservationIndex: -1,
-  setLastAnalyzedObservationIndex: (val) => set({ lastAnalyzedObservationIndex: val }),
+  setLastAnalyzedObservationIndex: (val) =>
+    set({ lastAnalyzedObservationIndex: val }),
   totalFramesCaptured: 0,
   currentBatchId: 1,
   lastObservationTimestamp: 0,
   setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
-  incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
-  incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  clearProgressiveSession: () => set({
-    observations: [],
-    progressiveAnalyses: [],
-    lastAnalyzedObservationIndex: -1,
-    totalFramesCaptured: 0,
-    currentBatchId: 1,
-    lastObservationTimestamp: 0,
-  }),
-  updateAnalysis: (data) => set((state) => {
-    const newState = { ...state, ...data };
-    if (data.signal && data.signal !== "UNSURE" && newState.trend && newState.signal) {
-      const historyEntry: TradeHistoryEntry = {
-        id: Math.random().toString(36).substring(2, 9),
-        timestamp: Date.now(),
-        symbol: (data as any).detectedSymbol || newState.symbol,
-        timeframe: (data as any).recommendedTimeframe || newState.timeframe,
-        trend: newState.trend,
-        signal: newState.signal,
-        confidence: newState.confidence,
-        recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
-        entryPrice: newState.entryPrice,
-        stopLoss: newState.stopLoss,
-        takeProfit: newState.takeProfit,
-        explanation: newState.explanation,
-        status: (newState.signal === "WAIT" || newState.signal === "NO_TRADE") ? "SKIPPED" : "OPEN",
-        open: newState.open,
-        high: newState.high,
-        low: newState.low,
-        close: newState.close,
-        screenshotBase64: newState.lastImageBase64 || undefined,
-        dbTradeId: (data as any).dbTradeId,
-        requiredTimeframe: (data as any).requiredTimeframe,
-        requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
-        detectedSymbol: (data as any).detectedSymbol,
-        detectedTimeframe: (data as any).detectedTimeframe,
-        exchange: (data as any).exchange,
-        marketProvider: (data as any).marketProvider,
-        riskDecision: (data as any).riskDecision,
-        reasoning: (data as any).reasoning,
-        dataConfidence: (data as any).dataConfidence,
-      };
-      newState.tradeHistory = [historyEntry, ...state.tradeHistory];
-    }
-    return newState;
-  }),
+  incrementTotalFrames: () =>
+    set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
+  incrementBatchId: () =>
+    set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
+  resetFramesButKeepSession: () =>
+    set({
+      observations: [],
+      lastAnalyzedObservationIndex: -1,
+      totalFramesCaptured: 0,
+      currentBatchId: 1,
+      lastObservationTimestamp: 0,
+    }),
+  clearProgressiveSession: () =>
+    set({
+      observations: [],
+      progressiveAnalyses: [],
+      lastAnalyzedObservationIndex: -1,
+      totalFramesCaptured: 0,
+      currentBatchId: 1,
+      lastObservationTimestamp: 0,
+    }),
+  updateAnalysis: (data) =>
+    set((state) => {
+      const newState = { ...state, ...data };
+      if (
+        data.signal &&
+        data.signal !== "UNSURE" &&
+        newState.trend &&
+        newState.signal
+      ) {
+        const historyEntry: TradeHistoryEntry = {
+          id: Math.random().toString(36).substring(2, 9),
+          timestamp: Date.now(),
+          symbol: (data as any).detectedSymbol || newState.symbol,
+          timeframe: (data as any).recommendedTimeframe || newState.timeframe,
+          trend: newState.trend,
+          signal: newState.signal,
+          confidence: newState.confidence,
+          recommendedTimeframe:
+            (data as any).recommendedTimeframe || newState.recommendedTimeframe,
+          entryPrice: newState.entryPrice,
+          stopLoss: newState.stopLoss,
+          takeProfit: newState.takeProfit,
+          explanation: newState.explanation,
+          status:
+            newState.signal === "WAIT" || newState.signal === "NO_TRADE"
+              ? "SKIPPED"
+              : "OPEN",
+          open: newState.open,
+          high: newState.high,
+          low: newState.low,
+          close: newState.close,
+          screenshotBase64: newState.lastImageBase64 || undefined,
+          dbTradeId: (data as any).dbTradeId,
+          requiredTimeframe: (data as any).requiredTimeframe,
+          requestedIndicators:
+            (data as any).requestedIndicators || newState.requestedIndicators,
+          detectedSymbol: (data as any).detectedSymbol,
+          detectedTimeframe: (data as any).detectedTimeframe,
+          exchange: (data as any).exchange,
+          marketProvider: (data as any).marketProvider,
+          riskDecision: (data as any).riskDecision,
+          reasoning: (data as any).reasoning,
+          dataConfidence: (data as any).dataConfidence,
+        };
+        newState.tradeHistory = [historyEntry, ...state.tradeHistory];
+      }
+      return newState;
+    }),
 }));
