@@ -19,12 +19,11 @@ import android.os.IBinder
 import android.util.Base64
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import android.graphics.YuvImage
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import android.graphics.Bitmap
 
 class MobileScreenCaptureService : Service() {
   companion object {
@@ -73,10 +72,7 @@ class MobileScreenCaptureService : Service() {
   private var intervalMs = 15_000L
   private var lastFrameAt = 0L
 
-  override fun onCreate() {
-    super.onCreate()
-    createNotificationChannel()
-  }
+  override fun onCreate() { super.onCreate(); createNotificationChannel() }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
@@ -96,7 +92,6 @@ class MobileScreenCaptureService : Service() {
     if (isRunning) return
     val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     projection = manager.getMediaProjection(resultCode, data)
-
     val metrics = DisplayMetrics()
     @Suppress("DEPRECATION")
     (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
@@ -104,17 +99,7 @@ class MobileScreenCaptureService : Service() {
     val height = (metrics.heightPixels.toFloat() * width / metrics.widthPixels).toInt().coerceAtLeast(1)
 
     reader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
-    display = projection?.createVirtualDisplay(
-      "AITradingAssistantScreen",
-      width,
-      height,
-      metrics.densityDpi,
-      0,
-      reader?.surface,
-      null,
-      null,
-    )
-
+    display = projection?.createVirtualDisplay("AITradingAssistantScreen", width, height, metrics.densityDpi, 0, reader?.surface, null, null)
     worker = HandlerThread("ScreenCaptureWorker").also { it.start() }
     handler = Handler(worker!!.looper)
     isRunning = true
@@ -135,25 +120,51 @@ class MobileScreenCaptureService : Service() {
   }
 
   private fun imageToJpegBase64(image: Image): String {
-    val planes = image.planes
     val width = image.width
     val height = image.height
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val buffer = planes[0].buffer
-    val rowStride = planes[0].rowStride
-    val pixelStride = planes[0].pixelStride
-    val rowPadding = rowStride - pixelStride * width
-    val paddedWidth = width + rowPadding / pixelStride
-    val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
-    val tmp = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
-    tmp.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
-    val canvas = android.graphics.Canvas(bitmap)
-    canvas.drawBitmap(tmp, 0f, 0f, null)
-    tmp.recycle()
+    val nv21 = yuv420ToNv21(image)
+    val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
     val out = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, out)
-    bitmap.recycle()
+    yuv.compressToJpeg(Rect(0, 0, width, height), 70, out)
     return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+  }
+
+  private fun yuv420ToNv21(image: Image): ByteArray {
+    val width = image.width
+    val height = image.height
+    val out = ByteArray(width * height * 3 / 2)
+    val planes = image.planes
+    var offset = 0
+    val yPlane = planes[0]
+    val yBuffer = yPlane.buffer
+    val yRowStride = yPlane.rowStride
+    val yPixelStride = yPlane.pixelStride
+    for (row in 0 until height) {
+      val rowStart = row * yRowStride
+      for (col in 0 until width) {
+        out[offset++] = yBuffer.get(rowStart + col * yPixelStride)
+      }
+    }
+
+    val uPlane = planes[1]
+    val vPlane = planes[2]
+    val uBuffer = uPlane.buffer
+    val vBuffer = vPlane.buffer
+    val chromaHeight = height / 2
+    val chromaWidth = width / 2
+    val uRowStride = uPlane.rowStride
+    val vRowStride = vPlane.rowStride
+    val uPixelStride = uPlane.pixelStride
+    val vPixelStride = vPlane.pixelStride
+    for (row in 0 until chromaHeight) {
+      for (col in 0 until chromaWidth) {
+        val uIndex = row * uRowStride + col * uPixelStride
+        val vIndex = row * vRowStride + col * vPixelStride
+        out[offset++] = vBuffer.get(vIndex)
+        out[offset++] = uBuffer.get(uIndex)
+      }
+    }
+    return out
   }
 
   private fun stopCapture() {
@@ -166,6 +177,7 @@ class MobileScreenCaptureService : Service() {
     display = null
     reader = null
     projection = null
+    lastFrameAt = 0L
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
@@ -175,9 +187,7 @@ class MobileScreenCaptureService : Service() {
 
   private fun createNotificationChannel() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      getSystemService(NotificationManager::class.java).createNotificationChannel(
-        NotificationChannel(CHANNEL_ID, "Trading screen capture", NotificationManager.IMPORTANCE_LOW)
-      )
+      getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "Trading screen capture", NotificationManager.IMPORTANCE_LOW))
     }
   }
 
@@ -189,6 +199,5 @@ class MobileScreenCaptureService : Service() {
     .build()
 
   @Suppress("DEPRECATION")
-  private inline fun <reified T : android.os.Parcelable> Intent.getParcelableExtraCompat(key: String): T? =
-    if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(key, T::class.java) else getParcelableExtra(key)
+  private inline fun <reified T : android.os.Parcelable> Intent.getParcelableExtraCompat(key: String): T? = if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(key, T::class.java) else getParcelableExtra(key)
 }
