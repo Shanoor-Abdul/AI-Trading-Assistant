@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useTradingStore } from "@/store/useTradingStore";
 import { calculateExpectedFrames, PROGRESSIVE_BATCH_SIZE } from "@/lib/observation/calculation";
 import { createObservationSessionKey } from "@/lib/observation/session";
+import { selectObservationFrames } from "@/lib/observation/selection";
 
 function timeframeToMs(value: string, fallback = 300_000): number {
   const match = value.trim().match(/^(\d+)\s*([smhd])$/i);
@@ -77,6 +78,7 @@ export function useDashboardCapture() {
         marketDataMode: current.marketDataMode,
         tradingMode: current.tradingMode,
         visibleIndicators: current.visibleIndicators,
+        activeConnectionId: current.activeConnectionId,
         isProgressive: false,
         progressiveState: current.progressiveAnalyses,
       };
@@ -103,12 +105,12 @@ export function useDashboardCapture() {
       });
 
       if (!response.ok) {
-        current.incrementFailCount();
+        useTradingStore.getState().incrementFailCount();
         toast.error("Failed to analyze the chart.");
         return;
       }
 
-      current.resetFailCount();
+      useTradingStore.getState().resetFailCount();
       const data = await response.json();
 
       if (data.marketDataStatus === "fallback") {
@@ -218,6 +220,7 @@ export function useDashboardCapture() {
             marketDataMode: current.marketDataMode,
             visibleIndicators: current.visibleIndicators,
             selectedStrategies: current.selectedStrategies,
+            activeConnectionId: current.activeConnectionId,
             isProgressive: true,
             progressiveState: current.progressiveAnalyses,
             screenshots: frames.map((observation) => ({
@@ -332,12 +335,13 @@ export function useDashboardCapture() {
     setIsAnalyzing(false);
   }, [setIsAnalyzing, setStream]);
 
+  const currentState = useTradingStore.getState();
   const expectedFrames = marketDataMode === "visual_only"
     ? calculateExpectedFrames(timeframe, tradeDuration, observationFrequency)
     : 0;
-  const totalFramesCaptured = useTradingStore.getState().totalFramesCaptured;
-  const analyzedCount = useTradingStore.getState().lastAnalyzedObservationIndex >= 0
-    ? useTradingStore.getState().lastAnalyzedObservationIndex + 1
+  const totalFramesCaptured = currentState.totalFramesCaptured;
+  const analyzedCount = currentState.lastAnalyzedObservationIndex >= 0
+    ? currentState.lastAnalyzedObservationIndex + 1
     : 0;
   const currentBatchFrames = Math.max(0, observations.length - analyzedCount);
 
@@ -354,16 +358,4 @@ export function useDashboardCapture() {
     totalFramesCaptured,
     currentBatchFrames,
   };
-}
-
-function selectObservationFrames(observations: { timestamp: number; imageBase64: string }[], maxImages: number) {
-  if (observations.length <= maxImages) return observations;
-  const selected = [observations[observations.length - 1]];
-  const remaining = maxImages - 1;
-  const step = (observations.length - 1) / remaining;
-  for (let i = 0; i < remaining; i += 1) {
-    selected.push(observations[Math.floor(i * step)]);
-  }
-  return Array.from(new Map(selected.map((item) => [item.timestamp, item])).values())
-    .sort((a, b) => a.timestamp - b.timestamp);
 }
