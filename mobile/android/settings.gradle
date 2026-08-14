@@ -1,0 +1,4 @@
+pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral(); maven { url = uri("$rootDir/../node_modules/react-native/android") } } }
+rootProject.name = "AITradingAssistantMobile"
+include(":app")
