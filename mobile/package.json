@@ -1,0 +1,22 @@
+{
+  "name": "ai-trading-assistant-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "start": "react-native start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "react": "19.1.0",
+    "react-native": "0.81.4",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "^20.0.0",
+    "@types/react": "^19.1.0",
+    "typescript": "^5.9.3"
+  }
+}
