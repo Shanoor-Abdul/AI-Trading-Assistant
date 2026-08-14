@@ -17,18 +17,14 @@ export interface MobileState {
   selectedModel: string;
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
-
   previewImageBase64: string | null;
   visualHistory: MobileVisualObservation[];
-
   isAnalyzing: boolean;
   analysisResult: TradingAnalysis | null;
   tradeHistory: TradeHistoryEntry[];
-
   pendingUnsureRequest: boolean;
   requestedTimeframe: string | null;
   previousAnalysisData: TradingAnalysis | null;
-
   setField: <K extends keyof MobileState>(field: K, value: MobileState[K]) => void;
   addVisualObservation: (base64: string) => void;
   clearVisualHistory: () => void;
@@ -37,7 +33,7 @@ export interface MobileState {
 }
 
 export const useMobileStore = create<MobileState>((set) => ({
-  platform: "OlympTrade",
+  platform: "",
   symbol: "AUD/CAD OTC",
   tradeDuration: "5m",
   primaryTimeframe: "5m",
@@ -47,20 +43,15 @@ export const useMobileStore = create<MobileState>((set) => ({
   selectedModel: "gemini-2.0-flash",
   marketDataMode: "visual_only",
   visibleIndicators: [],
-
   previewImageBase64: null,
   visualHistory: [],
-
   isAnalyzing: false,
   analysisResult: null,
   tradeHistory: [],
-
   pendingUnsureRequest: false,
   requestedTimeframe: null,
   previousAnalysisData: null,
-
   setField: (field, value) => set({ [field]: value }),
-
   addVisualObservation: (base64) => set((state) => ({
     previewImageBase64: base64,
     visualHistory: appendMobileObservation(state.visualHistory, {
@@ -69,12 +60,7 @@ export const useMobileStore = create<MobileState>((set) => ({
       timeframe: state.primaryTimeframe,
     }, MOBILE_VISUAL_HISTORY_LIMIT),
   })),
-
-  clearVisualHistory: () => set({
-    previewImageBase64: null,
-    visualHistory: [],
-  }),
-
+  clearVisualHistory: () => set({ previewImageBase64: null, visualHistory: [] }),
   clearAnalysis: () => set({
     previewImageBase64: null,
     visualHistory: [],
@@ -83,7 +69,6 @@ export const useMobileStore = create<MobileState>((set) => ({
     requestedTimeframe: null,
     previousAnalysisData: null,
   }),
-
   resetAll: () => set({
     previewImageBase64: null,
     visualHistory: [],
