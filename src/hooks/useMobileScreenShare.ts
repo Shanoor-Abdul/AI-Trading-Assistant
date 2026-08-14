@@ -22,7 +22,7 @@ export function useMobileScreenShare(
   const [secondsUntilNextFrame, setSecondsUntilNextFrame] = useState(frequencySeconds);
   const lastCaptureRef = useRef<number | null>(null);
 
-  const captureFrame = useCallback((quality = 0.7) => {
+  const captureFrame = useCallback((quality = 0.7): string | null => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return null;
@@ -49,6 +49,12 @@ export function useMobileScreenShare(
     return observation;
   }, [captureFrame, onObservation]);
 
+  const clearObservations = useCallback(() => {
+    setObservations([]);
+    lastCaptureRef.current = null;
+    setSecondsUntilNextFrame(frequencySeconds);
+  }, [frequencySeconds]);
+
   const stopSharing = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -71,6 +77,10 @@ export function useMobileScreenShare(
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 1, max: 5 } },
         audio: false,
+        preferCurrentTab: false,
+        selfBrowserSurface: "exclude",
+        monitorTypeSurfaces: "include",
+        surfaceSwitching: "include",
       });
 
       streamRef.current = stream;
@@ -126,11 +136,7 @@ export function useMobileScreenShare(
     startSharing,
     stopSharing,
     captureObservation,
-    clearObservations: () => {
-      setObservations([]);
-      lastCaptureRef.current = null;
-      setSecondsUntilNextFrame(frequencySeconds);
-    },
+    clearObservations,
     maxObservations: MAX_OBSERVATIONS,
   };
 }
