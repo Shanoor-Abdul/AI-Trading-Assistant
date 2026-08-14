@@ -3,7 +3,6 @@
 import { useMobileStore } from "@/store/useMobileStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { TradeCountdown } from "@/components/TradeCountdown";
-import { parseTradeDurationMs } from "@/lib/tradeDuration";
 
 export function MobileHistory() {
   const { tradeHistory } = useMobileStore();
@@ -23,7 +22,6 @@ export function MobileHistory() {
         const duration = trade.tradeDuration || trade.timeframe || "5m";
         const startedAt = trade.paperTradeStartedAt || trade.timestamp;
         const isActive = trade.status === "OPEN" && trade.signal !== "WAIT" && trade.signal !== "UNSURE";
-        const expiresAt = trade.paperTradeExpiresAt || startedAt + parseTradeDurationMs(duration);
 
         return (
           <Card key={trade.id} className="bg-zinc-900/50 border-zinc-800">
