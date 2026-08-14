@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Clock3 } from "lucide-react";
 import { TradeCountdown } from "@/components/TradeCountdown";
+import { parseTradeDurationMs } from "@/lib/tradeDuration";
 import { useTradingStore } from "@/store/useTradingStore";
 
 export function TradeTracker() {
@@ -136,6 +137,7 @@ export function TradeTracker() {
         {activeTrades.map((trade) => {
           const duration = trade.tradeDuration || trade.timeframe || "5m";
           const startedAt = trade.paperTradeStartedAt || trade.timestamp;
+          const expiresAt = startedAt + parseTradeDurationMs(duration);
 
           return (
             <div key={trade.id} className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
@@ -176,11 +178,7 @@ export function TradeTracker() {
                   useTradingStore.setState({
                     tradeHistory: current.map((item) =>
                       item.id === trade.id && item.status === "OPEN"
-                        ? {
-                            ...item,
-                            status: "CLOSED",
-                            paperTradeExpiresAt: startedAt + Date.now() - Date.now() + 0,
-                          }
+                        ? { ...item, status: "CLOSED", paperTradeExpiresAt: expiresAt }
                         : item,
                     ),
                   });
