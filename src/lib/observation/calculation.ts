@@ -17,12 +17,6 @@ export function calculateExpectedFrames(
   return Math.ceil(targetSeconds / frequencySecs);
 }
 
-/**
- * The browser keeps two progressive batches in memory at most.
- * Older frames are evicted after their progressive analysis has been saved.
- * This keeps base64 image memory bounded while allowing the next 20-frame
- * batch to be collected and analyzed continuously.
- */
 export function calculateMaxObservationFrames(): number {
   return OBSERVATION_CACHE_SIZE;
 }

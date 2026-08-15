@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
+import { buildPriceLevelInstruction } from "../priceLevelPrompt";
 import { normalizeResponse } from "../normalizeResponse";
 
 const openai = new OpenAI({
@@ -8,7 +9,7 @@ const openai = new OpenAI({
 });
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = buildUniversalPrompt(req);
+  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
   const currentModel = req.model || "gpt-4o";
 
   try {

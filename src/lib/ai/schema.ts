@@ -24,7 +24,7 @@ export const UniversalAIRequestSchema = z.object({
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
     base64: z.string()
   })).optional(),
-  marketData: z.any().optional(), // We'll keep this flexible for now as OHLCV/indicators shape varies
+  marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
   riskContext: z.any().optional(),
 });
@@ -35,6 +35,8 @@ export const UniversalAIResponseSchema = z.object({
   trend: z.enum(["Bullish", "Bearish", "Sideways"]).catch("Sideways"),
   signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).catch("NO_TRADE"),
   confidence: z.coerce.number().min(0).max(100),
+  readiness: z.enum(["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"]).default("NOT READY"),
+  estimatedConfidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),
   recommendedTimeframe: z.string(),
   entryPrice: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
   stopLoss: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
@@ -57,6 +59,7 @@ export const UniversalAIResponseSchema = z.object({
   indicatorState: z.any().optional(),
   strategyConsensus: z.string().optional(),
   strategyConflicts: z.any().optional(),
+  analysisId: z.string().optional(),
 });
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;
