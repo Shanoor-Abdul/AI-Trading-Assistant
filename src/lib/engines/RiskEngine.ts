@@ -18,13 +18,17 @@ export interface AccountState {
 export class RiskEngine {
   /**
    * Authoritatively validates a trade signal against risk parameters and account state.
+   *
+   * Generic return type is intentional: AI responses can contain additional fields
+   * (such as readiness / estimatedConfidence). The risk engine mutates only the
+   * TradingAnalysis-compatible fields and preserves those additional fields.
    */
-  static validate(
-    analysis: TradingAnalysis, 
-    config: RiskConfig, 
+  static validate<T extends TradingAnalysis>(
+    analysis: T,
+    config: RiskConfig,
     account: AccountState,
     platform?: string
-  ): TradingAnalysis {
+  ): T {
     // 1. Data Freshness Check
     if (analysis.dataAge !== undefined && analysis.dataAge > config.staleDataThresholdSeconds) {
       analysis.signal = "NO_TRADE";
