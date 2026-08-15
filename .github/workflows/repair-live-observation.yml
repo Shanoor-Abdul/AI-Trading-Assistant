@@ -1,0 +1,64 @@
+name: Repair live observation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-live-observation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Repair progressive observation coordinator
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('src/app/page.tsx')
+          text = path.read_text()
+
+          start = text.index('  // Progressive Analysis Loop\n  useEffect(() => {')
+          end = text.index('  const handleAnalyzeSnapshot = async () => {', start)
+
+          replacement = '''  // Progressive Analysis Loop\n  // One coordinator owns the queue. It processes complete 20-frame batches\n  // sequentially and never relies on a stale observation index after cache eviction.\n  useEffect(() => {\n    if (!stream || marketDataMode !== "visual_only") return;\n\n    let cancelled = false;\n\n    const runProgressiveAnalysis = async () => {\n      const initial = useTradingStore.getState();\n      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis) return;\n\n      initial.setIsProgressiveAnalyzing(true);\n\n      try {\n        while (!cancelled) {\n          const current = useTradingStore.getState();\n\n          if (!current.stream || current.marketDataMode !== "visual_only" || current.isFetchingAnalysis) {\n            break;\n          }\n\n          const analyzedCount = current.lastAnalyzedObservationIndex >= 0\n            ? current.lastAnalyzedObservationIndex + 1\n            : 0;\n          const pending = current.observations.length - analyzedCount;\n\n          if (pending < 20) break;\n\n          const startIndex = analyzedCount;\n          const framesToAnalyze = current.observations.slice(startIndex, startIndex + 20);\n          if (framesToAnalyze.length !== 20) break;\n\n          const batchId = current.currentBatchId;\n          const frameTimestamps = framesToAnalyze.map((frame) => frame.timestamp);\n\n          try {\n            const response = await fetch('/api/analyze', {\n              method: 'POST',\n              headers: { 'Content-Type': 'application/json' },\n              body: JSON.stringify({\n                symbol: current.symbol,\n                timeframe: current.timeframe,\n                platform: current.platform,\n                tradeDuration: current.tradeDuration,\n                provider: current.selectedProvider,\n                model: current.selectedModel,\n                marketDataMode: current.marketDataMode,\n                visibleIndicators: current.visibleIndicators,\n                selectedStrategies: current.selectedStrategies,\n                activeConnectionId: current.activeConnectionId,\n                isProgressive: true,\n                progressiveState: current.progressiveAnalyses,\n                screenshots: framesToAnalyze.map((obs) => ({\n                  timestamp: new Date(obs.timestamp).toISOString(),\n                  mimeType: "image/jpeg",\n                  base64: obs.imageBase64,\n                  platform: current.platform,\n                  symbol: current.symbol,\n                })),\n              }),\n            });\n\n            if (!response.ok) {\n              throw new Error(`Progressive analysis failed: ${response.status}`);\n            }\n\n            const data = await response.json();\n            if (!data.marketState) {\n              throw new Error('Progressive analysis returned no marketState');\n            }\n\n            const latest = useTradingStore.getState();\n            const lastBatchTimestamp = frameTimestamps[frameTimestamps.length - 1];\n            const lastBatchIndex = latest.observations.findIndex(\n              (observation) => observation.timestamp === lastBatchTimestamp,\n            );\n\n            latest.addProgressiveAnalysis({\n              analysisId: data.analysisId || crypto.randomUUID(),\n              batchId,\n              timestamp: new Date().toISOString(),\n              frameStart: startIndex + 1,\n              frameEnd: startIndex + 20,\n              trend: data.trend || "Unknown",\n              momentum: data.momentum || "Unknown",\n              marketState: data.marketState,\n              candlestickBehavior: data.candlestickBehavior || "Unknown",\n              indicatorState: data.indicatorState || {},\n              strategyConsensus: data.strategyConsensus || "Unknown",\n              strategyConflicts: data.strategyConflicts || [],\n              changesFromPrevious: data.changesFromPrevious || "None",\n              confidence: data.confidence || 0,\n            });\n\n            if (data.readiness !== undefined || data.estimatedConfidence !== undefined) {\n              latest.updateAnalysis({\n                readiness: data.readiness,\n                estimatedConfidence: data.estimatedConfidence,\n              } as any);\n            }\n\n            // The batch is identified by timestamp, not by a mutable array index.\n            // If the entire batch was evicted while AI was running, -1 correctly\n            // means all currently retained frames are newer and still pending.\n            latest.setLastAnalyzedObservationIndex(lastBatchIndex);\n            latest.incrementBatchId();\n          } catch (error) {\n            console.error("Progressive analysis failed:", error);\n            break;\n          }\n        }\n      } finally {\n        if (!cancelled) {\n          useTradingStore.getState().setIsProgressiveAnalyzing(false);\n        }\n      }\n    };\n\n    void runProgressiveAnalysis();\n\n    return () => {\n      cancelled = true;\n    };\n  }, [observations.length, stream, marketDataMode]);\n\n'''
+
+          text = text[:start] + replacement + text[end:]
+
+          old_readiness = '''  let analysisReadiness = "NOT READY";\n  let estimatedConfidence = "LOW";\n  let readinessMessage = "Collect more chart data before analyzing.";\n  let isAnalyzeDisabled = true;\n\n  if (marketDataMode === 'visual_only' && useTradingStore.getState().totalFramesCaptured > 0) {\n    const frameCount = useTradingStore.getState().totalFramesCaptured;\n    const ratio = frameCount / expectedFrames;\n\n    if (frameCount === 0) {\n      analysisReadiness = "NOT READY";\n      estimatedConfidence = "LOW";\n      readinessMessage = "Collecting more chart history...";\n      isAnalyzeDisabled = true;\n    } else if (ratio < 0.25 || frameCount < 4) {\n      analysisReadiness = "FAIR";\n      estimatedConfidence = "LOW";\n      readinessMessage = "Limited visual history.";\n      isAnalyzeDisabled = false;\n    } else if (ratio < 0.6 || frameCount < 8) {\n      analysisReadiness = "GOOD";\n      estimatedConfidence = "MEDIUM";\n      readinessMessage = "Enough recent chart history for analysis.";\n      isAnalyzeDisabled = false;\n    } else if (ratio < 1) {\n      analysisReadiness = "VERY GOOD";\n      estimatedConfidence = "HIGH";\n      readinessMessage = "Strong visual history available.";\n      isAnalyzeDisabled = false;\n    } else {\n      analysisReadiness = "READY / COMPLETE";\n      estimatedConfidence = "HIGH";\n      readinessMessage = "Full visual history available.";\n      isAnalyzeDisabled = false;\n    }\n  }\n'''
+          new_readiness = '''  const aiStatus = useTradingStore.getState();\n  const analysisReadiness = aiStatus.aiReadiness ?? "NOT READY";\n  const estimatedConfidence = aiStatus.aiEstimatedConfidence ?? "LOW";\n  const readinessMessage = aiStatus.aiReadiness\n    ? `AI observation status: ${aiStatus.aiReadiness}.`\n    : "Waiting for a completed AI observation.";\n  const isAnalyzeDisabled = marketDataMode === "visual_only"\n    ? aiStatus.totalFramesCaptured === 0\n    : false;\n'''
+          if old_readiness not in text:
+              raise SystemExit('readiness block not found')
+          text = text.replace(old_readiness, new_readiness, 1)
+
+          text = re.sub(
+              r'''useTradingStore\.getState\(\)\.observations\.length - \(useTradingStore\.getState\(\)\.lastAnalyzedObservationIndex === -1 \? 0 : useTradingStore\.getState\(\)\.lastAnalyzedObservationIndex \+ 1\)''',
+              r'''Math.min(20, Math.max(0, useTradingStore.getState().observations.length - (useTradingStore.getState().lastAnalyzedObservationIndex === -1 ? 0 : useTradingStore.getState().lastAnalyzedObservationIndex + 1)))''',
+              text,
+              count=1,
+          )
+
+          old_update = '''          open: data.open,\n          high: data.high,\n          low: data.low,\n          close: data.close\n'''
+          new_update = '''          open: data.open,\n          high: data.high,\n          low: data.low,\n          close: data.close,\n          readiness: data.readiness,\n          estimatedConfidence: data.estimatedConfidence\n'''
+          if old_update not in text:
+              raise SystemExit('analysis update block not found')
+          text = text.replace(old_update, new_update, 1)
+
+          path.write_text(text)
+          print('patched', path)
+
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/page.tsx
+          git rm .github/workflows/repair-live-observation.yml
+          git commit -m "fix: stabilize live observation batching" || exit 0
+          git push origin HEAD:main
