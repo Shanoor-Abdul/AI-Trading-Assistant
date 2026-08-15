@@ -6,12 +6,45 @@ import { AnalyzeRequest } from "../types";
 import { UniversalAIRequest, UniversalAIResponse } from "./schema";
 import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
 
-export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
-  // Check capabilities
-  const cap = PROVIDER_CAPABILITIES[req.provider];
-  if (!cap) {
-    throw new Error(`Unknown AI Provider: ${req.provider}`);
+function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
+  // The AI owns the evidence/confidence assessment. The browser must not
+  // infer readiness from the number of captured frames.
+  if (result.readiness && result.estimatedConfidence && result.readiness !== "NOT READY") {
+    return result;
   }
+
+  const evidenceConfidence = Math.max(
+    0,
+    Math.min(100, Number(result.dataConfidence ?? result.confidence ?? 0)),
+  );
+
+  let readiness: UniversalAIResponse["readiness"] = "NOT READY";
+  let estimatedConfidence: UniversalAIResponse["estimatedConfidence"] = "LOW";
+
+  if (evidenceConfidence >= 85) {
+    readiness = "READY / COMPLETE";
+    estimatedConfidence = "HIGH";
+  } else if (evidenceConfidence >= 65) {
+    readiness = "VERY GOOD";
+    estimatedConfidence = "HIGH";
+  } else if (evidenceConfidence >= 45) {
+    readiness = "GOOD";
+    estimatedConfidence = "MEDIUM";
+  } else if (evidenceConfidence > 0) {
+    readiness = "FAIR";
+    estimatedConfidence = "LOW";
+  }
+
+  return {
+    ...result,
+    readiness,
+    estimatedConfidence,
+  };
+}
+
+export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
+  const cap = PROVIDER_CAPABILITIES[req.provider];
+  if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
 
   const needsVision = !!req.imageBase64;
   if (needsVision && !cap.vision) {
@@ -25,14 +58,11 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     const parts = base64Data.split(";base64,");
     if (parts.length === 2) {
       const parsedMime = parts[0].replace("data:", "");
-      if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") {
-        mimeType = parsedMime;
-      }
+      if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") mimeType = parsedMime;
       base64Data = parts[1];
     }
   }
 
-  // Construct UniversalAIRequest
   const universalReq: UniversalAIRequest = {
     mode: req.marketDataMode === "visual_only" || !req.marketData ? "visual_only" : "api_data",
     provider: req.provider,
@@ -55,18 +85,15 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
   if ((req as any).screenshots && (req as any).screenshots.length > 0) {
     const maxImages = cap.maxImageCount || 1;
     let limitedScreenshots = (req as any).screenshots;
-    
-    // Uniformly downsample frames if the batch exceeds provider limits
+
     if (limitedScreenshots.length > maxImages) {
       if (maxImages === 1) {
         limitedScreenshots = [limitedScreenshots[limitedScreenshots.length - 1]];
       } else {
         const step = (limitedScreenshots.length - 1) / (maxImages - 1);
         const sampled = [];
-        for (let i = 0; i < maxImages - 1; i++) {
-          sampled.push(limitedScreenshots[Math.floor(i * step)]);
-        }
-        sampled.push(limitedScreenshots[limitedScreenshots.length - 1]); // Always include the very last frame
+        for (let i = 0; i < maxImages - 1; i++) sampled.push(limitedScreenshots[Math.floor(i * step)]);
+        sampled.push(limitedScreenshots[limitedScreenshots.length - 1]);
         limitedScreenshots = sampled;
       }
     }
@@ -74,64 +101,43 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     universalReq.screenshots = limitedScreenshots.map((shot: any) => {
       let b64 = shot.base64 || "";
       let mType = shot.mimeType || "image/jpeg";
-      
       if (b64.startsWith("data:image/")) {
         const parts = b64.split(";base64,");
         if (parts.length === 2) {
           const parsedMime = parts[0].replace("data:", "");
-          if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") {
-            mType = parsedMime;
-          }
+          if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") mType = parsedMime;
           b64 = parts[1];
         }
       }
       return {
         timeframe: shot.timestamp ? new Date(shot.timestamp).toLocaleTimeString() : "Current",
         mimeType: mType as "image/jpeg" | "image/png" | "image/webp",
-        base64: b64
+        base64: b64,
       };
     });
   } else if (base64Data) {
     if (req.previousData && req.previousData.screenshotBase64) {
-      // 5m -> 15m workflow
       universalReq.screenshots = [
-        {
-          timeframe: req.previousData.primaryTimeframe || "Previous",
-          mimeType: "image/jpeg", // Assuming previous is jpeg from storage
-          base64: req.previousData.screenshotBase64
-        },
-        {
-          timeframe: req.timeframe || "Current",
-          mimeType,
-          base64: base64Data
-        }
+        { timeframe: req.previousData.primaryTimeframe || "Previous", mimeType: "image/jpeg", base64: req.previousData.screenshotBase64 },
+        { timeframe: req.timeframe || "Current", mimeType, base64: base64Data },
       ];
     } else {
-      universalReq.screenshot = {
-        mimeType,
-        base64: base64Data
-      };
+      universalReq.screenshot = { mimeType, base64: base64Data };
     }
   }
 
-  // Route to correct provider adapter
   try {
+    let result: UniversalAIResponse;
     switch (req.provider) {
-      case "gemini":
-        return await analyzeGemini(universalReq);
-      case "openai":
-        return await analyzeOpenAI(universalReq);
-      case "groq":
-        return await analyzeGroq(universalReq);
-      case "openrouter":
-        return await analyzeOpenRouter(universalReq);
-      default:
-        throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
+      case "gemini": result = await analyzeGemini(universalReq); break;
+      case "openai": result = await analyzeOpenAI(universalReq); break;
+      case "groq": result = await analyzeGroq(universalReq); break;
+      case "openrouter": result = await analyzeOpenRouter(universalReq); break;
+      default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
     }
+    return normalizeAIObservationStatus(result);
   } catch (error: any) {
-    if (error.message?.includes("AI_ANALYSIS_INVALID")) {
-      throw error; // Re-throw normalization errors
-    }
+    if (error.message?.includes("AI_ANALYSIS_INVALID")) throw error;
     console.error("[AI Provider Error]", error);
     throw new Error(`AI_PROVIDER_UNAVAILABLE: ${error.message}`);
   }

@@ -18,16 +18,13 @@ export interface MobileState {
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
   previewImageBase64: string | null;
-  visualHistory: MobileVisualObservation[];
   isAnalyzing: boolean;
   analysisResult: TradingAnalysis | null;
   tradeHistory: TradeHistoryEntry[];
   pendingUnsureRequest: boolean;
   requestedTimeframe: string | null;
-  previousAnalysisData: TradingAnalysis | null;
-  setField: <K extends keyof MobileState>(field: K, value: MobileState[K]) => void;
-  addVisualObservation: (base64: string) => void;
-  clearVisualHistory: () => void;
+  previousAnalysisData: any | null;
+  setField: (field: keyof MobileState, value: any) => void;
   clearAnalysis: () => void;
   resetAll: () => void;
 }
@@ -44,23 +41,25 @@ export const useMobileStore = create<MobileState>((set) => ({
   marketDataMode: "visual_only",
   visibleIndicators: [],
   previewImageBase64: null,
-  visualHistory: [],
   isAnalyzing: false,
   analysisResult: null,
   tradeHistory: [],
   pendingUnsureRequest: false,
   requestedTimeframe: null,
   previousAnalysisData: null,
-  setField: (field, value) => set({ [field]: value }),
-  addVisualObservation: (base64) => set((state) => ({
-    previewImageBase64: base64,
-    visualHistory: appendMobileObservation(state.visualHistory, {
-      timestamp: Date.now(),
-      base64,
-      timeframe: state.primaryTimeframe,
-    }, MOBILE_VISUAL_HISTORY_LIMIT),
-  })),
-  clearVisualHistory: () => set({ previewImageBase64: null, visualHistory: [] }),
+
+  setField: (field, value) =>
+    set((state) => {
+      if (field === "tradeHistory" && Array.isArray(value)) {
+        const history = (value as TradeHistoryEntry[]).map((trade) => ({
+          ...trade,
+          tradeDuration: trade.tradeDuration || state.tradeDuration,
+        }));
+        return { tradeHistory: history };
+      }
+      return { [field]: value } as Partial<MobileState>;
+    }),
+
   clearAnalysis: () => set({
     previewImageBase64: null,
     visualHistory: [],
@@ -69,6 +68,7 @@ export const useMobileStore = create<MobileState>((set) => ({
     requestedTimeframe: null,
     previousAnalysisData: null,
   }),
+
   resetAll: () => set({
     previewImageBase64: null,
     visualHistory: [],
@@ -76,5 +76,5 @@ export const useMobileStore = create<MobileState>((set) => ({
     pendingUnsureRequest: false,
     requestedTimeframe: null,
     previousAnalysisData: null,
-  }),
+  })
 }));

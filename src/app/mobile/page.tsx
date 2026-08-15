@@ -14,6 +14,30 @@ import { MobileResultCard } from "@/components/mobile/MobileResultCard";
 import { MobileHistory } from "@/components/mobile/MobileHistory";
 import { getModelsByProvider } from "@/config/models";
 import { LogoutButton } from "@/components/LogoutButton";
+import { MobileMultiSelect } from "@/components/mobile/MobileMultiSelect";
+
+const STRATEGY_OPTIONS = [
+  "Scalping",
+  "Trend Following",
+  "Breakout",
+  "Mean Reversion",
+  "SMC",
+  "ICT",
+  "Swing Trading",
+];
+
+const INDICATOR_OPTIONS = [
+  "RSI",
+  "MACD",
+  "Bollinger Bands",
+  "EMA 20",
+  "EMA 50",
+  "EMA 200",
+  "Volume",
+  "Stochastic",
+  "VWAP",
+  "ATR",
+];
 
 const STRATEGIES = ["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading"];
 const INDICATORS = ["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"];
@@ -29,9 +53,22 @@ export default function MobileDashboard() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const resetContext = <K extends keyof ReturnType<typeof useMobileStore>>(field: K, value: ReturnType<typeof useMobileStore>[K]) => {
-    clearAnalysis();
-    setField(field, value);
+  const toggleStrategy = (value: string) => {
+    setField(
+      "selectedStrategies",
+      selectedStrategies.includes(value)
+        ? selectedStrategies.filter((item) => item !== value)
+        : [...selectedStrategies, value],
+    );
+  };
+
+  const toggleIndicator = (value: string) => {
+    setField(
+      "visibleIndicators",
+      visibleIndicators.includes(value)
+        ? visibleIndicators.filter((item) => item !== value)
+        : [...visibleIndicators, value],
+    );
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,26 +79,27 @@ export default function MobileDashboard() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-        const maxSize = 1920;
+        const MAX_SIZE = 1920;
 
-        if (width > height && width > maxSize) {
-          height *= maxSize / width;
-          width = maxSize;
-        } else if (height > maxSize) {
-          width *= maxSize / height;
-          height = maxSize;
+        if (width > height && width > MAX_SIZE) {
+          height *= MAX_SIZE / width;
+          width = MAX_SIZE;
+        } else if (height > MAX_SIZE) {
+          width *= MAX_SIZE / height;
+          height = MAX_SIZE;
         }
 
+        const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
-        if (!ctx) return;
 
-        ctx.drawImage(img, 0, 0, width, height);
-        addVisualObservation(canvas.toDataURL("image/jpeg", 0.7));
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setField("previewImageBase64", canvas.toDataURL("image/jpeg", 0.7));
+        }
       };
       img.src = String(event.target?.result ?? "");
     };
@@ -98,7 +136,7 @@ export default function MobileDashboard() {
         selectedStrategies,
         visibleIndicators,
         marketDataMode: "visual_only",
-        previousData: previousAnalysisData ?? undefined,
+        previousData: pendingUnsureRequest ? previousAnalysisData : undefined,
       };
 
       const res = await fetch("/api/analyze", {
@@ -152,109 +190,295 @@ export default function MobileDashboard() {
 
   return (
     <TooltipProvider>
-      <main className="p-4 flex flex-col gap-5 max-w-md mx-auto">
-        <header className="flex justify-between items-center">
+      <main className="p-4 flex flex-col gap-6 max-w-md mx-auto">
+        <header className="flex justify-between items-center mb-2">
           <div>
             <h1 className="text-xl font-bold tracking-tight">AI Assistant</h1>
-            <p className="text-xs text-zinc-400">Mobile Visual Scanner</p>
+            <p className="text-xs text-zinc-400">Mobile Scanner</p>
           </div>
           <LogoutButton />
         </header>
 
-        {!pendingUnsureRequest && (
+        {!pendingUnsureRequest ? (
           <section className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              {[
-                ["Platform", platform, "platform", "e.g. Binomo"],
-                ["Symbol", symbol, "symbol", "e.g. EUR/USD"],
-                ["Chart TF", primaryTimeframe, "primaryTimeframe", "e.g. 5m"],
-                ["Duration", tradeDuration, "tradeDuration", "e.g. 5m"],
-              ].map(([label, value, field, placeholder]) => (
-                <div className="space-y-1.5" key={field}>
-                  <div className="flex items-center gap-1">
-                    <Label className="text-xs text-zinc-400">{label}</Label>
-                    <Tooltip><TooltipTrigger><Info className="w-3 h-3 text-zinc-500" /></TooltipTrigger><TooltipContent><p>Changing this starts a new visual analysis context.</p></TooltipContent></Tooltip>
-                  </div>
-                  <Input
-                    value={value}
-                    onChange={(e) => resetContext(field as keyof ReturnType<typeof useMobileStore>, e.target.value)}
-                    placeholder={placeholder}
-                    className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
-                  />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Platform</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Trading platform being used (e.g. OlympTrade)</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
-              ))}
+                <Input
+                  value={platform}
+                  onChange={(e) => setField("platform", e.target.value)}
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="e.g. Binomo"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Symbol</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Asset ticker pair (e.g. BTCUSDT)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  value={symbol}
+                  onChange={(e) => setField("symbol", e.target.value.toUpperCase())}
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm font-medium text-center"
+                  placeholder="e.g. EUR/USD"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Chart TF</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Primary chart timeframe (e.g. 5m)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  value={primaryTimeframe}
+                  onChange={(e) => setField("primaryTimeframe", e.target.value)}
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="e.g. 5m"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-zinc-400">Duration</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>How long the trade should last</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  value={tradeDuration}
+                  onChange={(e) => setField("tradeDuration", e.target.value)}
+                  className="h-9 bg-zinc-900 border-zinc-800 text-sm text-center"
+                  placeholder="e.g. 5m"
+                />
+              </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">AI Model</Label>
-              <Select value={`${selectedProvider}:${selectedModel}`} onValueChange={(value) => {
-                const [provider, model] = value.split(":");
-                resetContext("selectedProvider", provider);
-                setField("selectedModel", model);
-              }}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><SelectValue /></SelectTrigger>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">AI Model</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Select the AI provider and model for analysis.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Select
+                value={`${selectedProvider}:${selectedModel}`}
+                onValueChange={(val) => {
+                  if (!val) return;
+                  const [provider, model] = val.split(":");
+                  setField("selectedProvider", provider);
+                  setField("selectedModel", model);
+                }}
+              >
+                <SelectTrigger className="h-9 w-full bg-zinc-900 border-zinc-800 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
-                  {["gemini", "groq", "openai", "openrouter"].map((provider) => (
-                    <SelectGroup key={provider}>
-                      <SelectLabel>{provider}</SelectLabel>
-                      {getModelsByProvider(provider).map((model) => <SelectItem key={model.id} value={`${provider}:${model.id}`}>{model.name}</SelectItem>)}
-                    </SelectGroup>
-                  ))}
+                  <SelectGroup>
+                    <SelectLabel className="text-zinc-500 text-xs">Google (Free Tier)</SelectLabel>
+                    {getModelsByProvider("gemini").map((model) => (
+                      <SelectItem key={model.id} value={`gemini:${model.id}`}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className="text-zinc-500 text-xs mt-2">Groq (Free Tier)</SelectLabel>
+                    {getModelsByProvider("groq").map((model) => (
+                      <SelectItem key={model.id} value={`groq:${model.id}`}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className="text-zinc-500 text-xs mt-2">OpenAI (Credits Required)</SelectLabel>
+                    {getModelsByProvider("openai").map((model) => (
+                      <SelectItem key={model.id} value={`openai:${model.id}`}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
+                    {getModelsByProvider("openrouter").map((model) => (
+                      <SelectItem key={model.id} value={`openrouter:${model.id}`}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Selected Strategies</Label>
-              <Select value="__strategy__" onValueChange={(value) => {
-                if (selectedStrategies.includes(value)) resetContext("selectedStrategies", selectedStrategies.filter((item) => item !== value));
-                else resetContext("selectedStrategies", [...selectedStrategies, value]);
-              }}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><Target className="w-4 h-4 mr-2" /><SelectValue placeholder={selectedStrategies.join(", ") || "Add Strategy"} /></SelectTrigger>
-                <SelectContent>{STRATEGIES.map((item) => <SelectItem key={item} value={item}><div className="flex gap-2"><input type="checkbox" checked={selectedStrategies.includes(item)} readOnly />{item}</div></SelectItem>)}</SelectContent>
-              </Select>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Selected Strategies</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Select one or more trading strategies for the AI to apply.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <MobileMultiSelect
+                selected={selectedStrategies}
+                options={STRATEGY_OPTIONS}
+                onChange={toggleStrategy}
+                placeholder="Add Strategy"
+                icon={<Target className="w-4 h-4 mr-2 text-zinc-400" />}
+              />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-400">Visible Indicators</Label>
-              <Select value="__indicator__" onValueChange={(value) => {
-                if (visibleIndicators.includes(value)) resetContext("visibleIndicators", visibleIndicators.filter((item) => item !== value));
-                else resetContext("visibleIndicators", [...visibleIndicators, value]);
-              }}>
-                <SelectTrigger className="h-9 bg-zinc-900 border-zinc-800"><Layers className="w-4 h-4 mr-2" /><SelectValue placeholder={visibleIndicators.join(", ") || "Add Indicator"} /></SelectTrigger>
-                <SelectContent>{INDICATORS.map((item) => <SelectItem key={item} value={item}><div className="flex gap-2"><input type="checkbox" checked={visibleIndicators.includes(item)} readOnly />{item}</div></SelectItem>)}</SelectContent>
-              </Select>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Visible Indicators</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Tell the AI what indicators are visible on your chart.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <MobileMultiSelect
+                selected={visibleIndicators}
+                options={INDICATOR_OPTIONS}
+                onChange={toggleIndicator}
+                placeholder="Add Indicator"
+                icon={<Layers className="w-4 h-4 mr-2 text-zinc-400" />}
+              />
             </div>
           </section>
-        )}
-
-        {pendingUnsureRequest && (
+        ) : (
           <section className="bg-orange-500/10 border border-orange-500/50 p-4 rounded-lg space-y-3">
-            <div className="flex items-start gap-2"><AlertTriangle className="w-5 h-5 text-orange-400" /><div><h3 className="font-bold text-orange-400 text-sm">Confirmation Needed</h3><p className="text-xs text-orange-200/80 mt-1">Upload a {requestedTimeframe} chart screenshot for additional confirmation.</p></div></div>
-            <Button variant="outline" className="w-full" onClick={() => clearAnalysis()}>Cancel Analysis</Button>
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-bold text-orange-400 text-sm">Confirmation Needed</h3>
+                <p className="text-xs text-orange-200/80 mt-1">
+                  The {primaryTimeframe} chart does not provide enough confirmation. Please switch your chart to <strong>{requestedTimeframe}</strong> and upload a new screenshot.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full text-xs h-8 border-orange-500/30"
+              onClick={clearAnalysis}
+            >
+              Cancel Analysis
+            </Button>
           </section>
         )}
 
-        <section className="space-y-3">
-          <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
-          <Button onClick={() => fileInputRef.current?.click()} className="w-full h-20 border-2 border-dashed border-zinc-700 bg-zinc-900/50" variant="outline">
-            <Camera className="w-5 h-5 mr-2" /> Add Chart Frame
-          </Button>
+        {!analysisResult && (
+          <section className="space-y-4">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
 
-          {previewImageBase64 && <div className="relative rounded-lg overflow-hidden border border-zinc-800 h-44"><img src={previewImageBase64} alt="Current chart" className="w-full h-full object-cover" /><Button size="sm" variant="secondary" className="absolute top-2 right-2 h-7" onClick={() => fileInputRef.current?.click()}><RefreshCw className="w-3 h-3 mr-1" /> Add New</Button></div>}
+            {!previewImageBase64 ? (
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full h-24 border-2 border-dashed border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800 flex flex-col gap-2 text-zinc-400"
+                variant="outline"
+              >
+                <Camera className="w-6 h-6" />
+                <span>Upload Chart Screenshot {pendingUnsureRequest && `(${requestedTimeframe})`}</span>
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="relative rounded-lg overflow-hidden border border-zinc-800 h-40">
+                  <img
+                    src={previewImageBase64}
+                    alt="Chart Preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="absolute top-2 right-2 h-7 text-xs bg-black/60 backdrop-blur"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" /> Replace
+                  </Button>
+                </div>
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold h-12 text-base shadow-[0_0_20px_rgba(147,51,234,0.3)]"
+                >
+                  {isAnalyzing ? (
+                    <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Analyzing...</>
+                  ) : (
+                    <><Activity className="w-5 h-5 mr-2" /> Run AI Analysis</>
+                  )}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2">
-            <div className="flex justify-between text-xs"><span className="text-zinc-400">Visual history</span><span className="font-mono">{visualHistory.length} / 5 frames</span></div>
-            <div className="flex gap-1.5 overflow-x-auto">
-              {visualHistory.map((frame, index) => <img key={frame.timestamp} src={frame.base64} alt={`Observation ${index + 1}`} className={`w-16 h-12 object-cover rounded border ${index === visualHistory.length - 1 ? "border-purple-500" : "border-zinc-800"}`} />)}
+        {analysisResult && (
+          <div className="space-y-4">
+            <MobileResultCard />
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                onClick={() => toast.success("Paper trade started!")}
+              >
+                Start Paper Trade
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={clearAnalysis}
+              >
+                Scan Again
+              </Button>
             </div>
-            <p className="text-[10px] text-zinc-500">The latest frame is always included. Up to 5 recent frames are sent to the visual model.</p>
           </div>
-
-          {visualHistory.length > 0 && <div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={clearVisualHistory}><Trash2 className="w-4 h-4 mr-2" />Clear Frames</Button><Button disabled={isAnalyzing} className="flex-[2] bg-purple-600 hover:bg-purple-700" onClick={handleAnalyze}>{isAnalyzing ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Analyzing {visualHistory.length} frames...</> : <><Activity className="w-5 h-5 mr-2" />Run AI Analysis</>}</Button></div>}
-        </section>
-
-        {analysisResult && <div className="space-y-3"><MobileResultCard /><Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={() => toast.success("Paper trade started!")}>Start Paper Trade</Button><Button variant="outline" className="w-full" onClick={clearAnalysis}>New Visual Session</Button></div>}
+        )}
 
         <MobileHistory />
       </main>
