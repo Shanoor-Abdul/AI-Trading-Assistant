@@ -4,17 +4,9 @@ import { useMobileStore } from "@/store/useMobileStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { TradeCountdown } from "@/components/TradeCountdown";
 import { parseTradeDurationMs } from "@/lib/tradeDuration";
-
+import { MobileScreenShare } from "@/components/mobile/MobileScreenShare";
 export function MobileHistory() {
   const { tradeHistory, setField } = useMobileStore();
-
-  if (tradeHistory.length === 0) {
-    return (
-      <div className="text-center p-8 text-zinc-500 text-sm">
-        No recent trades. Run an analysis to see history here.
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-3 mt-4">
