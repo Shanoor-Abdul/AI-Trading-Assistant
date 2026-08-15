@@ -377,9 +377,7 @@ export default function Dashboard() {
           }
         }
       } finally {
-        if (!cancelled) {
-          useTradingStore.getState().setIsProgressiveAnalyzing(false);
-        }
+        useTradingStore.getState().setIsProgressiveAnalyzing(false);
       }
     };
 
