@@ -1,0 +1,36 @@
+name: Fix cancelled reference
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-cancelled-reference.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove stale cancelled reference
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/app/page.tsx')
+          text = path.read_text()
+          old = '''      } finally {\n        if (!cancelled) {\n          useTradingStore.getState().setIsProgressiveAnalyzing(false);\n        }\n      }'''
+          new = '''      } finally {\n        useTradingStore.getState().setIsProgressiveAnalyzing(false);\n      }'''
+          if old not in text:
+              raise SystemExit('Expected cancelled block not found')
+          path.write_text(text.replace(old, new, 1))
+      - name: Commit fix and remove workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/page.tsx
+          git rm .github/workflows/fix-cancelled-reference.yml
+          git commit -m "fix: remove stale cancelled reference"
+          git push origin HEAD:main
