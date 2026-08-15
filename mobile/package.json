@@ -16,6 +16,10 @@
   },
   "devDependencies": {
     "@react-native-community/cli": "^20.0.0",
+    "@react-native-community/cli-platform-android": "^20.0.0",
+    "@react-native-community/cli-platform-ios": "^20.0.0",
+    "@react-native/codegen": "^0.81.4",
+    "@react-native/gradle-plugin": "^0.81.4",
     "@react-native/typescript-config": "^0.81.4",
     "@types/react": "^19.1.0",
     "typescript": "^5.9.3"
