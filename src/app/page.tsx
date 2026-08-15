@@ -125,42 +125,15 @@ export default function Dashboard() {
     expectedFrames = calculateExpectedFrames(timeframe, tradeDuration, observationFrequency);
   }
 
-  let analysisReadiness = "NOT READY";
-  let estimatedConfidence = "LOW";
-  let readinessMessage = "Collect more chart data before analyzing.";
-  let isAnalyzeDisabled = true;
-
-  if (marketDataMode === 'visual_only' && useTradingStore.getState().totalFramesCaptured > 0) {
-    const frameCount = useTradingStore.getState().totalFramesCaptured;
-    const ratio = frameCount / expectedFrames;
-
-    if (frameCount === 0) {
-      analysisReadiness = "NOT READY";
-      estimatedConfidence = "LOW";
-      readinessMessage = "Collecting more chart history...";
-      isAnalyzeDisabled = true;
-    } else if (ratio < 0.25 || frameCount < 4) {
-      analysisReadiness = "FAIR";
-      estimatedConfidence = "LOW";
-      readinessMessage = "Limited visual history.";
-      isAnalyzeDisabled = false;
-    } else if (ratio < 0.6 || frameCount < 8) {
-      analysisReadiness = "GOOD";
-      estimatedConfidence = "MEDIUM";
-      readinessMessage = "Enough recent chart history for analysis.";
-      isAnalyzeDisabled = false;
-    } else if (ratio < 1) {
-      analysisReadiness = "VERY GOOD";
-      estimatedConfidence = "HIGH";
-      readinessMessage = "Strong visual history available.";
-      isAnalyzeDisabled = false;
-    } else {
-      analysisReadiness = "READY / COMPLETE";
-      estimatedConfidence = "HIGH";
-      readinessMessage = "Full visual history available.";
-      isAnalyzeDisabled = false;
-    }
-  }
+  const aiStatus = useTradingStore.getState();
+  const analysisReadiness = aiStatus.aiReadiness ?? "NOT READY";
+  const estimatedConfidence = aiStatus.aiEstimatedConfidence ?? "LOW";
+  const readinessMessage = aiStatus.aiReadiness
+    ? `AI observation status: ${aiStatus.aiReadiness}.`
+    : "Waiting for a completed AI observation.";
+  const isAnalyzeDisabled = marketDataMode === "visual_only"
+    ? aiStatus.totalFramesCaptured === 0
+    : false;
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -294,88 +267,129 @@ export default function Dashboard() {
   }, [platform, symbol, timeframe, tradeDuration, selectedStrategies, visibleIndicators, marketDataMode, selectedProvider, selectedModel, useTradingStore.getState().activeConnectionId, observationFrequency]);
 
   // Progressive Analysis Loop
+  // One coordinator owns the queue. It processes complete 20-frame batches
+  // sequentially and never relies on a stale observation index after cache eviction.
   useEffect(() => {
-    const state = useTradingStore.getState();
     if (!stream || marketDataMode !== "visual_only") return;
-    if (state.isProgressiveAnalyzing || state.isFetchingAnalysis) return;
 
-    const unanalyzedCount = state.observations.length - (state.lastAnalyzedObservationIndex === -1 ? 0 : state.lastAnalyzedObservationIndex + 1);
-    
-    // We aim for batches of exactly 20 frames
-    if (unanalyzedCount >= 20 && state.observations.length >= 20) {
-      
-      const runProgressiveAnalysis = async () => {
-        state.setIsProgressiveAnalyzing(true);
-        
-        // Grab exactly 20 frames for the batch
-        const startIndex = (state.lastAnalyzedObservationIndex === -1 ? 0 : state.lastAnalyzedObservationIndex + 1);
-        const endIndex = startIndex + 19;
-        const framesToAnalyze = state.observations.slice(startIndex, endIndex + 1);
-        const batchId = state.currentBatchId;
-        
-        try {
-          const reqBody: any = { 
-            symbol, 
-            timeframe, 
-            platform, 
-            tradeDuration, 
-            provider: selectedProvider, 
-            model: selectedModel, 
-            marketDataMode, 
-            visibleIndicators, 
-            selectedStrategies,
-            isProgressive: true,
-            progressiveState: state.progressiveAnalyses,
-            screenshots: framesToAnalyze.map(obs => ({ 
-              timestamp: new Date(obs.timestamp).toISOString(),
-              mimeType: "image/jpeg",
-              base64: obs.imageBase64,
-              platform: platform,
-              symbol: symbol
-            }))
-          };
-          
-          const response = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(reqBody)
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.marketState) {
-              const summary = {
-                analysisId: data.analysisId || Date.now().toString(),
-                batchId: batchId,
-                timestamp: new Date().toLocaleTimeString(),
-                frameStart: startIndex + 1, // 1-indexed for display
-                frameEnd: endIndex + 1,
-                trend: data.trend || "Unknown",
-                momentum: data.momentum || "Unknown",
-                marketState: data.marketState,
-                candlestickBehavior: data.candlestickBehavior || "Unknown",
-                indicatorState: data.indicatorState || {},
-                strategyConsensus: data.strategyConsensus || "Unknown",
-                strategyConflicts: data.strategyConflicts || [],
-                changesFromPrevious: data.changesFromPrevious || "None",
-                confidence: data.confidence || 0
-              };
-              useTradingStore.getState().addProgressiveAnalysis(summary);
-              useTradingStore.getState().setLastAnalyzedObservationIndex(
-                useTradingStore.getState().lastAnalyzedObservationIndex + framesToAnalyze.length
-              );
-              useTradingStore.getState().incrementBatchId();
-            }
+    let cancelled = false;
+
+    const runProgressiveAnalysis = async () => {
+      const initial = useTradingStore.getState();
+      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis) return;
+
+      initial.setIsProgressiveAnalyzing(true);
+
+      try {
+        while (!cancelled) {
+          const current = useTradingStore.getState();
+
+          if (!current.stream || current.marketDataMode !== "visual_only" || current.isFetchingAnalysis) {
+            break;
           }
-        } catch (error) {
-          console.error("Progressive analysis failed:", error);
-        } finally {
+
+          const analyzedCount = current.lastAnalyzedObservationIndex >= 0
+            ? current.lastAnalyzedObservationIndex + 1
+            : 0;
+          const pending = current.observations.length - analyzedCount;
+
+          if (pending < 20) break;
+
+          const startIndex = analyzedCount;
+          const framesToAnalyze = current.observations.slice(startIndex, startIndex + 20);
+          if (framesToAnalyze.length !== 20) break;
+
+          const batchId = current.currentBatchId;
+          const frameTimestamps = framesToAnalyze.map((frame) => frame.timestamp);
+
+          try {
+            const response = await fetch('/api/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                symbol: current.symbol,
+                timeframe: current.timeframe,
+                platform: current.platform,
+                tradeDuration: current.tradeDuration,
+                provider: current.selectedProvider,
+                model: current.selectedModel,
+                marketDataMode: current.marketDataMode,
+                visibleIndicators: current.visibleIndicators,
+                selectedStrategies: current.selectedStrategies,
+                activeConnectionId: current.activeConnectionId,
+                isProgressive: true,
+                progressiveState: current.progressiveAnalyses,
+                screenshots: framesToAnalyze.map((obs) => ({
+                  timestamp: new Date(obs.timestamp).toISOString(),
+                  mimeType: "image/jpeg",
+                  base64: obs.imageBase64,
+                  platform: current.platform,
+                  symbol: current.symbol,
+                })),
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Progressive analysis failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.marketState) {
+              throw new Error('Progressive analysis returned no marketState');
+            }
+
+            const latest = useTradingStore.getState();
+            const lastBatchTimestamp = frameTimestamps[frameTimestamps.length - 1];
+            const lastBatchIndex = latest.observations.findIndex(
+              (observation) => observation.timestamp === lastBatchTimestamp,
+            );
+
+            latest.addProgressiveAnalysis({
+              analysisId: data.analysisId || crypto.randomUUID(),
+              batchId,
+              timestamp: new Date().toISOString(),
+              frameStart: startIndex + 1,
+              frameEnd: startIndex + 20,
+              trend: data.trend || "Unknown",
+              momentum: data.momentum || "Unknown",
+              marketState: data.marketState,
+              candlestickBehavior: data.candlestickBehavior || "Unknown",
+              indicatorState: data.indicatorState || {},
+              strategyConsensus: data.strategyConsensus || "Unknown",
+              strategyConflicts: data.strategyConflicts || [],
+              changesFromPrevious: data.changesFromPrevious || "None",
+              confidence: data.confidence || 0,
+            });
+
+            if (data.readiness !== undefined || data.estimatedConfidence !== undefined) {
+              latest.updateAnalysis({
+                readiness: data.readiness,
+                estimatedConfidence: data.estimatedConfidence,
+              } as any);
+            }
+
+            // The batch is identified by timestamp, not by a mutable array index.
+            // If the entire batch was evicted while AI was running, -1 correctly
+            // means all currently retained frames are newer and still pending.
+            latest.setLastAnalyzedObservationIndex(lastBatchIndex);
+            latest.incrementBatchId();
+          } catch (error) {
+            console.error("Progressive analysis failed:", error);
+            break;
+          }
+        }
+      } finally {
+        if (!cancelled) {
           useTradingStore.getState().setIsProgressiveAnalyzing(false);
         }
-      };
-      
-      runProgressiveAnalysis();
-    }
+      }
+    };
+
+    void runProgressiveAnalysis();
+
+    return () => {
+      cancelled = true;
+    };
   }, [observations.length, stream, marketDataMode]);
 
   const handleAnalyzeSnapshot = async () => {
@@ -508,7 +522,9 @@ export default function Dashboard() {
           open: data.open,
           high: data.high,
           low: data.low,
-          close: data.close
+          close: data.close,
+          readiness: data.readiness,
+          estimatedConfidence: data.estimatedConfidence
         });
         
         // Reset the visual frames back to 0 so the next cycle starts fresh, 
@@ -812,7 +828,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4">
                   <span>Current Batch:</span>
                   <span className="text-zinc-200">{
-                    useTradingStore.getState().observations.length - (useTradingStore.getState().lastAnalyzedObservationIndex === -1 ? 0 : useTradingStore.getState().lastAnalyzedObservationIndex + 1)
+                    Math.min(20, Math.max(0, useTradingStore.getState().observations.length - (useTradingStore.getState().lastAnalyzedObservationIndex === -1 ? 0 : useTradingStore.getState().lastAnalyzedObservationIndex + 1)))
                   } / 20</span>
                 </div>
                 
