@@ -1,0 +1,103 @@
+name: Build live visual change detection
+
+on:
+  push:
+    branches: [feature/live-visual-change-detection]
+    paths:
+      - '.github/workflows/build-live-change-detection.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add visual change detector and live observation API
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          visual_change = Path('src/lib/observation/visualChange.ts')
+          visual_change.parent.mkdir(parents=True, exist_ok=True)
+          visual_change.write_text('''export interface VisualChangeOptions {\n  pixelStride?: number;\n  channelThreshold?: number;\n  changedRatioThreshold?: number;\n  meanDifferenceThreshold?: number;\n}\n\nexport function visualChangeScore(\n  previous: ImageData | null,\n  current: ImageData,\n  options: VisualChangeOptions = {},\n): number {\n  if (!previous || previous.width !== current.width || previous.height !== current.height) {\n    return 1;\n  }\n\n  const pixelStride = Math.max(4, options.pixelStride ?? 16);\n  const channelThreshold = options.channelThreshold ?? 18;\n  const dataA = previous.data;\n  const dataB = current.data;\n\n  let changed = 0;\n  let samples = 0;\n  let totalDifference = 0;\n\n  for (let y = 0; y < current.height; y += pixelStride) {\n    for (let x = 0; x < current.width; x += pixelStride) {\n      const i = (y * current.width + x) * 4;\n      const diff =\n        Math.abs(dataA[i] - dataB[i]) +\n        Math.abs(dataA[i + 1] - dataB[i + 1]) +\n        Math.abs(dataA[i + 2] - dataB[i + 2]);\n\n      samples += 1;\n      totalDifference += diff / 765;\n      if (diff >= channelThreshold * 3) changed += 1;\n    }\n  }\n\n  if (samples === 0) return 0;\n\n  const changedRatio = changed / samples;\n  const meanDifference = totalDifference / samples;\n  const ratioThreshold = options.changedRatioThreshold ?? 0.012;\n  const meanThreshold = options.meanDifferenceThreshold ?? 0.008;\n\n  if (changedRatio >= ratioThreshold || meanDifference >= meanThreshold) {\n    return Math.max(changedRatio, meanDifference);\n  }\n\n  return Math.max(changedRatio, meanDifference);\n}\n\nexport function hasSignificantVisualChange(\n  previous: ImageData | null,\n  current: ImageData,\n  options: VisualChangeOptions = {},\n): boolean {\n  if (!previous) return true;\n\n  const score = visualChangeScore(previous, current, options);\n  return score >= Math.min(\n    options.changedRatioThreshold ?? 0.012,\n    options.meanDifferenceThreshold ?? 0.008,\n  );\n}\n''')
+
+          observe = Path('src/app/api/observe/route.ts')
+          observe.parent.mkdir(parents=True, exist_ok=True)
+          observe.write_text('''import { NextRequest, NextResponse } from "next/server";\nimport { analyze } from "@/lib/ai";\n\nexport const runtime = "nodejs";\n\nexport async function POST(req: NextRequest) {\n  try {\n    const body = await req.json();\n\n    if (!body.imageBase64 || !body.symbol || !body.timeframe) {\n      return NextResponse.json(\n        { error: "imageBase64, symbol and timeframe are required" },\n        { status: 400 },\n      );\n    }\n\n    const result = await analyze({\n      imageBase64: body.imageBase64,\n      symbol: body.symbol,\n      timeframe: body.timeframe,\n      platform: body.platform,\n      tradeDuration: body.tradeDuration,\n      provider: body.provider || "gemini",\n      model: body.model,\n      selectedStrategies: body.selectedStrategies,\n      visibleIndicators: body.visibleIndicators || [],\n      marketDataMode: "visual_only",\n      isProgressive: true,\n      progressiveState: body.progressiveState,\n    } as any);\n\n    return NextResponse.json({\n      ...result,\n      analysisId: result.analysisId || crypto.randomUUID(),\n      observedAt: Date.now(),\n    });\n  } catch (error: any) {\n    console.error("Live observation failed:", error);\n    return NextResponse.json(\n      { error: error?.message || "Live observation failed" },\n      { status: 500 },\n    );\n  }\n}\n''')
+
+          store = Path('src/store/useTradingStore.ts')
+          text = store.read_text()
+          text = text.replace(
+              '  lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;\n',
+              '  lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;\n  visualChangeCount: number; incrementVisualChangeCount: () => void;\n',
+          )
+          text = text.replace(
+              '  lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),\n',
+              '  lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),\n  visualChangeCount: 0, incrementVisualChangeCount: () => set((state) => ({ visualChangeCount: state.visualChangeCount + 1 })),\n',
+          )
+          text = text.replace(
+              '  observationFrequency: 15, setObservationFrequency: (val) => set({ observationFrequency: val }),\n',
+              '  observationFrequency: 1, setObservationFrequency: (val) => set({ observationFrequency: val }),\n',
+          )
+          text = text.replace(
+              'totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null',
+              'totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, visualChangeCount: 0, aiReadiness: null, aiEstimatedConfidence: null',
+          )
+          store.write_text(text)
+
+          page = Path('src/app/page.tsx')
+          text = page.read_text()
+
+          marker = '  const canvasRef = useRef<HTMLCanvasElement>(null);\n'
+          refs = '''  const canvasRef = useRef<HTMLCanvasElement>(null);\n  const previousRawFrameRef = useRef<ImageData | null>(null);\n  const liveObservationInFlightRef = useRef(false);\n  const pendingLiveObservationRef = useRef<string | null>(null);\n'''
+          if marker not in text:
+              raise SystemExit('canvas marker not found')
+          text = text.replace(marker, refs, 1)
+
+          capture_start = text.index('  // Background Screen Capture for Live Observation\n  useEffect(() => {')
+          capture_end = text.index('  // Session Key Management', capture_start)
+          capture = '''  // Background Screen Capture: sample the shared screen every heartbeat.\n  // The browser watches every second, but AI is called only when the raw chart\n  // image changes meaningfully. The watermark is added after change detection.\n  useEffect(() => {\n    if (!stream || marketDataMode !== "visual_only" || !isAnalyzing) return;\n\n    previousRawFrameRef.current = null;\n\n    const observeLatestFrame = async (imageBase64: string) => {\n      if (liveObservationInFlightRef.current) {\n        pendingLiveObservationRef.current = imageBase64;\n        return;\n      }\n\n      liveObservationInFlightRef.current = true;\n      let nextFrame: string | null = imageBase64;\n\n      try {\n        while (nextFrame) {\n          const current = useTradingStore.getState();\n          if (!current.stream || current.marketDataMode !== "visual_only" || !current.isAnalyzing) break;\n\n          const frame = nextFrame;\n          nextFrame = null;\n\n          const response = await fetch("/api/observe", {\n            method: "POST",\n            headers: { "Content-Type": "application/json" },\n            body: JSON.stringify({\n              imageBase64: frame,\n              symbol: current.symbol,\n              timeframe: current.timeframe,\n              platform: current.platform,\n              tradeDuration: current.tradeDuration,\n              provider: current.selectedProvider,\n              model: current.selectedModel,\n              selectedStrategies: current.selectedStrategies,\n              visibleIndicators: current.visibleIndicators,\n              progressiveState: current.progressiveAnalyses.slice(-10),\n            }),\n          });\n\n          if (!response.ok) {\n            throw new Error(`Live observation failed: ${response.status}`);\n          }\n\n          const data = await response.json();\n          const latest = useTradingStore.getState();\n\n          latest.addProgressiveAnalysis({\n            analysisId: data.analysisId || crypto.randomUUID(),\n            batchId: latest.currentBatchId,\n            timestamp: new Date().toISOString(),\n            frameStart: latest.totalFramesCaptured,\n            frameEnd: latest.totalFramesCaptured,\n            trend: data.trend || "Unknown",\n            momentum: data.momentum || "Unknown",\n            marketState: data.marketState || "Unknown",\n            candlestickBehavior: data.candlestickBehavior || "Unknown",\n            indicatorState: data.indicatorState || {},\n            strategyConsensus: data.strategyConsensus || "Unknown",\n            strategyConflicts: data.strategyConflicts || [],\n            changesFromPrevious: data.changesFromPrevious || "None",\n            confidence: data.confidence || 0,\n          });\n\n          latest.updateAnalysis({\n            trend: data.trend,\n            confidence: data.confidence,\n            explanation: data.explanation,\n            readiness: data.readiness,\n            estimatedConfidence: data.estimatedConfidence,\n          } as any);\n          latest.incrementBatchId();\n\n          nextFrame = pendingLiveObservationRef.current;\n          pendingLiveObservationRef.current = null;\n        }\n      } catch (error) {\n        console.error("Live observation error:", error);\n      } finally {\n        liveObservationInFlightRef.current = false;\n      }\n    };\n\n    const captureObservation = () => {\n      const video = videoRef.current;\n      const canvas = canvasRef.current;\n      if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return;\n\n      canvas.width = video.videoWidth;\n      canvas.height = video.videoHeight;\n      const ctx = canvas.getContext("2d");\n      if (!ctx) return;\n\n      // Compare the clean screen, before the timestamp watermark is added.\n      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);\n      const rawFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);\n      const previous = previousRawFrameRef.current;\n      const changed = hasSignificantVisualChange(previous, rawFrame);\n      previousRawFrameRef.current = rawFrame;\n\n      const state = useTradingStore.getState();\n      if (changed) {\n        state.incrementVisualChangeCount();\n      }\n\n      const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;\n      const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;\n      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";\n      ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);\n      ctx.fillStyle = "#4ade80";\n      ctx.font = "bold 18px Arial";\n      ctx.fillText(text1, canvas.width - 300, canvas.height - 50);\n      ctx.fillStyle = "#e4e4e7";\n      ctx.font = "16px Arial";\n      ctx.fillText(text2, canvas.width - 300, canvas.height - 25);\n\n      const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);\n      state.addObservation(imageBase64);\n\n      if (changed) {\n        void observeLatestFrame(imageBase64);\n      }\n    };\n\n    const initialTimer = window.setTimeout(captureObservation, 500);\n    const intervalTimer = window.setInterval(captureObservation, Math.max(1, observationFrequency) * 1000);\n\n    return () => {\n      window.clearTimeout(initialTimer);\n      window.clearInterval(intervalTimer);\n      previousRawFrameRef.current = null;\n      pendingLiveObservationRef.current = null;\n    };\n  }, [stream, marketDataMode, isAnalyzing, observationFrequency]);\n\n'''
+          text = text[:capture_start] + capture + text[capture_end:]
+
+          # Import detector.
+          text = text.replace(
+              'import { createObservationSessionKey } from "@/lib/observation/session";\n',
+              'import { createObservationSessionKey } from "@/lib/observation/session";\nimport { hasSignificantVisualChange } from "@/lib/observation/visualChange";\n',
+              1,
+          )
+
+          # Remove the old 20-frame progressive coordinator; live observation now owns AI updates.
+          start = text.index('  // Progressive Analysis Loop\n  // One coordinator owns the queue.')
+          end = text.index('  const handleAnalyzeSnapshot = async () => {', start)
+          text = text[:start] + '''  // Progressive AI is now driven by meaningful visual changes in the\n  // background observer above. Final trade analysis still uses /api/analyze.\n\n''' + text[end:]
+
+          # Add the 1-second heartbeat option while retaining slower choices.
+          text = text.replace(
+              '<SelectItem value="15">15s</SelectItem>',
+              '<SelectItem value="1">1s</SelectItem>\n                          <SelectItem value="2">2s</SelectItem>\n                          <SelectItem value="5">5s</SelectItem>\n                          <SelectItem value="15">15s</SelectItem>',
+              1,
+          )
+
+          # Replace Current Batch with Visual Changes in the compact live status panel.
+          text = text.replace(
+              '''                <div className="flex items-center justify-between gap-4">\n                  <span>Current Batch:</span>\n                  <span className="text-zinc-200">{\n                    Math.min(20, Math.max(0, useTradingStore.getState().observations.length - (useTradingStore.getState().lastAnalyzedObservationIndex === -1 ? 0 : useTradingStore.getState().lastAnalyzedObservationIndex + 1)))\n                  } / 20</span>\n                </div>''',
+              '''                <div className="flex items-center justify-between gap-4">\n                  <span>Visual Changes:</span>\n                  <span className="text-zinc-200">{useTradingStore.getState().visualChangeCount}</span>\n                </div>''',
+              1,
+          )
+
+          page.write_text(text)
+          print('patched page and store')
+
+      - name: Commit feature and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/api/observe/route.ts src/lib/observation/visualChange.ts src/store/useTradingStore.ts src/app/page.tsx
+          git rm .github/workflows/build-live-change-detection.yml
+          git commit -m "feat: observe chart changes in real time" || exit 0
+          git push origin HEAD:feature/live-visual-change-detection
