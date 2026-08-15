@@ -25,6 +25,10 @@ Technical Indicators:
 Programmatic Market Structure:
 - Regime: ${req.marketData?.marketRegime || "N/A"}
 
+Order Book (Level 2 Liquidity):
+- Top 5 Bids (Buyers): ${req.marketData?.orderBook?.bids?.slice(0, 5)?.map((b: any) => `[${b[0]}, ${b[1]}]`)?.join(", ") || "N/A"}
+- Top 5 Asks (Sellers): ${req.marketData?.orderBook?.asks?.slice(0, 5)?.map((a: any) => `[${a[0]}, ${a[1]}]`)?.join(", ") || "N/A"}
+
 Structured market data is available and MUST be prioritized for numerical analysis.
 You are in API DATA mode. Base your analysis STRICTLY on the exact numerical values and indicators provided in the text.
 Do NOT use screenshot information for indicator values or price estimates.
