@@ -19,17 +19,17 @@ jobs:
         shell: bash
         run: |
           set -e
+          git fetch origin 7f17e151ce15e03e6648fad84100d9c599762b40 --depth=1
           git checkout 7f17e151ce15e03e6648fad84100d9c599762b40 -- src/app/page.tsx
           python - <<'PY'
           from pathlib import Path
           path = Path('src/app/page.tsx')
           text = path.read_text()
-          old = '''          readiness: data.readiness,\n          estimatedConfidence: data.estimatedConfidence'''
-          new = '''          aiReadiness: data.readiness,\n          aiEstimatedConfidence: data.estimatedConfidence'''
+          old = 'readiness: data.readiness,\n          estimatedConfidence: data.estimatedConfidence'
+          new = 'aiReadiness: data.readiness,\n          aiEstimatedConfidence: data.estimatedConfidence'
           if old not in text:
               raise SystemExit('Expected readiness update block was not found')
-          text = text.replace(old, new, 1)
-          path.write_text(text)
+          path.write_text(text.replace(old, new, 1))
           PY
 
       - name: Commit restored page
