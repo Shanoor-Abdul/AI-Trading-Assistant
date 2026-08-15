@@ -272,8 +272,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (!stream || marketDataMode !== "visual_only") return;
 
-    let cancelled = false;
-
     const runProgressiveAnalysis = async () => {
       const initial = useTradingStore.getState();
       if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis) return;
@@ -281,7 +279,7 @@ export default function Dashboard() {
       initial.setIsProgressiveAnalyzing(true);
 
       try {
-        while (!cancelled) {
+        while (true) {
           const current = useTradingStore.getState();
 
           if (!current.stream || current.marketDataMode !== "visual_only" || current.isFetchingAnalysis) {
@@ -387,9 +385,6 @@ export default function Dashboard() {
 
     void runProgressiveAnalysis();
 
-    return () => {
-      cancelled = true;
-    };
   }, [observations.length, stream, marketDataMode]);
 
   const handleAnalyzeSnapshot = async () => {
