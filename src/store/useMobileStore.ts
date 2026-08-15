@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { TradingAnalysis, TradeHistoryEntry } from '@/lib/types';
+import {
+  appendMobileObservation,
+  MOBILE_VISUAL_HISTORY_LIMIT,
+  MobileVisualObservation,
+} from '@/lib/mobile/visualHistory';
 
 export interface MobileState {
   platform: string;
@@ -25,7 +30,7 @@ export interface MobileState {
 }
 
 export const useMobileStore = create<MobileState>((set) => ({
-  platform: "OlympTrade",
+  platform: "",
   symbol: "AUD/CAD OTC",
   tradeDuration: "5m",
   primaryTimeframe: "5m",
@@ -57,6 +62,7 @@ export const useMobileStore = create<MobileState>((set) => ({
 
   clearAnalysis: () => set({
     previewImageBase64: null,
+    visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
     requestedTimeframe: null,
@@ -65,6 +71,7 @@ export const useMobileStore = create<MobileState>((set) => ({
 
   resetAll: () => set({
     previewImageBase64: null,
+    visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
     requestedTimeframe: null,
