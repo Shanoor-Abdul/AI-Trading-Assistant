@@ -38,6 +38,8 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       trend: rawObj.trend,
       signal: rawObj.signal,
       confidence: rawObj.confidence,
+      readiness: rawObj.readiness,
+      estimatedConfidence: rawObj.estimatedConfidence || rawObj.estimated_confidence,
       recommendedTimeframe: rawObj.recommendedTimeframe || rawObj.recommended_timeframe,
       entryPrice: rawObj.entryPrice !== undefined ? rawObj.entryPrice : rawObj.entry_price,
       stopLoss: rawObj.stopLoss !== undefined ? rawObj.stopLoss : rawObj.stop_loss,
@@ -59,13 +61,15 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       indicatorState: rawObj.indicatorState || rawObj.indicator_state,
       strategyConsensus: rawObj.strategyConsensus || rawObj.strategy_consensus,
       strategyConflicts: rawObj.strategyConflicts || rawObj.strategy_conflicts,
+      analysisId: rawObj.analysisId || rawObj.analysis_id,
     };
 
     return UniversalAIResponseSchema.parse(normalized);
   } catch (error) {
     console.error("[AI Normalization/Validation Error]", error);
-    
-    // Safe NO_TRADE fallback
+
+    // Safe NO_TRADE fallback. Keep the AI observation fields explicit so the
+    // returned object always satisfies UniversalAIResponse at compile time.
     return {
       trend: "Sideways",
       signal: "NO_TRADE",
@@ -85,7 +89,8 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       marketProvider: defaultOverrides?.marketProvider || "unknown",
       riskDecision: "REJECTED",
       reasoning: "Invalid JSON format or schema failure.",
-      dataConfidence: 0
+      dataConfidence: 0,
+      analysisId: undefined,
     };
   }
 }
