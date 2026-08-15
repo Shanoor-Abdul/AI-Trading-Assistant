@@ -40,6 +40,7 @@ export interface TradingState {
   totalFramesCaptured: number; currentBatchId: number;
   incrementTotalFrames: () => void; incrementBatchId: () => void;
   lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;
+  visualChangeCount: number; incrementVisualChangeCount: () => void;
   clearProgressiveSession: () => void; resetFramesButKeepSession: () => void;
   aiReadiness: string | null;
   aiEstimatedConfidence: string | null;
@@ -47,8 +48,8 @@ export interface TradingState {
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
-  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null } : { symbol: val }),
-  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null } : { timeframe: val }),
+  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, visualChangeCount: 0, aiReadiness: null, aiEstimatedConfidence: null } : { symbol: val }),
+  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, visualChangeCount: 0, aiReadiness: null, aiEstimatedConfidence: null } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
   lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
   isFetchingAnalysis: false, setIsFetchingAnalysis: (val) => set({ isFetchingAnalysis: val }),
@@ -61,7 +62,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
   selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set({ selectedStrategies: val }),
-  observationFrequency: 15, setObservationFrequency: (val) => set({ observationFrequency: val }),
+  observationFrequency: 1, setObservationFrequency: (val) => set({ observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
     const newObservation: Observation = { timestamp: Date.now(), imageBase64 };
@@ -74,7 +75,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
     return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
   }),
-  clearObservations: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null }),
+  clearObservations: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, visualChangeCount: 0, aiReadiness: null, aiEstimatedConfidence: null }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api", setMarketDataMode: (val) => set({ marketDataMode: val, aiReadiness: null, aiEstimatedConfidence: null }),
   platform: "Binance", setPlatform: (val) => set({ platform: val }),
@@ -90,10 +91,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   lastAnalyzedObservationIndex: -1, setLastAnalyzedObservationIndex: (val) => set({ lastAnalyzedObservationIndex: val }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
+  visualChangeCount: 0, incrementVisualChangeCount: () => set((state) => ({ visualChangeCount: state.visualChangeCount + 1 })),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
   resetFramesButKeepSession: () => set({}),
-  clearProgressiveSession: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null }),
+  clearProgressiveSession: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, visualChangeCount: 0, aiReadiness: null, aiEstimatedConfidence: null }),
   aiReadiness: null,
   aiEstimatedConfidence: null,
   updateAnalysis: (data) => set((state) => {
