@@ -79,6 +79,11 @@ export interface TradingAnalysis {
   explanation: string;
   requestedIndicators: string[];
 
+  // These fields are produced by the universal AI response layer. They remain
+  // optional here because older/non-AI analysis records do not carry them.
+  readiness?: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
+  estimatedConfidence?: "LOW" | "MEDIUM" | "HIGH";
+
   detectedSymbol: string | null;
   detectedTimeframe: string | null;
   exchange: string | null;
