@@ -19,14 +19,24 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Remove orphan feature import from main
+      - name: Fix remaining type and progressive-loop issues
         run: |
           python - <<'PY'
           from pathlib import Path
-          path = Path('src/app/page.tsx')
-          text = path.read_text()
+
+          page = Path('src/app/page.tsx')
+          text = page.read_text()
           text = text.replace('import { hasSignificantVisualChange } from "@/lib/observation/visualChange";\n', '')
-          path.write_text(text)
+          text = text.replace('''      } finally {\n        if (!cancelled) {\n          useTradingStore.getState().setIsProgressiveAnalyzing(false);\n        }\n      }''', '''      } finally {\n        useTradingStore.getState().setIsProgressiveAnalyzing(false);\n      }''', 1)
+          page.write_text(text)
+
+          risk = Path('src/lib/engines/RiskEngine.ts')
+          text = risk.read_text()
+          old = '''  static validate(\n    analysis: TradingAnalysis, \n    config: RiskConfig, \n    account: AccountState,\n    platform?: string\n  ): TradingAnalysis {'''
+          new = '''  static validate<T extends TradingAnalysis>(\n    analysis: T,\n    config: RiskConfig,\n    account: AccountState,\n    platform?: string\n  ): T {'''
+          if old not in text:
+              raise SystemExit('RiskEngine signature not found')
+          risk.write_text(text.replace(old, new, 1))
           PY
 
       - name: Install dependencies
@@ -40,7 +50,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/app/page.tsx
+          git add src/app/page.tsx src/lib/engines/RiskEngine.ts
           git rm .github/workflows/fix-main-and-build.yml .github/workflows/validate-main-build.yml
-          git commit -m "fix: restore main build compatibility"
+          git commit -m "fix: make main production build pass"
           git push origin HEAD:main
