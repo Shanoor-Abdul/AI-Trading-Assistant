@@ -57,6 +57,9 @@ export const UniversalAIResponseSchema = z.object({
   indicatorState: z.any().optional(),
   strategyConsensus: z.string().optional(),
   strategyConflicts: z.any().optional(),
+  marketStructureAnalysis: z.string().optional(),
+  liquidityZonesIdentified: z.string().optional(),
+  bullBearCase: z.string().optional(),
 });
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;

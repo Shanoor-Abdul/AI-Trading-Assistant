@@ -59,6 +59,9 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       indicatorState: rawObj.indicatorState || rawObj.indicator_state,
       strategyConsensus: rawObj.strategyConsensus || rawObj.strategy_consensus,
       strategyConflicts: rawObj.strategyConflicts || rawObj.strategy_conflicts,
+      marketStructureAnalysis: rawObj.marketStructureAnalysis || rawObj.market_structure_analysis,
+      liquidityZonesIdentified: rawObj.liquidityZonesIdentified || rawObj.liquidity_zones_identified,
+      bullBearCase: rawObj.bullBearCase || rawObj.bull_bear_case,
     };
 
     return UniversalAIResponseSchema.parse(normalized);

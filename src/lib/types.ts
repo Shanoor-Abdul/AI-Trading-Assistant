@@ -97,6 +97,11 @@ export interface TradingAnalysis {
   strategyConsensus?: string;
   strategyConflicts?: string[];
 
+  // Chain of Thought
+  marketStructureAnalysis?: string;
+  liquidityZonesIdentified?: string;
+  bullBearCase?: string;
+
   // Metadata
   analysisId?: string;
   dataTimestamp?: number;
