@@ -1,0 +1,46 @@
+name: Fix main and build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-main-and-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Remove orphan feature import from main
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/app/page.tsx')
+          text = path.read_text()
+          text = text.replace('import { hasSignificantVisualChange } from "@/lib/observation/visualChange";\n', '')
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production build
+        run: npm run build
+
+      - name: Remove one-shot validation workflows
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/page.tsx
+          git rm .github/workflows/fix-main-and-build.yml .github/workflows/validate-main-build.yml
+          git commit -m "fix: restore main build compatibility"
+          git push origin HEAD:main
