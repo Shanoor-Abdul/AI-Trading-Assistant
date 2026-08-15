@@ -158,14 +158,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         timestamp: Date.now(),
         imageBase64,
       };
-      const previousLength = state.observations.length;
       let observations = [...state.observations, newObservation];
       let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
 
-      // Keep a bounded rolling window. The progressive analysis index is relative
-      // to this rolling window, so it must move left by exactly the number of
-      // evicted frames. This fixes the continuous 20-frame batch cycle after the
-      // cache reaches its limit.
       const evictedCount = Math.max(0, observations.length - maxCacheSize);
       if (evictedCount > 0) {
         observations = observations.slice(evictedCount);
@@ -246,14 +241,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () =>
     set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () =>
-    set({
-      observations: [],
-      lastAnalyzedObservationIndex: -1,
-      totalFramesCaptured: 0,
-      currentBatchId: 1,
-      lastObservationTimestamp: 0,
-    }),
+
+  // Manual analysis must not reset the live observation stream.
+  // Frames and batch progress are reset only by clearProgressiveSession(),
+  // which is triggered when an analysis-defining configuration changes.
+  resetFramesButKeepSession: () => set({}),
+
   clearProgressiveSession: () =>
     set({
       observations: [],
