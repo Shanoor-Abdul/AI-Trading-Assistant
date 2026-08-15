@@ -2,9 +2,9 @@
   "extends": "@react-native/typescript-config/tsconfig.json",
   "compilerOptions": {
     "strict": true,
-    "baseUrl": ".",
+    "types": ["react-native"],
     "paths": {
-      "@mobile/*": ["src/*"]
+      "@mobile/*": ["./src/*"]
     }
   }
 }

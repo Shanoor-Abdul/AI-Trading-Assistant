@@ -12,6 +12,9 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "react": "19.1.0",
     "react-native": "0.81.4",
+    "react-native-image-picker": "^8.2.1",
+    "react-native-view-shot": "^5.1.1",
+    "react-native-webview": "^14.0.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -20,6 +23,7 @@
     "@react-native-community/cli-platform-ios": "^20.0.0",
     "@react-native/codegen": "^0.81.4",
     "@react-native/gradle-plugin": "^0.81.4",
+    "@react-native/metro-config": "^0.81.4",
     "@react-native/typescript-config": "^0.81.4",
     "@types/react": "^19.1.0",
     "typescript": "^5.9.3"
