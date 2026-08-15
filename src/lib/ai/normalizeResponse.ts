@@ -70,6 +70,8 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       trend: "Sideways",
       signal: "NO_TRADE",
       confidence: 0,
+      readiness: "NOT READY",
+      estimatedConfidence: "LOW",
       recommendedTimeframe: "",
       entryPrice: null,
       stopLoss: null,

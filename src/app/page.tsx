@@ -361,8 +361,8 @@ export default function Dashboard() {
 
             if (data.readiness !== undefined || data.estimatedConfidence !== undefined) {
               latest.updateAnalysis({
-                readiness: data.readiness,
-                estimatedConfidence: data.estimatedConfidence,
+                aiReadiness: data.readiness,
+                aiEstimatedConfidence: data.estimatedConfidence,
               } as any);
             }
 
