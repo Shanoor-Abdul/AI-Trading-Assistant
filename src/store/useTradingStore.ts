@@ -10,8 +10,8 @@ export interface TradingState {
   lastImageBase64: string | null; setLastImageBase64: (val: string | null) => void;
   isFetchingAnalysis: boolean; setIsFetchingAnalysis: (val: boolean) => void;
   isAutoScan: boolean; setIsAutoScan: (val: boolean) => void;
-  trend: Trend | null;
-  signal: Signal | null;
+  trend: "Bullish" | "Bearish" | "Sideways" | null;
+  signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | "NO_TRADE" | null;
   confidence: number;
   entryPrice: number | null; stopLoss: number | null; takeProfit: number | null;
   recommendedTimeframe: string | null; requestedIndicators: string[] | null;
@@ -32,7 +32,7 @@ export interface TradingState {
   apiFailCount: number; incrementFailCount: () => void; resetFailCount: () => void;
   observationFrequency: number; setObservationFrequency: (val: number) => void;
   updateAnalysis: (data: Partial<TradingState>) => void;
-  tradeHistory: TradeHistoryEntry[]; clearAnalysis: () => void;
+  tradeHistory: TradeHistoryEntry[]; tradeHistoryLoaded: boolean; clearAnalysis: () => void;
   analysisSessionKey: string | null; setAnalysisSessionKey: (key: string | null) => void;
   progressiveAnalyses: ProgressiveAnalysisSummary[]; addProgressiveAnalysis: (summary: ProgressiveAnalysisSummary) => void;
   isProgressiveAnalyzing: boolean; setIsProgressiveAnalyzing: (val: boolean) => void;
@@ -89,7 +89,19 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.trades)) {
-        useTradingStore.setState({ tradeHistory: data.trades });
+        const state = useTradingStore.getState();
+
+        // Once the history has been loaded, an empty local history is an
+        // intentional user deletion state. Do not let an older in-flight GET
+        // resurrect trades that were already deleted.
+        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0) {
+          return;
+        }
+
+        useTradingStore.setState({
+          tradeHistory: data.trades,
+          tradeHistoryLoaded: true,
+        });
         return;
       }
     }
@@ -97,8 +109,10 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
     console.error("Failed to sync trade history", error);
   }
 
-  if (attempt < 4) {
-    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  // Database persistence happens asynchronously after analysis. Retry long
+  // enough for the newly-created trade to become visible through /api/trades.
+  if (attempt < 15) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     return syncTradeHistoryFromDatabase(attempt + 1);
   }
 }
@@ -153,7 +167,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
   activeConnectionId: null, setActiveConnectionId: (val) => set((state) => state.activeConnectionId !== val ? { activeConnectionId: val, ...resetObservationSessionState() } : { activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
-  tradeHistory: [],
+  tradeHistory: [], tradeHistoryLoaded: false,
   clearAnalysis: () => set({ ...clearAnalysisState }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
