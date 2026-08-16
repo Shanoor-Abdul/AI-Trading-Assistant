@@ -56,7 +56,9 @@ const resetObservationState = () => ({
   aiEstimatedConfidence: null as string | null,
 });
 
-const clearAnalysisState = {
+type ClearAnalysisState = Pick<TradingState, "trend" | "signal" | "confidence" | "entryPrice" | "stopLoss" | "takeProfit" | "recommendedTimeframe" | "requestedIndicators" | "open" | "high" | "low" | "close" | "explanation">;
+
+const clearAnalysisState: ClearAnalysisState = {
   trend: null,
   signal: null,
   confidence: 0,
