@@ -135,7 +135,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       ...summary,
       frameStart: (state.currentBatchId - 1) * 20 + 1,
       frameEnd: state.currentBatchId * 20,
-      source: summary.source || "progressive",
+      source: "progressive",
     }].slice(-50),
   })),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
@@ -191,28 +191,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         dataConfidence: (data as any).dataConfidence,
       };
       newState.tradeHistory = [historyEntry, ...state.tradeHistory];
-
-      const manualContext: ProgressiveAnalysisSummary = {
-        analysisId: (data as any).analysisId || `manual-${historyEntry.id}`,
-        batchId: state.currentBatchId,
-        timestamp: new Date(historyEntry.timestamp).toISOString(),
-        frameStart: Math.max(1, state.totalFramesCaptured - state.observations.length + 1),
-        frameEnd: state.totalFramesCaptured,
-        trend: String(newState.trend),
-        momentum: String((data as any).momentum || "Unknown"),
-        marketState: String((data as any).marketState || newState.signal || "Unknown"),
-        candlestickBehavior: String((data as any).candlestickBehavior || "Unknown"),
-        indicatorState: (data as any).indicatorState || {},
-        strategyConsensus: String((data as any).strategyConsensus || newState.signal || "Unknown"),
-        strategyConflicts: (data as any).strategyConflicts || [],
-        changesFromPrevious: String((data as any).changesFromPrevious || "Manual analysis"),
-        confidence: Number(newState.confidence || 0),
-        source: "manual",
-        signal: String(newState.signal),
-        explanation: String(newState.explanation || ""),
-      };
-
-      newState.progressiveAnalyses = [...state.progressiveAnalyses, manualContext].slice(-50);
     }
     return newState;
   }),
