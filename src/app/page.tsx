@@ -15,6 +15,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AI_MODELS, getModelsByProvider } from "@/config/models";
 import { toast } from "sonner";
 import { TradeTracker } from "@/components/TradeTracker";
+import { TradeCountdown } from "@/components/TradeCountdown";
+import { parseTradeDurationMs } from "@/lib/tradeDuration";
 import { LogoutButton } from "@/components/LogoutButton";
 
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -1175,6 +1177,7 @@ export default function Dashboard() {
                       <th className="px-4 py-3">OHLC</th>
                       <th className="px-4 py-3">Entry/SL/TP</th>
                       <th className="px-4 py-3">Max Move (Fav/Adv)</th>
+                      <th className="px-4 py-3">Live Trade</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1239,6 +1242,17 @@ export default function Dashboard() {
                               <span className="text-green-400/80">+{trade.maxFavorableMove?.toFixed(2) || "0.00"}</span>
                               <span className="text-red-400/80">-{trade.maxAdverseMove?.toFixed(2) || "0.00"}</span>
                            </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {trade.status === "OPEN" && trade.signal !== "WAIT" && trade.signal !== "UNSURE" ? (
+                            <TradeCountdown
+                              compact
+                              startedAt={trade.paperTradeStartedAt || trade.timestamp}
+                              duration={trade.tradeDuration || trade.timeframe || "5m"}
+                            />
+                          ) : (
+                            <span className="text-zinc-600">-</span>
+                          )}
                         </td>
                       </tr>
                     ))}
