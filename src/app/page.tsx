@@ -16,7 +16,7 @@ import { AI_MODELS, getModelsByProvider } from "@/config/models";
 import { toast } from "sonner";
 import { TradeTracker } from "@/components/TradeTracker";
 import { LogoutButton } from "@/components/LogoutButton";
-import { ChatInterface } from "@/components/ChatInterface";
+
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { calculateExpectedFrames } from "@/lib/observation/calculation";
 import { createObservationSessionKey } from "@/lib/observation/session";
@@ -947,7 +947,7 @@ export default function Dashboard() {
               )}
             </Card>
           
-          <ChatInterface />
+
         </div>
 
         {/* Right Column: AI Signals & Settings */}
