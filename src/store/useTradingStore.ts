@@ -148,6 +148,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     return {
       observations: state.observations.slice(val + 1),
       lastAnalyzedObservationIndex: -1,
+      totalFramesCaptured: Math.max(0, state.totalFramesCaptured - (val + 1)),
     };
   }),
   totalFramesCaptured: 0, currentBatchId: 1,
