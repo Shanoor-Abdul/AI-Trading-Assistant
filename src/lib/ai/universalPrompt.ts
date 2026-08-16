@@ -54,6 +54,7 @@ EVIDENCE-FIRST DECISION RULES
 8. If the evidence is insufficient or contradictory, prefer WAIT/UNSURE/NO_TRADE rather than forcing BUY/SELL.
 9. Never fabricate order-book, volume, indicator, price, or liquidation values when unavailable.
 10. Confidence must reflect evidence quality, not certainty about the future.
+11. Progressive history may contain entries with source=manual. Treat those entries as completed user-requested conclusions and explicitly compare the newest evidence against the most recent manual conclusion.
 
 API DATA
 Use exact numerical market values when provided. Screenshots are supplementary visual evidence.
@@ -88,6 +89,9 @@ ${indicatorsList}
 PREVIOUS ANALYSIS
 ${previous}
 
+PROGRESSIVE HISTORY
+${history}
+
 SINGLE-FRAME EVIDENCE RULES
 - Analyze market structure, trend, momentum, recent candle behavior, visible indicators, support/resistance, and strategy alignment.
 - Evaluate bullish and bearish evidence separately.
@@ -95,6 +99,7 @@ SINGLE-FRAME EVIDENCE RULES
 - If the screenshot does not provide enough evidence for a reliable directional decision, prefer WAIT or UNSURE.
 - Do not claim STRONG_BUY/STRONG_SELL from a single weak clue.
 - Confidence must reflect evidence quality.
+- If progressive history contains source=manual, treat the latest manual entry as a prior conclusion and explain whether this new screenshot strengthens, weakens, invalidates, or reverses it.
 
 Return ONLY valid JSON matching UniversalAIResponse.
 ` + responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode);
@@ -174,6 +179,8 @@ When previous analysis exists:
 - continuing
 - unclear
 
+Progressive history can contain both background 20-frame summaries and completed manual analyses.
+Entries with source=manual are prior user-requested conclusions and must be treated as explicit comparison points.
 Do not blindly preserve the previous signal.
 The current frame sequence has authority over stale assumptions.
 
