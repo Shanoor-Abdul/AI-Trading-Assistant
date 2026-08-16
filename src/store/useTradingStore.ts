@@ -84,6 +84,8 @@ const invalidateProgressiveAnalyses = () => ({
 });
 
 async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
+  const stateBeforeRequest = useTradingStore.getState();
+
   try {
     const res = await fetch("/api/trades", { cache: "no-store" });
     if (res.ok) {
@@ -91,10 +93,21 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
       if (Array.isArray(data.trades)) {
         const state = useTradingStore.getState();
 
-        // Once the history has been loaded, an empty local history is an
-        // intentional user deletion state. Do not let an older in-flight GET
-        // resurrect trades that were already deleted.
-        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0) {
+        // A signal has just been generated locally. The analyze endpoint
+        // journals the trade asynchronously, so an empty response here can
+        // legitimately arrive before the new database row exists. Never
+        // replace the new local signal with an empty/stale database response.
+        if (data.trades.length === 0 && state.tradeHistory.length > 0) {
+          if (attempt < 15) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            return syncTradeHistoryFromDatabase(attempt + 1);
+          }
+          return;
+        }
+
+        // If the user explicitly deleted the history and there is no local
+        // trade waiting for persistence, keep the empty state.
+        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0 && data.trades.length === 0) {
           return;
         }
 
@@ -109,12 +122,12 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
     console.error("Failed to sync trade history", error);
   }
 
-  // Database persistence happens asynchronously after analysis. Retry long
-  // enough for the newly-created trade to become visible through /api/trades.
   if (attempt < 15) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return syncTradeHistoryFromDatabase(attempt + 1);
   }
+
+  void stateBeforeRequest;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -165,7 +178,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationSessionState() } : { platform: val }),
   tradeDuration: "5m", setTradeDuration: (val) => set((state) => state.tradeDuration !== val ? { tradeDuration: val, ...resetObservationSessionState() } : { tradeDuration: val }),
   visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
-  activeConnectionId: null, setActiveConnectionId: (val) => set((state) => state.activeConnectionId !== val ? { activeConnectionId: val, ...resetObservationSessionState() } : { activeConnectionId: val }),
+  activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
   tradeHistory: [], tradeHistoryLoaded: false,
   clearAnalysis: () => set({ ...clearAnalysisState }),
@@ -240,7 +253,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
           explanation: newState.explanation,
-          status: newState.signal === "WAIT" || newState.signal === "NO_TRADE" ? "SKIPPED" : "OPEN",
+          status: "OPEN",
           open: newState.open, high: newState.high, low: newState.low, close: newState.close,
           screenshotBase64: newState.lastImageBase64 || undefined,
           dbTradeId: (data as any).dbTradeId, requiredTimeframe: (data as any).requiredTimeframe,
