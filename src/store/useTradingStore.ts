@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation } from "@/lib/types";
+import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation, Trend, Signal } from "@/lib/types";
 import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 
 export interface TradingState {
@@ -10,8 +10,8 @@ export interface TradingState {
   lastImageBase64: string | null; setLastImageBase64: (val: string | null) => void;
   isFetchingAnalysis: boolean; setIsFetchingAnalysis: (val: boolean) => void;
   isAutoScan: boolean; setIsAutoScan: (val: boolean) => void;
-  trend: "Bullish" | "Bearish" | "Sideways" | null;
-  signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | "NO_TRADE" | null;
+  trend: Trend | null;
+  signal: Signal | null;
   confidence: number;
   entryPrice: number | null; stopLoss: number | null; takeProfit: number | null;
   recommendedTimeframe: string | null; requestedIndicators: string[] | null;
@@ -216,11 +216,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       }
 
       if (data.signal === "BUY" || data.signal === "SELL") {
+        const historyTrend: Trend = data.trend ?? newState.trend ?? "Sideways";
+        const historySignal: Signal = data.signal;
         const historyEntry: TradeHistoryEntry = {
           id: Math.random().toString(36).substring(2, 9), timestamp: Date.now(),
           symbol: (data as any).detectedSymbol || newState.symbol,
           timeframe: (data as any).recommendedTimeframe || newState.timeframe,
-          trend: newState.trend, signal: newState.signal, confidence: newState.confidence,
+          trend: historyTrend, signal: historySignal, confidence: newState.confidence,
           recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
           explanation: newState.explanation,
