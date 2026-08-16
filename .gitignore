@@ -48,3 +48,6 @@ next-env.d.ts
 .windsurf/
 .cursor/
 
+
+# Mobile App Repository
+mobile/
