@@ -79,8 +79,6 @@ export interface TradingAnalysis {
   explanation: string;
   requestedIndicators: string[];
 
-  // These fields are produced by the universal AI response layer. They remain
-  // optional here because older/non-AI analysis records do not carry them.
   readiness?: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
   estimatedConfidence?: "LOW" | "MEDIUM" | "HIGH";
 
@@ -125,19 +123,14 @@ export interface TradeHistoryEntry extends TradingAnalysis {
   symbol: string;
   timeframe: string;
   status: TradeStatus;
-
-  /** When a paper trade was started from the UI. */
   paperTradeStartedAt?: number;
-  /** Absolute timestamp at which the fixed-duration paper trade ends. */
   paperTradeExpiresAt?: number;
-
   maxFavorableMove?: number;
   maxAdverseMove?: number;
   slippage?: number;
   fees?: number;
   duration?: number;
   pnl?: number;
-
   screenshotBase64?: string;
   screenshotUrl?: string;
   indicators?: any;
@@ -163,6 +156,12 @@ export interface ProgressiveAnalysisSummary {
   strategyConflicts: string[];
   changesFromPrevious: string;
   confidence: number;
+
+  // Manual final analyses are also kept in the context stream so the next
+  // analysis can compare new frames against the previous conclusion.
+  source?: "progressive" | "manual";
+  signal?: string;
+  explanation?: string;
 }
 
 export interface Observation {
