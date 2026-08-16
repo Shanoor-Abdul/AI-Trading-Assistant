@@ -45,10 +45,42 @@ export interface TradingState {
   aiEstimatedConfidence: string | null;
 }
 
+const resetObservationState = () => ({
+  observations: [] as Observation[],
+  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
+  lastAnalyzedObservationIndex: -1,
+  totalFramesCaptured: 0,
+  currentBatchId: 1,
+  lastObservationTimestamp: 0,
+  aiReadiness: null as string | null,
+  aiEstimatedConfidence: null as string | null,
+});
+
+const invalidateProgressiveAnalyses = () => ({
+  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
+  lastAnalyzedObservationIndex: -1,
+  currentBatchId: 1,
+  aiReadiness: null as string | null,
+  aiEstimatedConfidence: null as string | null,
+  trend: null,
+  signal: null,
+  confidence: 0,
+  entryPrice: null,
+  stopLoss: null,
+  takeProfit: null,
+  recommendedTimeframe: null,
+  requestedIndicators: null,
+  open: null,
+  high: null,
+  low: null,
+  close: null,
+  explanation: "",
+});
+
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
-  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null } : { symbol: val }),
-  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null } : { timeframe: val }),
+  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationState() } : { symbol: val }),
+  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
   lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
   isFetchingAnalysis: false, setIsFetchingAnalysis: (val) => set({ isFetchingAnalysis: val }),
@@ -59,9 +91,18 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   capital: 1000, setCapital: (val) => set({ capital: val }),
   riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
-  setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model, apiFailCount: 0 }),
-  selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set({ selectedStrategies: val }),
-  observationFrequency: 15, setObservationFrequency: (val) => set({ observationFrequency: val }),
+  // Changing the model keeps captured visual evidence but invalidates all prior
+  // AI analyses so the new model cannot inherit a conclusion from another model.
+  setSelectedModel: (provider, model) => set(() => ({
+    selectedProvider: provider,
+    selectedModel: model,
+    apiFailCount: 0,
+    ...invalidateProgressiveAnalyses(),
+  })),
+  // Strategy and indicator changes alter how the same chart should be interpreted,
+  // so start a fresh visual observation session.
+  selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationState() } : { selectedStrategies: val }),
+  observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationState() } : { observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
     const newObservation: Observation = { timestamp: Date.now(), imageBase64 };
@@ -74,12 +115,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
     return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
   }),
-  clearObservations: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null }),
+  clearObservations: () => set({ ...resetObservationState() }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api", setMarketDataMode: (val) => set({ marketDataMode: val, aiReadiness: null, aiEstimatedConfidence: null }),
-  platform: "Binance", setPlatform: (val) => set({ platform: val }),
-  tradeDuration: "5m", setTradeDuration: (val) => set({ tradeDuration: val }),
-  visibleIndicators: [], setVisibleIndicators: (val) => set({ visibleIndicators: val }),
+  platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationState() } : { platform: val }),
+  tradeDuration: "5m", setTradeDuration: (val) => set((state) => state.tradeDuration !== val ? { tradeDuration: val, ...resetObservationState() } : { tradeDuration: val }),
+  visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationState() } : { visibleIndicators: val }),
   activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
   tradeHistory: [],
@@ -93,7 +134,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
   resetFramesButKeepSession: () => set({}),
-  clearProgressiveSession: () => set({ observations: [], progressiveAnalyses: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null, aiEstimatedConfidence: null }),
+  clearProgressiveSession: () => set({ ...resetObservationState() }),
   aiReadiness: null,
   aiEstimatedConfidence: null,
   updateAnalysis: (data) => set((state) => {
