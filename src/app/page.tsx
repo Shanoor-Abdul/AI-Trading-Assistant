@@ -56,10 +56,10 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchTrades = async () => {
       try {
-        const res = await fetch("/api/trades");
+        const res = await fetch("/api/trades", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          if (data.trades && data.trades.length > 0) {
+          if (data.trades) {
             useTradingStore.setState({ tradeHistory: data.trades });
           }
         }
