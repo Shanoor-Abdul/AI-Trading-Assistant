@@ -91,16 +91,15 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   capital: 1000, setCapital: (val) => set({ capital: val }),
   riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
-  // Changing the model keeps captured visual evidence but invalidates all prior
-  // AI analyses so the new model cannot inherit a conclusion from another model.
+  // A model change keeps the captured chart evidence but invalidates conclusions
+  // produced by the previous model.
   setSelectedModel: (provider, model) => set(() => ({
     selectedProvider: provider,
     selectedModel: model,
     apiFailCount: 0,
     ...invalidateProgressiveAnalyses(),
   })),
-  // Strategy and indicator changes alter how the same chart should be interpreted,
-  // so start a fresh visual observation session.
+  // Strategy changes alter chart interpretation, so start a new observation session.
   selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationState() } : { observationFrequency: val }),
   observations: [],
@@ -111,9 +110,16 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
     if (evictedCount > 0) {
       observations = observations.slice(evictedCount);
-      if (lastAnalyzedObservationIndex >= 0) lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
+      if (lastAnalyzedObservationIndex >= 0) {
+        lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
+      }
     }
-    return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
+    return {
+      observations,
+      lastAnalyzedObservationIndex,
+      totalFramesCaptured: state.totalFramesCaptured + 1,
+      lastObservationTimestamp: newObservation.timestamp,
+    };
   }),
   clearObservations: () => set({ ...resetObservationState() }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
@@ -126,14 +132,37 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   tradeHistory: [],
   clearAnalysis: () => set({ trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "" }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
-  progressiveAnalyses: [], addProgressiveAnalysis: (summary) => set((state) => ({ progressiveAnalyses: [...state.progressiveAnalyses, summary].slice(-50) })),
+  progressiveAnalyses: [],
+  addProgressiveAnalysis: (summary) => set((state) => ({
+    progressiveAnalyses: [...state.progressiveAnalyses, summary].slice(-50),
+  })),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
-  lastAnalyzedObservationIndex: -1, setLastAnalyzedObservationIndex: (val) => set({ lastAnalyzedObservationIndex: val }),
+  lastAnalyzedObservationIndex: -1,
+  // Once a 20-frame batch has been analyzed, remove those frames from the live
+  // observation queue. The summary stays in progressiveAnalyses, so the next
+  // batch contains only NEW frames while the AI still receives prior analyses.
+  setLastAnalyzedObservationIndex: (val) => set((state) => {
+    if (val < 0 || val >= state.observations.length) {
+      return { lastAnalyzedObservationIndex: val };
+    }
+
+    return {
+      observations: state.observations.slice(val + 1),
+      lastAnalyzedObservationIndex: -1,
+    };
+  }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () => set({}),
+  // Manual AI analysis consumes the current pending frames, but keeps all
+  // completed progressive/manual conclusions as context for the next analysis.
+  resetFramesButKeepSession: () => set({
+    observations: [],
+    lastAnalyzedObservationIndex: -1,
+    totalFramesCaptured: 0,
+    lastObservationTimestamp: 0,
+  }),
   clearProgressiveSession: () => set({ ...resetObservationState() }),
   aiReadiness: null,
   aiEstimatedConfidence: null,
@@ -144,6 +173,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       newState.aiReadiness = aiData.readiness ?? state.aiReadiness;
       newState.aiEstimatedConfidence = aiData.estimatedConfidence ?? state.aiEstimatedConfidence;
     }
+
+    // Store completed manual conclusions in the same context stream as the
+    // progressive 20-frame analyses. This lets the next Run AI Analysis compare
+    // the new frames against the immediately previous conclusion as well.
     if (data.signal && data.signal !== "UNSURE" && newState.trend && newState.signal) {
       const historyEntry: TradeHistoryEntry = {
         id: Math.random().toString(36).substring(2, 9), timestamp: Date.now(),
@@ -164,7 +197,30 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         dataConfidence: (data as any).dataConfidence,
       };
       newState.tradeHistory = [historyEntry, ...state.tradeHistory];
+
+      const manualContext: ProgressiveAnalysisSummary = {
+        analysisId: (data as any).analysisId || `manual-${historyEntry.id}`,
+        batchId: state.currentBatchId,
+        timestamp: new Date(historyEntry.timestamp).toISOString(),
+        frameStart: Math.max(1, state.totalFramesCaptured - state.observations.length + 1),
+        frameEnd: state.totalFramesCaptured,
+        trend: String(newState.trend),
+        momentum: String((data as any).momentum || "Unknown"),
+        marketState: String((data as any).marketState || newState.signal || "Unknown"),
+        candlestickBehavior: String((data as any).candlestickBehavior || "Unknown"),
+        indicatorState: (data as any).indicatorState || {},
+        strategyConsensus: String((data as any).strategyConsensus || newState.signal || "Unknown"),
+        strategyConflicts: (data as any).strategyConflicts || [],
+        changesFromPrevious: String((data as any).changesFromPrevious || "Manual analysis"),
+        confidence: Number(newState.confidence || 0),
+        source: "manual",
+        signal: String(newState.signal),
+        explanation: String(newState.explanation || ""),
+      } as ProgressiveAnalysisSummary & { source: string; signal: string; explanation: string };
+
+      newState.progressiveAnalyses = [...state.progressiveAnalyses, manualContext].slice(-50) as ProgressiveAnalysisSummary[];
     }
+
     return newState;
   }),
 }));
