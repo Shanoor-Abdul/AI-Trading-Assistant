@@ -7,46 +7,16 @@ import { UniversalAIRequest, UniversalAIResponse } from "./schema";
 import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
 
 function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
-  // The AI owns the evidence/confidence assessment. The browser must not
-  // infer readiness from the number of captured frames.
-  if (result.readiness && result.estimatedConfidence && result.readiness !== "NOT READY") {
-    return result;
-  }
-
-  const evidenceConfidence = Math.max(
-    0,
-    Math.min(100, Number(result.dataConfidence ?? result.confidence ?? 0)),
-  );
-
-  let readiness: UniversalAIResponse["readiness"] = "NOT READY";
-  let estimatedConfidence: UniversalAIResponse["estimatedConfidence"] = "LOW";
-
-  if (evidenceConfidence >= 85) {
-    readiness = "READY / COMPLETE";
-    estimatedConfidence = "HIGH";
-  } else if (evidenceConfidence >= 65) {
-    readiness = "VERY GOOD";
-    estimatedConfidence = "HIGH";
-  } else if (evidenceConfidence >= 45) {
-    readiness = "GOOD";
-    estimatedConfidence = "MEDIUM";
-  } else if (evidenceConfidence > 0) {
-    readiness = "FAIR";
-    estimatedConfidence = "LOW";
-  }
-
-  return {
-    ...result,
-    readiness,
-    estimatedConfidence,
-  };
+  // AI-supplied readiness/confidence remains authoritative. Do not infer a
+  // stronger trading state merely because more frames were captured.
+  return result;
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
   const cap = PROVIDER_CAPABILITIES[req.provider];
   if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
 
-  const needsVision = !!req.imageBase64;
+  const needsVision = !!req.imageBase64 || !!(req as any).screenshots?.length;
   if (needsVision && !cap.vision) {
     throw new Error(`AI_MODEL_NO_VISION: Selected AI model (${req.model}) does not support image analysis.`);
   }
@@ -110,7 +80,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
         }
       }
       return {
-        timeframe: shot.timestamp ? new Date(shot.timestamp).toLocaleTimeString() : "Current",
+        timeframe: shot.timeframe || (shot.timestamp ? new Date(shot.timestamp).toLocaleTimeString() : "Current"),
         mimeType: mType as "image/jpeg" | "image/png" | "image/webp",
         base64: b64,
       };
