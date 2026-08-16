@@ -56,12 +56,7 @@ const resetObservationState = () => ({
   aiEstimatedConfidence: null as string | null,
 });
 
-const invalidateProgressiveAnalyses = () => ({
-  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
-  lastAnalyzedObservationIndex: -1,
-  currentBatchId: 1,
-  aiReadiness: null as string | null,
-  aiEstimatedConfidence: null as string | null,
+const clearAnalysisState = {
   trend: null,
   signal: null,
   confidence: 0,
@@ -75,7 +70,36 @@ const invalidateProgressiveAnalyses = () => ({
   low: null,
   close: null,
   explanation: "",
+};
+
+const invalidateProgressiveAnalyses = () => ({
+  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
+  lastAnalyzedObservationIndex: -1,
+  currentBatchId: 1,
+  aiReadiness: null as string | null,
+  aiEstimatedConfidence: null as string | null,
+  ...clearAnalysisState,
 });
+
+async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
+  try {
+    const res = await fetch("/api/trades", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.trades)) {
+        useTradingStore.setState({ tradeHistory: data.trades });
+        return;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to sync trade history", error);
+  }
+
+  if (attempt < 4) {
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    return syncTradeHistoryFromDatabase(attempt + 1);
+  }
+}
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
@@ -83,7 +107,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
   lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
-  isFetchingAnalysis: false, setIsFetchingAnalysis: (val) => set({ isFetchingAnalysis: val }),
+  isFetchingAnalysis: false,
+  setIsFetchingAnalysis: (val) => set((state) => val ? { ...state, isFetchingAnalysis: true, ...clearAnalysisState } : { isFetchingAnalysis: false }),
   isAutoScan: false, setIsAutoScan: (val) => set({ isAutoScan: val }),
   trend: null, signal: null, confidence: 0,
   entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null,
@@ -127,7 +152,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
   tradeHistory: [],
-  clearAnalysis: () => set({ trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "" }),
+  clearAnalysis: () => set({ ...clearAnalysisState }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
   addProgressiveAnalysis: (summary) => set((state) => ({
@@ -135,7 +160,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       ...summary,
       frameStart: (state.currentBatchId - 1) * 20 + 1,
       frameEnd: state.currentBatchId * 20,
-      source: "progressive",
+      source: summary.source || "progressive",
     }].slice(-50),
   })),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
@@ -164,34 +189,41 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   clearProgressiveSession: () => set({ ...resetObservationState() }),
   aiReadiness: null,
   aiEstimatedConfidence: null,
-  updateAnalysis: (data) => set((state) => {
-    const newState = { ...state, ...data };
-    const aiData = data as any;
-    if (aiData.readiness !== undefined || aiData.estimatedConfidence !== undefined) {
-      newState.aiReadiness = aiData.readiness ?? state.aiReadiness;
-      newState.aiEstimatedConfidence = aiData.estimatedConfidence ?? state.aiEstimatedConfidence;
+  updateAnalysis: (data) => {
+    set((state) => {
+      const newState = { ...state, ...data };
+      const aiData = data as any;
+      if (aiData.readiness !== undefined || aiData.estimatedConfidence !== undefined) {
+        newState.aiReadiness = aiData.readiness ?? state.aiReadiness;
+        newState.aiEstimatedConfidence = aiData.estimatedConfidence ?? state.aiEstimatedConfidence;
+      }
+
+      if (data.signal === "BUY" || data.signal === "SELL") {
+        const historyEntry: TradeHistoryEntry = {
+          id: Math.random().toString(36).substring(2, 9), timestamp: Date.now(),
+          symbol: (data as any).detectedSymbol || newState.symbol,
+          timeframe: (data as any).recommendedTimeframe || newState.timeframe,
+          trend: newState.trend, signal: newState.signal, confidence: newState.confidence,
+          recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
+          entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
+          explanation: newState.explanation,
+          status: newState.signal === "WAIT" || newState.signal === "NO_TRADE" ? "SKIPPED" : "OPEN",
+          open: newState.open, high: newState.high, low: newState.low, close: newState.close,
+          screenshotBase64: newState.lastImageBase64 || undefined,
+          dbTradeId: (data as any).dbTradeId, requiredTimeframe: (data as any).requiredTimeframe,
+          requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
+          detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
+          exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
+          riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning,
+          dataConfidence: (data as any).dataConfidence,
+        };
+        newState.tradeHistory = [historyEntry, ...state.tradeHistory];
+      }
+      return newState;
+    });
+
+    if (data.signal === "BUY" || data.signal === "SELL") {
+      void syncTradeHistoryFromDatabase();
     }
-    if (data.signal && data.signal !== "UNSURE" && newState.trend && newState.signal) {
-      const historyEntry: TradeHistoryEntry = {
-        id: Math.random().toString(36).substring(2, 9), timestamp: Date.now(),
-        symbol: (data as any).detectedSymbol || newState.symbol,
-        timeframe: (data as any).recommendedTimeframe || newState.timeframe,
-        trend: newState.trend, signal: newState.signal, confidence: newState.confidence,
-        recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
-        entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
-        explanation: newState.explanation,
-        status: newState.signal === "WAIT" || newState.signal === "NO_TRADE" ? "SKIPPED" : "OPEN",
-        open: newState.open, high: newState.high, low: newState.low, close: newState.close,
-        screenshotBase64: newState.lastImageBase64 || undefined,
-        dbTradeId: (data as any).dbTradeId, requiredTimeframe: (data as any).requiredTimeframe,
-        requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
-        detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
-        exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
-        riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning,
-        dataConfidence: (data as any).dataConfidence,
-      };
-      newState.tradeHistory = [historyEntry, ...state.tradeHistory];
-    }
-    return newState;
-  }),
+  },
 }));
