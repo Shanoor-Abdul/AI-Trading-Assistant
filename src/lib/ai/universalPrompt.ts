@@ -1,531 +1,244 @@
 import { UniversalAIRequest } from "./schema";
 
+const SIGNALS = "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL";
+
 export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const isApiData = req.mode === "api_data" && req.marketData;
+  const strategiesList = req.selectedStrategies && req.selectedStrategies.length > 0
+    ? req.selectedStrategies.map((s) => `- ${s}`).join("\n")
+    : "None specified";
+  const indicatorsList = req.visibleIndicators && req.visibleIndicators.length > 0
+    ? req.visibleIndicators.map((i) => `- ${i}`).join("\n")
+    : "None specified";
+  const history = req.progressiveState && req.progressiveState.length > 0
+    ? JSON.stringify(req.progressiveState, null, 2)
+    : "None";
+  const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
 
   if (isApiData) {
     return `
-You are an Expert Institutional Trader.
+You are an evidence-first trading analysis model.
 
-Analyze the provided technical market data and indicators.
+Analyze the supplied exact market data, indicators, strategy rules, and any provided screenshots.
+Do not invent missing values.
+Do not expose private chain-of-thought. Return concise, structured, user-facing evidence only.
 
-Exact Market Data (DO NOT ESTIMATE, USE THESE VALUES):
+MARKET CONTEXT
 Symbol: ${req.symbol}
-Primary Timeframe: ${req.primaryTimeframe}
-Current Price: ${req.marketData?.lastPrice || req.marketData?.currentPrice || "N/A"}
-
-Technical Indicators:
-- EMA 20: ${req.marketData?.indicators?.ema20?.toFixed(4) || "N/A"}
-- EMA 50: ${req.marketData?.indicators?.ema50?.toFixed(4) || "N/A"}
-- RSI (14): ${req.marketData?.indicators?.rsi?.toFixed(2) || "N/A"}
-- MACD: ${req.marketData?.indicators?.macd?.MACD?.toFixed(4) || "N/A"}
-- ADX: ${req.marketData?.indicators?.adx?.adx?.toFixed(2) || "N/A"}
-- OBV: ${req.marketData?.indicators?.obv || "N/A"}
-
-Programmatic Market Structure:
-- Regime: ${req.marketData?.marketRegime || "N/A"}
-
-Structured market data is available and MUST be prioritized for numerical analysis.
-You are in API DATA mode. Base your analysis STRICTLY on the exact numerical values and indicators provided in the text.
-Do NOT use screenshot information for indicator values or price estimates.
-
+Primary timeframe: ${req.primaryTimeframe}
+Confirmation timeframe: ${req.confirmationTimeframe || "N/A"}
+Trend timeframe: ${req.trendTimeframe || "N/A"}
+Trade duration: ${req.tradeDuration || "N/A"}
 Platform: ${req.platform}
-Symbol: ${req.symbol}
-Trade Duration: ${req.tradeDuration || "N/A"}
-${req.strategyRules ? `Strategy Rules:\n${req.strategyRules}\n` : ""}
 
-Analyze:
-• Trend & Market Regime alignment
-• Candlestick Patterns
-• Momentum & Volume
-• Liquidity & Subjective Market Structure
+SELECTED STRATEGIES
+${strategiesList}
 
-Strict Confidence Rules:
-- If Confidence >= 85, you may output BUY or SELL.
-- If Confidence is mid-range, output WAIT.
-- If Confidence < 40, you MUST output UNSURE.
-- If the market is completely choppy and unreadable, output NO_TRADE.
+VISIBLE INDICATORS
+${indicatorsList}
 
-Return ONLY valid JSON matching this structure exactly.
-Do not include any prefixes, markdown formatting, conversational text, or safety warnings.
-Null values MUST be explicitly null, not missing. Empty arrays MUST be [].
+PREVIOUS ANALYSIS
+${previous}
 
-{
-  "trend": "Bullish | Bearish | Sideways",
-  "signal": "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL",
-  "confidence": 90,
-  "recommendedTimeframe": "${req.primaryTimeframe}",
-  "requiredTimeframe": null,
-  "requestedIndicators": [],
-  "entryPrice": null,
-  "stopLoss": null,
-  "takeProfit": null,
-  "explanation": "Provide detailed analysis.",
-  "reasoning": "Provide core reasoning.",
-  "detectedSymbol": "${req.symbol}",
-  "detectedTimeframe": "${req.primaryTimeframe}",
-  "exchange": "${req.platform}",
-  "marketProvider": "${req.mode}",
-  "riskDecision": "UNSURE",
-  "dataConfidence": 90
-}
-`;
+PROGRESSIVE HISTORY
+${history}
+
+EVIDENCE-FIRST DECISION RULES
+1. Evaluate higher-timeframe context before the entry timeframe when those inputs exist.
+2. Evaluate trend/structure, momentum, support/resistance, candle behavior, indicators, volume, and market regime.
+3. Evaluate both bullish and bearish evidence before choosing a direction.
+4. Treat conflicting evidence as a reason to reduce confidence.
+5. A strong signal requires multiple independent pieces of agreeing evidence; never increase confidence merely because more data exists.
+6. Identify concrete invalidation conditions for the current thesis.
+7. Compare against the previous analysis and state whether the thesis is strengthened, weakening, invalidated, reversing, developing, continuing, or unclear.
+8. If the evidence is insufficient or contradictory, prefer WAIT/UNSURE/NO_TRADE rather than forcing BUY/SELL.
+9. Never fabricate order-book, volume, indicator, price, or liquidation values when unavailable.
+10. Confidence must reflect evidence quality, not certainty about the future.
+
+API DATA
+Use exact numerical market values when provided. Screenshots are supplementary visual evidence.
+
+Return ONLY valid JSON matching UniversalAIResponse.
+` + responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode);
   }
-
-  // --- VISUAL ONLY MODE PROMPT ---
-  const strategiesList = req.selectedStrategies && req.selectedStrategies.length > 0 
-    ? req.selectedStrategies.map(s => `- ${s}`).join("\n")
-    : "None specified";
-
-  const indicatorsList = req.visibleIndicators && req.visibleIndicators.length > 0 
-    ? req.visibleIndicators.map(i => `- ${i}`).join("\n") 
-    : "None specified";
 
   const isSingleImage = (req.screenshots && req.screenshots.length === 1) || (!req.screenshots && req.screenshot);
 
   if (isSingleImage) {
     return `
-MOBILE V1 — SINGLE-SCREENSHOT VISUAL TRADING ANALYSIS
+VISUAL-ONLY TRADING ANALYSIS
 
-IMPORTANT:
+Analyze the provided chart screenshot using only information that is actually visible plus the user settings below.
+Do not invent exact numerical values that cannot be read.
+Do not expose private chain-of-thought.
 
-This is NOT an educational request.
-Do not explain what a candlestick is.
-Do not explain what a timeframe is.
-Do not teach trading concepts to the user.
+PLATFORM: ${req.platform}
+SYMBOL: ${req.symbol}
+PRIMARY TIMEFRAME: ${req.primaryTimeframe}
+CONFIRMATION TIMEFRAME: ${req.confirmationTimeframe || "N/A"}
+TREND TIMEFRAME: ${req.trendTimeframe || "N/A"}
+TRADE DURATION: ${req.tradeDuration || "N/A"}
 
-Your job is to ANALYZE the provided chart frame and produce the best possible evidence-based trading signal using the information available.
-
-==================================================
-CORE OBJECTIVE
-==================================================
-This is VISUAL ONLY mode.
-You have ONE CURRENT chart screenshot.
-Use:
-- Screenshot
-- Platform
-- Symbol
-- Chart timeframe
-- Trade duration
-- Selected strategies
-- Visible indicators
-
-Analyze what is actually visible.
-Do NOT invent:
-- RSI values
-- MACD values
-- EMA values
-- Bollinger values
-- Price values
-- Volume
-- Support/resistance prices
-- Market structure values
-unless they are clearly visible/readable in the screenshot.
-
-==================================================
 SELECTED STRATEGIES
-==================================================
-The user provides:
-selectedStrategies:
 ${strategiesList}
 
-Use ONLY the selected strategies.
-Do not automatically apply every strategy.
-
-For every selected strategy:
-- Analyze the screenshot.
-- Determine whether the setup supports BUY, SELL, WAIT, or UNSURE.
-- Identify supporting evidence.
-- Identify conflicts.
-
-Then produce ONE final signal.
-Do not force agreement between strategies.
-If strategies conflict strongly: prefer WAIT or UNSURE depending on the available evidence.
-
-==================================================
 VISIBLE INDICATORS
-==================================================
-The application provides:
-visibleIndicators:
 ${indicatorsList}
 
-The AI must visually analyze those indicators.
-If an indicator is selected but cannot be clearly read: Do not guess its value.
-If the indicator is important for the selected strategy: return it in requestedIndicators.
+PREVIOUS ANALYSIS
+${previous}
 
-==================================================
-FIXED-TIME TRADING
-==================================================
-The application provides:
-platform: ${req.platform}
-symbol: ${req.symbol}
-chart timeframe: ${req.primaryTimeframe}
-trade duration: ${req.tradeDuration || "N/A"}
+SINGLE-FRAME EVIDENCE RULES
+- Analyze market structure, trend, momentum, recent candle behavior, visible indicators, support/resistance, and strategy alignment.
+- Evaluate bullish and bearish evidence separately.
+- Identify what would invalidate the current thesis.
+- If the screenshot does not provide enough evidence for a reliable directional decision, prefer WAIT or UNSURE.
+- Do not claim STRONG_BUY/STRONG_SELL from a single weak clue.
+- Confidence must reflect evidence quality.
 
-Keep Chart Timeframe and Trade Duration separate.
-Example:
-Chart: 15m
-Trade: 5m
-The 15m chart provides broader context. The trade duration remains 5m.
-Never automatically change the user's trade duration.
-
-==================================================
-SIGNAL DECISION
-==================================================
-Return exactly ONE:
-STRONG_BUY
-BUY
-WAIT
-UNSURE
-NO_TRADE
-SELL
-STRONG_SELL
-
-Do not return multiple possible signals. Do not say: "BUY or SELL".
-If the screenshot is unclear: WAIT or UNSURE.
-
-==================================================
-UNSURE WORKFLOW
-==================================================
-If the single screenshot is not sufficient:
-Return: signal = "UNSURE" and provide requestedIndicators and/or requiredTimeframe.
-Example:
-{
-  "signal": "UNSURE",
-  "confidence": 55,
-  "requestedIndicators": ["RSI"],
-  "requiredTimeframe": null
-}
-
-==================================================
-VISUAL-ONLY RULE
-==================================================
-If mode = visual_only
-Do NOT request CCXT data. Do NOT invent API data.
-
-==================================================
-API DATA MODE
-==================================================
-If mode = api_data
-Use exact programmatic market data. Never replace exact API values with visual guesses.
-
-==================================================
-FINAL RESPONSE FORMAT
-==================================================
-Return ONLY the existing UniversalAIResponse JSON.
-Do not include any prefixes, markdown formatting, conversational text, or safety warnings like "User Safety: safe".
-Null values MUST be explicitly null, not missing. Empty arrays MUST be [].
-
-{
-  "trend": "Bullish | Bearish | Sideways",
-  "signal": "${req.isProgressive ? "WAIT" : "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL"}",
-  "confidence": 90,
-  "marketState": "Summarize the exact current state of the market visually.",
-  "changesFromPrevious": "What has changed since the previous analysis history?",
-  "momentum": "Increasing | Decreasing | Weak | Strong",
-  "candlestickBehavior": "Description of recent visible candles",
-  "indicatorState": { "MACD": "status", "RSI": "status" },
-  "strategyConsensus": "Bullish | Bearish | Neutral | Mixed",
-  "strategyConflicts": ["List of conflicting strategies, or empty array"],
-  "recommendedTimeframe": "${req.primaryTimeframe}",
-  "requiredTimeframe": null,
-  "requestedIndicators": [],
-  "entryPrice": null,
-  "stopLoss": null,
-  "takeProfit": null,
-  "explanation": "Detailed explanation based on ONE screenshot.",
-  "reasoning": "Core reasoning based on ONE screenshot.",
-  "detectedSymbol": "${req.symbol}",
-  "detectedTimeframe": "${req.primaryTimeframe}",
-  "exchange": "${req.platform}",
-  "marketProvider": "${req.mode}",
-  "riskDecision": "UNSURE",
-  "dataConfidence": 90
-}
-`;
+Return ONLY valid JSON matching UniversalAIResponse.
+` + responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode);
   }
 
-  // --- 20-FRAME CHART SEQUENCE ANALYSIS (Web Live Mode) ---
   return `
-UNIVERSAL AI — ${req.isProgressive ? 'PROGRESSIVE BACKGROUND MARKET OBSERVATION (20-FRAME BATCH)' : 'FINAL CHART SEQUENCE ANALYSIS'}
+UNIVERSAL AI — CHRONOLOGICAL VISUAL SEQUENCE ANALYSIS
 
-IMPORTANT:
-
-This is NOT an educational request.
-Do not explain what a candlestick is.
-Do not explain what a timeframe is.
-Do not teach trading concepts to the user.
-
-Your job is to ANALYZE the provided chart frames and produce the best possible evidence-based ${req.isProgressive ? 'market observation' : 'trading signal'} using the information available.
-
+This request contains a chronological sequence of chart frames from the same trading session.
+Treat the images as a visual time series, NOT independent screenshots.
+Do not expose private chain-of-thought. Return concise, user-facing evidence and conclusions.
 
 ==================================================
-CORE OBJECTIVE
+SESSION
 ==================================================
-The user provides a sequence of chart frames (up to 20 frames in a batch) captured from the same trading session.
-These frames represent the chronological evolution of the SAME market/chart.
+Platform: ${req.platform}
+Symbol: ${req.symbol}
+Primary timeframe: ${req.primaryTimeframe}
+Confirmation timeframe: ${req.confirmationTimeframe || "N/A"}
+Trend timeframe: ${req.trendTimeframe || "N/A"}
+Trade duration: ${req.tradeDuration || "N/A"}
 
-When the user clicks ANALYZE (or during a background batch):
-1. Analyze all available frames in the chronological sequence.
-2. Compare them chronologically.
-3. Identify what changed between frames.
-4. Determine current market direction and momentum.
-5. Analyze the visible indicators.
-6. Apply the user's selected strategies.
-7. Give ONE final trading decision.
-
-Do NOT analyze each screenshot as an independent chart.
-Treat the frames as a TIME SERIES OF VISUAL MARKET OBSERVATIONS.
-
-==================================================
-FRAME ORDER
-==================================================
-The screenshots are provided in chronological order.
-Frame 1 -> oldest
-...
-Frame N -> newest/current
-
-The LAST frame is the current market state. Older frames provide historical context.
-The newest frame has the highest importance.
-Use the older frames to determine:
-- Direction
-- Momentum
-- Candle progression
-- Indicator progression
-- Breakout development
-- Reversal development
-- Pullback development
-- Continuation
-- Rejection
-- Market changes
-
-Never treat an older frame as the current price state.
-
-${req.progressiveState && req.progressiveState.length > 0 ? `
-==================================================
-PREVIOUS PROGRESSIVE AI ANALYSES
-==================================================
-The AI has been observing this chart progressively in the background.
-Here are the previous recent market state summaries (oldest to newest):
-
-${JSON.stringify(req.progressiveState, null, 2)}
-
-You MUST compare the current frames against this historical context to understand how the market has evolved.
-` : ''}
-
-==================================================
-FRAME COMPARISON
-==================================================
-Compare the frames directly. Determine:
-- What changed?
-- Is price moving higher?
-- Is price moving lower?
-- Is price ranging?
-- Is momentum increasing?
-- Is momentum decreasing?
-- Is a breakout developing?
-- Did a breakout fail?
-- Is price rejecting a level?
-- Is a reversal developing?
-- Is a pullback occurring?
-- Is the trend continuing?
-- Is the market becoming choppy?
-
-Pay more attention to RECENT changes than old observations.
-
-==================================================
-VISIBLE INDICATORS
-==================================================
-The application provides:
-visibleIndicators:
-${indicatorsList}
-
-Only analyze indicators that are actually visible.
-Compare indicator behavior across the frames when possible.
-For example MACD:
-Frame 1 -> weak momentum
-Frame 2 -> momentum increasing
-Frame 3 -> crossover developing
-Frame 4 -> stronger histogram
-Frame 5 -> current momentum
-
-Use this progression as evidence.
-Do NOT invent numerical values.
-If the indicator cannot be read clearly: mark it unavailable.
-
-==================================================
-SELECTED STRATEGIES
-==================================================
-The user provides:
-selectedStrategies:
+Selected strategies:
 ${strategiesList}
 
-Use ONLY the selected strategies.
-Do not automatically apply every strategy.
+Visible indicators:
+${indicatorsList}
 
-For each selected strategy:
-1. Analyze the entire chronological sequence.
-2. Determine whether the current setup satisfies the strategy.
-3. Determine whether the strategy supports BUY, SELL, WAIT, or UNSURE.
-4. Identify conflicts between strategies.
+Previous analysis:
+${previous}
 
-Then produce ONE final decision.
+Previous progressive state:
+${history}
 
 ==================================================
-STRATEGY CONSENSUS
+TEMPORAL ANALYSIS
 ==================================================
-Do NOT force a trade when selected strategies strongly conflict.
-If strategies conflict, output WAIT.
+Frames are ordered oldest → newest. The newest frame is the current state.
+Use older frames to understand development over time.
+Evaluate:
+- trend direction and changes
+- market structure evolution
+- momentum strengthening/weakening
+- candle progression
+- breakouts and failed breakouts
+- pullbacks and continuations
+- rejection and reversal behavior
+- indicator progression
+- support/resistance interaction
+- choppiness or loss of structure
+
+Do not treat the mere presence of multiple frames as evidence of higher confidence.
+Evidence must come from meaningful market changes across the sequence.
 
 ==================================================
-CURRENT MARKET STATE
+BULL VS BEAR CHECK
 ==================================================
-The latest frame is the primary source for the current state.
-Determine:
-Current trend, Current momentum, Current structure, Current candle behavior, Current indicator state, Current support/resistance context, Current strategy setup.
+Before selecting a signal, explicitly evaluate:
+BULLISH EVIDENCE:
+- strongest visible reasons for upside continuation/reversal
 
-Then use previous frames to confirm whether the current condition is:
-- Developing, Strengthening, Weakening, Reversing, Continuing, Breaking down, Breaking out, Unclear.
+BEARISH EVIDENCE:
+- strongest visible reasons for downside continuation/reversal
 
-${req.isProgressive ? `
-==================================================
-PROGRESSIVE OBSERVATION GOAL
-==================================================
-This is a BACKGROUND PROGRESSIVE ANALYSIS.
-Do NOT force a final trading decision.
-The purpose of this call is to maintain an updated market state summary for the user to view.
-Set the "signal" to "WAIT", but comprehensively fill out the "marketState", "changesFromPrevious", "momentum", "candlestickBehavior", and "indicatorState" fields.
-` : `
-==================================================
-FINAL TRADING SIGNAL GOAL
-==================================================
-This is a FINAL USER-TRIGGERED ANALYSIS.
-You must synthesize the previous background context (if any) and the current latest frames to generate the final "STRONG_BUY", "BUY", "SELL", "STRONG_SELL", "WAIT", or "UNSURE" signal.
-`}
-==================================================
-FIXED-TIME TRADING
-==================================================
-The application provides:
-platform: ${req.platform}
-symbol: ${req.symbol}
-chart timeframe: ${req.primaryTimeframe}
-trade duration: ${req.tradeDuration || "N/A"}
-
-Use these values as context for the decision.
-The final decision must consider the selected trade duration.
-Do NOT change the user's trade duration.
-Do NOT automatically extend the trade.
-Do NOT confuse chart timeframe with trade duration.
+Then decide whether one side clearly dominates.
+If the evidence is balanced or contradictory, prefer WAIT/UNSURE/NO_TRADE.
 
 ==================================================
-SIGNAL DECISION
+PREVIOUS ANALYSIS COMPARISON
 ==================================================
-After analyzing the complete frame sequence:
-Return exactly ONE:
-STRONG_BUY
-BUY
-WAIT
-UNSURE
-NO_TRADE
-SELL
-STRONG_SELL
+When previous analysis exists:
+- confirm whether the previous thesis is strengthening
+- weakening
+- invalidated
+- reversing
+- developing
+- continuing
+- unclear
 
-Do not return multiple possible signals. Do not say: "BUY or SELL".
-Do not avoid making a decision simply because the market is not perfect.
-However, do NOT force BUY/SELL when evidence is genuinely insufficient.
+Do not blindly preserve the previous signal.
+The current frame sequence has authority over stale assumptions.
 
 ==================================================
-SIGNAL QUALITY & CONFIDENCE
+SIGNAL QUALITY
 ==================================================
-Evaluate the strength of evidence. The latest frame receives the highest weight.
-Recent progression receives the second-highest importance. Older frames are supporting context.
-Confidence must represent the strength of the complete evidence. High confidence requires multiple pieces of agreeing evidence.
-Do NOT increase confidence simply because more screenshots exist or more strategies are selected.
-If evidence conflicts: reduce confidence.
-If frames are unclear: reduce confidence.
+Use a conservative quality assessment:
+EXCELLENT / GOOD / FAIR / POOR / AVOID
+
+STRONG_BUY or STRONG_SELL should be used only when:
+- multiple independent evidence groups align,
+- higher timeframe context does not materially conflict,
+- recent progression supports the direction,
+- opposing evidence is limited,
+- and the setup is appropriate for the requested trade duration.
+
+If any of these conditions materially fail, downgrade the decision.
 
 ==================================================
-VISUAL-ONLY RULE
+PROGRESSIVE MODE
 ==================================================
-If mode = visual_only
-Use ONLY the provided screenshots, the 5-frame sequence, Visible candles, Visible indicators, Selected strategies, Platform, Symbol, Chart timeframe, Trade duration.
-Do NOT request CCXT data.
-Do NOT invent API data.
-Do NOT invent exact numerical market values.
+${req.isProgressive ? "This is progressive background observation. Preserve an accurate market-state summary and do not manufacture a strong trade signal merely to create activity. WAIT is valid." : "This is a user-requested analysis. Produce the best current decision from all evidence."}
 
 ==================================================
-API DATA MODE
+FINAL RESPONSE
 ==================================================
-If mode = api_data
-Use the exact programmatic market data provided by the application.
-The screenshots are secondary unless explicitly provided for additional visual confirmation.
-Never replace exact API values with visual guesses.
-
-==================================================
-NO AUTOMATIC AI CALLS
-==================================================
-The live observation system only collects frames. It does NOT generate trading signals.
-AI analysis occurs ONLY when the user clicks ANALYZE.
-
-==================================================
-IMPORTANT — DO NOT TRAIN THE MODEL
-==================================================
-Do NOT claim that these screenshots permanently train or fine-tune the AI model.
-These frames are INPUT CONTEXT for the current analysis.
-Do not store them as permanent model training data.
-
-==================================================
-ANALYSIS PROCESS
-==================================================
-Internally perform:
-FRAME 1 -> FRAME 2 -> FRAME 3 -> FRAME 4 -> FRAME 5
--> Compare progression -> Identify current state -> Analyze indicators
--> Apply selected strategies -> Check strategy agreement -> Evaluate trade-duration suitability
--> Determine confidence -> FINAL SIGNAL
-
-Do not expose this internal chain-of-thought.
-Return only the required structured result and a concise user-facing explanation.
-
-==================================================
-UNSURE
-==================================================
-Return UNSURE when an important piece of information is genuinely required.
-If additional information can improve the analysis, populate requestedIndicators and/or requiredTimeframe.
-Example:
-{
-  "signal": "UNSURE",
-  "confidence": 55,
-  "requestedIndicators": ["RSI"],
-  "requiredTimeframe": "15m"
+Return ONLY valid JSON matching UniversalAIResponse.
+` + responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode);
 }
-If no additional indicator is required: requestedIndicators: []
-If no additional timeframe is required: requiredTimeframe: null
 
-==================================================
-FINAL RESPONSE FORMAT
-==================================================
-Return ONLY the existing UniversalAIResponse JSON.
-Do not include any prefixes, markdown formatting, conversational text, or safety warnings like "User Safety: safe".
-Null values MUST be explicitly null, not missing. Empty arrays MUST be [].
-
+function responseSchema(timeframe: string, symbol: string, platform: string, mode: string): string {
+  return `
 {
   "trend": "Bullish | Bearish | Sideways",
-  "signal": "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL",
-  "confidence": 90,
-  "recommendedTimeframe": "${req.primaryTimeframe}",
+  "signal": "${SIGNALS}",
+  "confidence": 0,
+  "readiness": "NOT READY | FAIR | GOOD | VERY GOOD | READY | READY / COMPLETE | EXCELLENT",
+  "estimatedConfidence": "LOW | MEDIUM | HIGH",
+  "recommendedTimeframe": "${timeframe}",
   "requiredTimeframe": null,
   "requestedIndicators": [],
   "entryPrice": null,
   "stopLoss": null,
   "takeProfit": null,
-  "explanation": "Recent chart observations show strengthening bullish momentum with confirmation from the selected indicators and strategies.",
-  "reasoning": "The latest frames show continued upward momentum and the selected strategies are aligned with the current direction.",
-  "detectedSymbol": "${req.symbol}",
-  "detectedTimeframe": "${req.primaryTimeframe}",
-  "exchange": "${req.platform}",
-  "marketProvider": "${req.mode}",
-  "riskDecision": "APPROVED",
-  "dataConfidence": 90
+  "marketState": "Concise current market state.",
+  "changesFromPrevious": "How the latest evidence differs from previous analysis.",
+  "momentum": "Concise momentum assessment.",
+  "candlestickBehavior": "Concise recent candle behavior.",
+  "indicatorState": {},
+  "strategyConsensus": "Bullish | Bearish | Neutral | Mixed",
+  "strategyConflicts": [],
+  "evidenceScore": 0,
+  "signalQuality": "EXCELLENT | GOOD | FAIR | POOR | AVOID",
+  "bullishEvidence": [],
+  "bearishEvidence": [],
+  "invalidationConditions": [],
+  "confirmationStatus": "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR",
+  "explanation": "Concise user-facing explanation of the decision and strongest evidence.",
+  "reasoning": "Concise structured reasoning summary; do not expose private chain-of-thought.",
+  "detectedSymbol": "${symbol}",
+  "detectedTimeframe": "${timeframe}",
+  "exchange": "${platform}",
+  "marketProvider": "${mode}",
+  "riskDecision": "APPROVED | UNSURE | REJECTED",
+  "dataConfidence": 0
 }
 `;
 }
