@@ -62,13 +62,19 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       strategyConsensus: rawObj.strategyConsensus || rawObj.strategy_consensus,
       strategyConflicts: rawObj.strategyConflicts || rawObj.strategy_conflicts,
       analysisId: rawObj.analysisId || rawObj.analysis_id,
+      evidenceScore: rawObj.evidenceScore ?? rawObj.evidence_score,
+      signalQuality: rawObj.signalQuality || rawObj.signal_quality,
+      bullishEvidence: rawObj.bullishEvidence || rawObj.bullish_evidence || [],
+      bearishEvidence: rawObj.bearishEvidence || rawObj.bearish_evidence || [],
+      invalidationConditions: rawObj.invalidationConditions || rawObj.invalidation_conditions || [],
+      confirmationStatus: rawObj.confirmationStatus || rawObj.confirmation_status,
     };
 
     return UniversalAIResponseSchema.parse(normalized);
   } catch (error) {
     console.error("[AI Normalization/Validation Error]", error);
 
-    // Safe NO_TRADE fallback. Keep the AI observation fields explicit so the
+    // Safe NO_TRADE fallback. Keep all AI evidence fields explicit so the
     // returned object always satisfies UniversalAIResponse at compile time.
     return {
       trend: "Sideways",
@@ -91,6 +97,12 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       reasoning: "Invalid JSON format or schema failure.",
       dataConfidence: 0,
       analysisId: undefined,
+      bullishEvidence: [],
+      bearishEvidence: [],
+      invalidationConditions: [],
+      evidenceScore: 0,
+      signalQuality: "AVOID",
+      confirmationStatus: "UNCLEAR",
     };
   }
 }
