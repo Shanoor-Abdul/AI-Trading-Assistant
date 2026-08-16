@@ -72,13 +72,13 @@ const clearAnalysisState = {
   explanation: "",
 };
 
-const invalidateProgressiveAnalyses = () => ({
-  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
-  lastAnalyzedObservationIndex: -1,
-  currentBatchId: 1,
-  aiReadiness: null as string | null,
-  aiEstimatedConfidence: null as string | null,
+const resetObservationSessionState = () => ({
+  ...resetObservationState(),
   ...clearAnalysisState,
+});
+
+const invalidateProgressiveAnalyses = () => ({
+  ...resetObservationSessionState(),
 });
 
 async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
@@ -103,8 +103,8 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
-  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationState() } : { symbol: val }),
-  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationState() } : { timeframe: val }),
+  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }),
+  timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
   lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
   isFetchingAnalysis: false,
@@ -122,8 +122,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     apiFailCount: 0,
     ...invalidateProgressiveAnalyses(),
   })),
-  selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationState() } : { selectedStrategies: val }),
-  observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationState() } : { observationFrequency: val }),
+  selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
+  observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
     const newObservation: Observation = { timestamp: Date.now(), imageBase64 };
@@ -143,26 +143,36 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       lastObservationTimestamp: newObservation.timestamp,
     };
   }),
-  clearObservations: () => set({ ...resetObservationState() }),
+  clearObservations: () => set({ ...resetObservationSessionState() }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
-  marketDataMode: "api", setMarketDataMode: (val) => set({ marketDataMode: val, aiReadiness: null, aiEstimatedConfidence: null }),
-  platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationState() } : { platform: val }),
-  tradeDuration: "5m", setTradeDuration: (val) => set((state) => state.tradeDuration !== val ? { tradeDuration: val, ...resetObservationState() } : { tradeDuration: val }),
-  visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationState() } : { visibleIndicators: val }),
-  activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
+  marketDataMode: "api", setMarketDataMode: (val) => set((state) => state.marketDataMode !== val ? { marketDataMode: val, ...resetObservationSessionState() } : { marketDataMode: val }),
+  platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationSessionState() } : { platform: val }),
+  tradeDuration: "5m", setTradeDuration: (val) => set((state) => state.tradeDuration !== val ? { tradeDuration: val, ...resetObservationSessionState() } : { tradeDuration: val }),
+  visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
+  activeConnectionId: null, setActiveConnectionId: (val) => set((state) => state.activeConnectionId !== val ? { activeConnectionId: val, ...resetObservationSessionState() } : { activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
   tradeHistory: [],
   clearAnalysis: () => set({ ...clearAnalysisState }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
-  addProgressiveAnalysis: (summary) => set((state) => ({
-    progressiveAnalyses: [...state.progressiveAnalyses, {
+  addProgressiveAnalysis: (summary) => set((state) => {
+    const normalized: ProgressiveAnalysisSummary = {
       ...summary,
-      frameStart: (state.currentBatchId - 1) * 20 + 1,
-      frameEnd: state.currentBatchId * 20,
+      frameStart: (summary.batchId - 1) * 20 + 1,
+      frameEnd: summary.batchId * 20,
       source: summary.source || "progressive",
-    }].slice(-50),
-  })),
+    };
+
+    const withoutDuplicate = state.progressiveAnalyses.filter(
+      (analysis) => analysis.batchId !== normalized.batchId,
+    );
+
+    return {
+      progressiveAnalyses: [...withoutDuplicate, normalized]
+        .sort((a, b) => a.batchId - b.batchId)
+        .slice(-50),
+    };
+  }),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
   lastAnalyzedObservationIndex: -1,
   setLastAnalyzedObservationIndex: (val) => set((state) => {
@@ -170,23 +180,28 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       return { lastAnalyzedObservationIndex: val };
     }
 
+    const consumedCount = val + 1;
     return {
-      observations: state.observations.slice(val + 1),
+      observations: state.observations.slice(consumedCount),
       lastAnalyzedObservationIndex: -1,
-      totalFramesCaptured: Math.max(0, state.totalFramesCaptured - (val + 1)),
+      totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumedCount),
     };
   }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () => set({
+  resetFramesButKeepSession: () => set((state) => ({
     observations: [],
     lastAnalyzedObservationIndex: -1,
     totalFramesCaptured: 0,
     lastObservationTimestamp: 0,
-  }),
-  clearProgressiveSession: () => set({ ...resetObservationState() }),
+    aiReadiness: null,
+    aiEstimatedConfidence: null,
+    progressiveAnalyses: state.progressiveAnalyses,
+    currentBatchId: state.currentBatchId,
+  })),
+  clearProgressiveSession: () => set({ ...resetObservationSessionState() }),
   aiReadiness: null,
   aiEstimatedConfidence: null,
   updateAnalysis: (data) => {
