@@ -17,12 +17,12 @@ export const UniversalAIRequestSchema = z.object({
   visibleIndicators: z.array(z.string()).default([]),
   screenshot: z.object({
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-    base64: z.string()
+    base64: z.string(),
   }).optional(),
   screenshots: z.array(z.object({
     timeframe: z.string(),
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-    base64: z.string()
+    base64: z.string(),
   })).optional(),
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
@@ -60,6 +60,12 @@ export const UniversalAIResponseSchema = z.object({
   strategyConsensus: z.string().optional(),
   strategyConflicts: z.any().optional(),
   analysisId: z.string().optional(),
+  evidenceScore: z.coerce.number().min(0).max(100).optional(),
+  signalQuality: z.enum(["EXCELLENT", "GOOD", "FAIR", "POOR", "AVOID"]).optional(),
+  bullishEvidence: z.array(z.string()).default([]),
+  bearishEvidence: z.array(z.string()).default([]),
+  invalidationConditions: z.array(z.string()).default([]),
+  confirmationStatus: z.enum(["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"]).optional(),
 });
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;
