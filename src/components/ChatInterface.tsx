@@ -76,9 +76,9 @@ export function ChatInterface() {
         </CardTitle>
         <CardDescription>Ask specific questions about the live chart</CardDescription>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col overflow-hidden p-0">
-        <ScrollArea className="flex-1 px-4">
-          <div className="space-y-4 pb-4">
+      <CardContent className="flex-1 flex flex-col min-h-0 overflow-hidden p-0">
+        <ScrollArea className="flex-1 h-full px-4">
+          <div className="space-y-4 pb-4 pt-4">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-lg p-3 text-sm flex gap-3 ${m.role === "user" ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-200"}`}>

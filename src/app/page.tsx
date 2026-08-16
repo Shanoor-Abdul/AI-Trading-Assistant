@@ -68,30 +68,36 @@ export default function Dashboard() {
     fetchTrades();
   }, []);
 
-  const handleDeleteTrades = async (ids?: string[]) => {
-    if (!confirm(ids ? "Delete selected trades?" : "Delete ALL trades?")) return;
+  const handleDeleteTrades = async (localIds?: string[]) => {
+    if (!confirm(localIds ? "Delete selected trades?" : "Delete ALL trades?")) return;
     try {
       setIsDeleting(true);
-      const payload = ids ? { ids } : { all: true };
-      const res = await fetch("/api/trades", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        if (ids) {
-          useTradingStore.setState(state => ({
-            tradeHistory: state.tradeHistory.filter(t => !ids.includes(t.dbTradeId!))
-          }));
-          setSelectedTrades([]);
-        } else {
-          useTradingStore.setState({ tradeHistory: [] });
-          setSelectedTrades([]);
+      const dbIds = localIds 
+        ? useTradingStore.getState().tradeHistory.filter(t => localIds.includes(t.id) && t.dbTradeId).map(t => t.dbTradeId!)
+        : [];
+
+      if (dbIds.length > 0 || !localIds) {
+        const payload = localIds ? { ids: dbIds } : { all: true };
+        const res = await fetch("/api/trades", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+           console.warn("Failed to delete trades from database");
         }
-        toast.success("Trades deleted successfully");
-      } else {
-        toast.error("Failed to delete trades");
       }
+      
+      if (localIds) {
+        useTradingStore.setState(state => ({
+          tradeHistory: state.tradeHistory.filter(t => !localIds.includes(t.id))
+        }));
+        setSelectedTrades([]);
+      } else {
+        useTradingStore.setState({ tradeHistory: [] });
+        setSelectedTrades([]);
+      }
+      toast.success("Trades deleted successfully");
     } catch (err) {
       toast.error("Error deleting trades");
     } finally {
@@ -1155,7 +1161,7 @@ export default function Dashboard() {
                           checked={tradeHistory.length > 0 && selectedTrades.length === tradeHistory.length}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedTrades(tradeHistory.map(t => t.dbTradeId!).filter(Boolean));
+                              setSelectedTrades(tradeHistory.map(t => t.id));
                             } else {
                               setSelectedTrades([]);
                             }
@@ -1182,13 +1188,12 @@ export default function Dashboard() {
                           <input 
                             type="checkbox" 
                             className="w-4 h-4 bg-zinc-800 border-zinc-700 rounded cursor-pointer"
-                            checked={trade.dbTradeId ? selectedTrades.includes(trade.dbTradeId) : false}
+                            checked={selectedTrades.includes(trade.id)}
                             onChange={(e) => {
-                              if (!trade.dbTradeId) return;
                               if (e.target.checked) {
-                                setSelectedTrades(prev => [...prev, trade.dbTradeId]);
+                                setSelectedTrades(prev => [...prev, trade.id]);
                               } else {
-                                setSelectedTrades(prev => prev.filter(id => id !== trade.dbTradeId));
+                                setSelectedTrades(prev => prev.filter(id => id !== trade.id));
                               }
                             }}
                           />
