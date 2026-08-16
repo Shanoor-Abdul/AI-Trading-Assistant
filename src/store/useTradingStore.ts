@@ -91,15 +91,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   capital: 1000, setCapital: (val) => set({ capital: val }),
   riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
-  // A model change keeps the captured chart evidence but invalidates conclusions
-  // produced by the previous model.
   setSelectedModel: (provider, model) => set(() => ({
     selectedProvider: provider,
     selectedModel: model,
     apiFailCount: 0,
     ...invalidateProgressiveAnalyses(),
   })),
-  // Strategy changes alter chart interpretation, so start a new observation session.
   selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationState() } : { observationFrequency: val }),
   observations: [],
@@ -134,13 +131,15 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
   addProgressiveAnalysis: (summary) => set((state) => ({
-    progressiveAnalyses: [...state.progressiveAnalyses, summary].slice(-50),
+    progressiveAnalyses: [...state.progressiveAnalyses, {
+      ...summary,
+      frameStart: (state.currentBatchId - 1) * 20 + 1,
+      frameEnd: state.currentBatchId * 20,
+      source: summary.source || "progressive",
+    }].slice(-50),
   })),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
   lastAnalyzedObservationIndex: -1,
-  // Once a 20-frame batch has been analyzed, remove those frames from the live
-  // observation queue. The summary stays in progressiveAnalyses, so the next
-  // batch contains only NEW frames while the AI still receives prior analyses.
   setLastAnalyzedObservationIndex: (val) => set((state) => {
     if (val < 0 || val >= state.observations.length) {
       return { lastAnalyzedObservationIndex: val };
@@ -155,8 +154,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  // Manual AI analysis consumes the current pending frames, but keeps all
-  // completed progressive/manual conclusions as context for the next analysis.
   resetFramesButKeepSession: () => set({
     observations: [],
     lastAnalyzedObservationIndex: -1,
@@ -173,10 +170,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       newState.aiReadiness = aiData.readiness ?? state.aiReadiness;
       newState.aiEstimatedConfidence = aiData.estimatedConfidence ?? state.aiEstimatedConfidence;
     }
-
-    // Store completed manual conclusions in the same context stream as the
-    // progressive 20-frame analyses. This lets the next Run AI Analysis compare
-    // the new frames against the immediately previous conclusion as well.
     if (data.signal && data.signal !== "UNSURE" && newState.trend && newState.signal) {
       const historyEntry: TradeHistoryEntry = {
         id: Math.random().toString(36).substring(2, 9), timestamp: Date.now(),
@@ -216,11 +209,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         source: "manual",
         signal: String(newState.signal),
         explanation: String(newState.explanation || ""),
-      } as ProgressiveAnalysisSummary & { source: string; signal: string; explanation: string };
+      };
 
-      newState.progressiveAnalyses = [...state.progressiveAnalyses, manualContext].slice(-50) as ProgressiveAnalysisSummary[];
+      newState.progressiveAnalyses = [...state.progressiveAnalyses, manualContext].slice(-50);
     }
-
     return newState;
   }),
 }));
