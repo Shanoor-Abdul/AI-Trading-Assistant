@@ -2,19 +2,51 @@ import { NextRequest, NextResponse } from "next/server";
 import { POST as analyzePOST } from "@/app/api/analyze/route";
 
 /**
- * Dedicated endpoint for background 20-frame progressive analysis.
+ * Dedicated endpoint for background progressive analysis.
  *
- * The final/manual signal continues to use /api/analyze.
- * Keeping this endpoint separate lets progressive analysis evolve independently
- * without changing the manual signal contract.
- *
- * The current implementation deliberately delegates the shared analysis engine
- * to avoid duplicating AI/risk/database logic. The client sends
- * `isProgressive: true` and progressive history exactly as before.
+ * /api/analyze expects the primary 5m screenshots at the top level as
+ * `screenshots`. The progressive client keeps them under `primaryTimeframe`
+ * so the MTF context (4h / 1h / 15m) stays separate. Normalize that payload
+ * here before delegating to the shared analysis engine.
  */
 export async function POST(req: NextRequest) {
   try {
-    return await analyzePOST(req);
+    const body = await req.json();
+
+    const primaryScreenshots = Array.isArray(body?.primaryTimeframe?.screenshots)
+      ? body.primaryTimeframe.screenshots
+      : [];
+
+    const normalizedBody = {
+      ...body,
+      screenshots:
+        Array.isArray(body?.screenshots) && body.screenshots.length > 0
+          ? body.screenshots
+          : primaryScreenshots,
+      imageBase64:
+        body?.imageBase64 ||
+        (primaryScreenshots.length > 0
+          ? primaryScreenshots[primaryScreenshots.length - 1]?.base64
+          : undefined),
+    };
+
+    if (normalizedBody.screenshots.length === 0 && !normalizedBody.imageBase64) {
+      return NextResponse.json(
+        {
+          error: "Image(s) are required",
+          analysisType: "progressive",
+        },
+        { status: 400 },
+      );
+    }
+
+    const normalizedRequest = new NextRequest(req.url, {
+      method: "POST",
+      headers: req.headers,
+      body: JSON.stringify(normalizedBody),
+    });
+
+    return await analyzePOST(normalizedRequest);
   } catch (error: any) {
     console.error("Progressive Analysis API Error:", error);
 
