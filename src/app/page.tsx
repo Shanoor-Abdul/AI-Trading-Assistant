@@ -408,15 +408,23 @@ export default function Dashboard() {
               ? current.lastAnalyzedObservationIndex + 1
               : 0;
           const pending = current.observations.length - analyzedCount;
+          
+          const pendingMultiples = Math.floor(pending / 20);
+          if (pendingMultiples === 0) break;
 
-          if (pending < 20) break;
+          const framesToAnalyzeCount = pendingMultiples * 20;
+
+          if (framesToAnalyzeCount === current.lastFailedPendingCount) {
+            // Wait for user to retry manually, or for new frames to arrive (next multiple of 20)
+            break;
+          }
 
           const startIndex = analyzedCount;
           const framesToAnalyze = current.observations.slice(
             startIndex,
-            startIndex + 20,
+            startIndex + framesToAnalyzeCount,
           );
-          if (framesToAnalyze.length !== 20) break;
+          if (framesToAnalyze.length !== framesToAnalyzeCount) break;
 
           const batchId = current.currentBatchId;
           const frameTimestamps = framesToAnalyze.map(
@@ -424,7 +432,7 @@ export default function Dashboard() {
           );
 
           try {
-            const response = await fetch("/api/analyze", {
+            const response = await fetch("/api/progressive-analyze", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -498,10 +506,18 @@ export default function Dashboard() {
             // The batch is identified by timestamp, not by a mutable array index.
             // If the entire batch was evicted while AI was running, -1 correctly
             // means all currently retained frames are newer and still pending.
+            // Success! Reset retry states.
+            latest.setRetryProgressiveAnalysis(false);
+            latest.setLastFailedPendingCount(0);
+            
+            // Consume the frames only on success
             latest.setLastAnalyzedObservationIndex(lastBatchIndex);
             latest.incrementBatchId();
           } catch (error) {
             console.error("Progressive analysis failed:", error);
+            const store = useTradingStore.getState();
+            store.setRetryProgressiveAnalysis(true);
+            store.setLastFailedPendingCount(framesToAnalyzeCount);
             break;
           }
         }
@@ -673,6 +689,117 @@ export default function Dashboard() {
       toast.error("API Error: Failed to analyze the chart. Please try again.");
     } finally {
       setIsFetchingAnalysis(false);
+    }
+  };
+
+  const handleRetryProgressiveAnalysis = async () => {
+    const current = useTradingStore.getState();
+    if (!current.retryProgressiveAnalysis || current.retryLoading) return;
+
+    // The frames we want to retry are exactly the ones that failed.
+    const framesToAnalyzeCount = current.lastFailedPendingCount;
+    if (framesToAnalyzeCount === 0) return;
+
+    const analyzedCount =
+      current.lastAnalyzedObservationIndex >= 0
+        ? current.lastAnalyzedObservationIndex + 1
+        : 0;
+
+    const startIndex = analyzedCount;
+    const framesToAnalyze = current.observations.slice(
+      startIndex,
+      startIndex + framesToAnalyzeCount,
+    );
+
+    if (framesToAnalyze.length !== framesToAnalyzeCount) return;
+
+    const batchId = current.currentBatchId;
+    const frameTimestamps = framesToAnalyze.map((frame) => frame.timestamp);
+
+    current.setRetryLoading(true);
+
+    try {
+      const response = await fetch("/api/progressive-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: current.symbol,
+          timeframe: current.timeframe,
+          platform: current.platform,
+          tradeDuration: current.tradeDuration,
+          provider: current.selectedProvider,
+          model: current.selectedModel,
+          marketDataMode: current.marketDataMode,
+          visibleIndicators: current.visibleIndicators,
+          selectedStrategies: current.selectedStrategies,
+          activeConnectionId: current.activeConnectionId,
+          isProgressive: true,
+          progressiveState: current.progressiveAnalyses,
+          screenshots: framesToAnalyze.map((obs) => ({
+            timestamp: new Date(obs.timestamp).toISOString(),
+            mimeType: "image/jpeg",
+            base64: obs.imageBase64,
+            platform: current.platform,
+            symbol: current.symbol,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Progressive analysis failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.marketState) {
+        throw new Error("Progressive analysis returned no marketState");
+      }
+
+      const latest = useTradingStore.getState();
+      const lastBatchTimestamp = frameTimestamps[frameTimestamps.length - 1];
+      const lastBatchIndex = latest.observations.findIndex(
+        (observation) => observation.timestamp === lastBatchTimestamp,
+      );
+
+      latest.addProgressiveAnalysis({
+        analysisId: data.analysisId || crypto.randomUUID(),
+        batchId,
+        timestamp: new Date().toISOString(),
+        frameStart: startIndex + 1,
+        frameEnd: startIndex + framesToAnalyzeCount,
+        trend: data.trend || "Unknown",
+        momentum: data.momentum || "Unknown",
+        marketState: data.marketState,
+        candlestickBehavior: data.candlestickBehavior || "Unknown",
+        indicatorState: data.indicatorState || {},
+        strategyConsensus: data.strategyConsensus || "Unknown",
+        strategyConflicts: data.strategyConflicts || [],
+        changesFromPrevious: data.changesFromPrevious || "None",
+        confidence: data.confidence || 0,
+      });
+
+      if (
+        data.readiness !== undefined ||
+        data.estimatedConfidence !== undefined
+      ) {
+        latest.updateAnalysis({
+          aiReadiness: data.readiness,
+          aiEstimatedConfidence: data.estimatedConfidence,
+        } as any);
+      }
+
+      if (lastBatchIndex !== -1) {
+        latest.setRetryProgressiveAnalysis(false);
+        latest.setLastFailedPendingCount(0);
+        latest.setLastAnalyzedObservationIndex(lastBatchIndex);
+        latest.incrementBatchId();
+      }
+    } catch (error) {
+      console.error("Progressive analysis retry failed:", error);
+      const store = useTradingStore.getState();
+      store.setRetryProgressiveAnalysis(true);
+      // Keep lastFailedPendingCount as is, so it remains the same failed batch.
+    } finally {
+      useTradingStore.getState().setRetryLoading(false);
     }
   };
 
@@ -1174,6 +1301,17 @@ export default function Dashboard() {
                   </div>
                 }
               </div>
+            </div>
+          )}
+          {useTradingStore.getState().retryProgressiveAnalysis && marketDataMode === "visual_only" && stream && (
+            <div className="flex justify-end px-4 pb-4">
+              <button
+                onClick={handleRetryProgressiveAnalysis}
+                disabled={useTradingStore.getState().retryLoading}
+                className="text-[10px] px-3 py-1.5 rounded-md bg-red-950/40 text-red-400 border border-red-900/50 hover:bg-red-900/40 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {useTradingStore.getState().retryLoading ? "Retrying..." : "Retry Progressive Analysis"}
+              </button>
             </div>
           )}
         </div>
