@@ -2,6 +2,10 @@ import { create } from "zustand";
 import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation, Trend, Signal } from "@/lib/types";
 import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 
+// Trade history is synchronized by the dashboard's single initial loader and
+// explicit create/delete operations. Do not refetch the whole table after
+// every signal; doing so can race with deletes and resurrect stale rows.
+
 export interface TradingState {
   isAnalyzing: boolean; setIsAnalyzing: (val: boolean) => void;
   symbol: string; setSymbol: (val: string) => void;
@@ -71,95 +75,12 @@ const resetObservationState = () => ({
 type ClearAnalysisState = Pick<TradingState, "trend" | "signal" | "confidence" | "entryPrice" | "stopLoss" | "takeProfit" | "recommendedTimeframe" | "requestedIndicators" | "open" | "high" | "low" | "close" | "explanation">;
 
 const clearAnalysisState: ClearAnalysisState = {
-  trend: null,
-  signal: null,
-  confidence: 0,
-  entryPrice: null,
-  stopLoss: null,
-  takeProfit: null,
-  recommendedTimeframe: null,
-  requestedIndicators: null,
-  open: null,
-  high: null,
-  low: null,
-  close: null,
-  explanation: "",
+  trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
+  recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
 };
 
-const resetObservationSessionState = () => ({
-  ...resetObservationState(),
-  ...clearAnalysisState,
-});
-
-const invalidateProgressiveAnalyses = () => ({
-  ...resetObservationSessionState(),
-});
-
-async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
-  const stateBeforeRequest = useTradingStore.getState();
-  const pendingLocalTrades = stateBeforeRequest.tradeHistory.filter(
-    (trade) => !trade.dbTradeId,
-  );
-
-  if (pendingLocalTrades.length > 0 && attempt === 0) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    return syncTradeHistoryFromDatabase(1);
-  }
-
-  try {
-    const res = await fetch("/api/trades", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.trades)) {
-        const state = useTradingStore.getState();
-
-        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0) {
-          return;
-        }
-
-        const pendingTrades = state.tradeHistory.filter(
-          (trade) => !trade.dbTradeId,
-        );
-
-        if (pendingTrades.length > 0) {
-          const hasPersistedPendingTrade = pendingTrades.every((localTrade) =>
-            data.trades.some((serverTrade: TradeHistoryEntry) => {
-              const sameSymbol = serverTrade.symbol === localTrade.symbol;
-              const sameSignal = serverTrade.signal === localTrade.signal;
-              const sameEntry =
-                localTrade.entryPrice == null ||
-                serverTrade.entryPrice == null ||
-                Math.abs(serverTrade.entryPrice - localTrade.entryPrice) < 1e-8;
-
-              return sameSymbol && sameSignal && sameEntry;
-            }),
-          );
-
-          if (!hasPersistedPendingTrade) {
-            if (attempt < 15) {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              return syncTradeHistoryFromDatabase(attempt + 1);
-            }
-            return;
-          }
-        }
-
-        useTradingStore.setState({
-          tradeHistory: data.trades,
-          tradeHistoryLoaded: true,
-        });
-        return;
-      }
-    }
-  } catch (error) {
-    console.error("Failed to load trade history", error);
-  }
-
-  if (attempt < 15) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    return syncTradeHistoryFromDatabase(attempt + 1);
-  }
-}
+const resetObservationSessionState = () => ({ ...resetObservationState(), ...clearAnalysisState });
+const invalidateProgressiveAnalyses = () => ({ ...resetObservationSessionState() });
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
@@ -170,11 +91,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   isFetchingAnalysis: false,
   setIsFetchingAnalysis: (val) => set((state) => val ? { ...state, isFetchingAnalysis: true, ...clearAnalysisState } : { isFetchingAnalysis: false }),
   isAutoScan: false, setIsAutoScan: (val) => set({ isAutoScan: val }),
-  trend: null, signal: null, confidence: 0,
-  entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null,
-  open: null, high: null, low: null, close: null, explanation: "",
-  capital: 1000, setCapital: (val) => set({ capital: val }),
-  riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
+  trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
+  recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
+  capital: 1000, setCapital: (val) => set({ capital: val }), riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
   setSelectedModel: (provider, model) => set(() => ({ selectedProvider: provider, selectedModel: model, apiFailCount: 0, ...invalidateProgressiveAnalyses() })),
   selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
@@ -199,23 +118,14 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
   activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
-  tradeHistory: [], tradeHistoryLoaded: true,
+  tradeHistory: [], tradeHistoryLoaded: false,
   clearAnalysis: () => set({ ...clearAnalysisState }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
   addProgressiveAnalysis: (summary) => set((state) => {
-    const normalized: ProgressiveAnalysisSummary = {
-      ...summary,
-      frameStart: (summary.batchId - 1) * 20 + 1,
-      frameEnd: summary.batchId * 20,
-      source: summary.source || "progressive",
-    };
-
+    const normalized: ProgressiveAnalysisSummary = { ...summary, frameStart: (summary.batchId - 1) * 20 + 1, frameEnd: summary.batchId * 20, source: summary.source || "progressive" };
     const withoutDuplicate = state.progressiveAnalyses.filter((analysis) => analysis.batchId !== normalized.batchId);
-
-    return {
-      progressiveAnalyses: [...withoutDuplicate, normalized].sort((a, b) => a.batchId - b.batchId).slice(-50),
-    };
+    return { progressiveAnalyses: [...withoutDuplicate, normalized].sort((a, b) => a.batchId - b.batchId).slice(-50) };
   }),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
   lastAnalyzedObservationIndex: -1,
@@ -228,21 +138,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () => set((state) => ({
-    observations: [],
-    lastAnalyzedObservationIndex: -1,
-    totalFramesCaptured: 0,
-    lastObservationTimestamp: 0,
-    // Preserve the latest completed progressive batch readiness/confidence.
-    // Manual Analyze must not reset the live observation status to NOT READY/LOW.
-    aiReadiness: state.aiReadiness,
-    aiEstimatedConfidence: state.aiEstimatedConfidence,
-    progressiveAnalyses: state.progressiveAnalyses,
-    currentBatchId: state.currentBatchId,
-  })),
+  resetFramesButKeepSession: () => set((state) => ({ observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId })),
   clearProgressiveSession: () => set({ ...resetObservationSessionState() }),
-  aiReadiness: null,
-  aiEstimatedConfidence: null,
+  aiReadiness: null, aiEstimatedConfidence: null,
   retryProgressiveAnalysis: false, setRetryProgressiveAnalysis: (val) => set({ retryProgressiveAnalysis: val }),
   retryLoading: false, setRetryLoading: (val) => set({ retryLoading: val }),
   lastFailedPendingCount: 0, setLastFailedPendingCount: (val) => set({ lastFailedPendingCount: val }),
@@ -257,7 +155,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         newState.aiReadiness = aiData.readiness ?? state.aiReadiness;
         newState.aiEstimatedConfidence = aiData.estimatedConfidence ?? state.aiEstimatedConfidence;
       }
-
       if (data.signal === "BUY" || data.signal === "SELL") {
         const historyTrend: Trend = data.trend ?? newState.trend ?? "Sideways";
         const historySignal: Signal = data.signal;
@@ -268,22 +165,20 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           trend: historyTrend, signal: historySignal, confidence: newState.confidence,
           recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
-          explanation: newState.explanation, status: "OPEN",
-          open: newState.open, high: newState.high, low: newState.low, close: newState.close,
-          screenshotBase64: newState.lastImageBase64 || undefined,
-          dbTradeId: (data as any).dbTradeId, requiredTimeframe: (data as any).requiredTimeframe,
-          requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
+          explanation: newState.explanation, status: "OPEN", open: newState.open, high: newState.high, low: newState.low, close: newState.close,
+          screenshotBase64: newState.lastImageBase64 || undefined, dbTradeId: (data as any).dbTradeId,
+          requiredTimeframe: (data as any).requiredTimeframe, requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
           detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
           exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
-          riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning,
-          dataConfidence: (data as any).dataConfidence,
+          riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning, dataConfidence: (data as any).dataConfidence,
         };
         newState.tradeHistory = [historyEntry, ...state.tradeHistory];
         newState.tradeHistoryLoaded = true;
       }
       return newState;
     });
-
-    if (data.signal === "BUY" || data.signal === "SELL") void syncTradeHistoryFromDatabase();
+    // Do not refetch /api/trades here. The analysis response already creates
+    // the local history entry; a background full-table GET could race with
+    // DELETE and resurrect stale rows or hide a just-created row.
   },
 }));
