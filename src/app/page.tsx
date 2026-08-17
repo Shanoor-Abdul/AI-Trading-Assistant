@@ -288,7 +288,7 @@ export default function Dashboard() {
     }, 100);
 
     return () => clearInterval(uiTimer);
-  }, [stream, marketDataMode, isAnalyzing, observationFrequency]);
+  }, [stream, marketDataMode, isLiveObservationEnabled, observationFrequency]);
 
   // Background Screen Capture for Live Observation
   useEffect(() => {
@@ -342,7 +342,7 @@ export default function Dashboard() {
   }, [
     stream,
     marketDataMode,
-    isAnalyzing,
+    isLiveObservationEnabled,
     observationFrequency,
     expectedFrames,
   ]);
@@ -552,7 +552,7 @@ export default function Dashboard() {
     };
 
     void runProgressiveAnalysis();
-  }, [observations.length, stream, marketDataMode]);
+  }, [observations.length, stream, marketDataMode, isLiveObservationEnabled]);
 
   const handleCaptureMTF = (timeframe: '4h' | '1h' | '15m') => {
     if (!videoRef.current || !canvasRef.current || !stream) return;
