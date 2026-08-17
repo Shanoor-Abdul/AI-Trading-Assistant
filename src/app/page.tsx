@@ -58,6 +58,14 @@ import { TradeTracker } from "@/components/TradeTracker";
 import { TradeCountdown } from "@/components/TradeCountdown";
 import { parseTradeDurationMs } from "@/lib/tradeDuration";
 import { LogoutButton } from "@/components/LogoutButton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { calculateExpectedFrames } from "@/lib/observation/calculation";
@@ -109,6 +117,9 @@ export default function Dashboard() {
     setSelectedStrategies,
     visibleIndicators,
     setVisibleIndicators,
+    isLiveObservationEnabled,
+    setIsLiveObservationEnabled,
+    stopLiveObservationSession,
   } = useTradingStore();
 
   const [filterSignal, setFilterSignal] = useState<string>("ALL");
@@ -120,6 +131,7 @@ export default function Dashboard() {
   const [timeSinceLastFrame, setTimeSinceLastFrame] = useState<number>(0);
   const [timeUntilNextFrame, setTimeUntilNextFrame] =
     useState<number>(observationFrequency);
+  const [showStopObservationModal, setShowStopObservationModal] = useState(false);
 
   useEffect(() => {
     const fetchTrades = async () => {
@@ -258,9 +270,9 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [isAutoScan, isAnalyzing, stream, timeframe]);
 
-  // High-Frequency UI Timing Loop
+  // UI Timer for Next Observation Countdown
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isAnalyzing) return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
 
     const uiTimer = setInterval(() => {
       const lastTs = useTradingStore.getState().lastObservationTimestamp;
@@ -280,7 +292,7 @@ export default function Dashboard() {
 
   // Background Screen Capture for Live Observation
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isAnalyzing) return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
 
     // We intentionally do not stop capturing to maintain a continuous observation circle.
 
@@ -383,11 +395,11 @@ export default function Dashboard() {
   // One coordinator owns the queue. It processes complete 20-frame batches
   // sequentially and never relies on a stale observation index after cache eviction.
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only") return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
 
     const runProgressiveAnalysis = async () => {
       const initial = useTradingStore.getState();
-      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis) return;
+      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis || !initial.isLiveObservationEnabled) return;
 
       initial.setIsProgressiveAnalyzing(true);
 
@@ -398,7 +410,8 @@ export default function Dashboard() {
           if (
             !current.stream ||
             current.marketDataMode !== "visual_only" ||
-            current.isFetchingAnalysis
+            current.isFetchingAnalysis ||
+            !current.isLiveObservationEnabled
           ) {
             break;
           }
@@ -468,6 +481,12 @@ export default function Dashboard() {
               throw new Error(
                 `Progressive analysis failed: ${response.status}`,
               );
+            }
+
+            // If observation was stopped while we were waiting, ignore the result
+            const latestState = useTradingStore.getState();
+            if (!latestState.isLiveObservationEnabled) {
+              break;
             }
 
             const data = await response.json();
@@ -1280,15 +1299,35 @@ export default function Dashboard() {
               </div>
 
               <div className="flex flex-col text-[10px] text-zinc-400 min-w-[140px] space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-green-400 mb-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <div className="flex items-center gap-1.5 font-semibold text-zinc-300 mb-1">
                   LIVE OBSERVATION
                 </div>
 
-                <div className="flex items-center justify-between gap-4">
-                  <span>Status:</span>
-                  <span className="text-green-400">● ACTIVE</span>
-                </div>
+                {!isLiveObservationEnabled ? (
+                  <Button 
+                    onClick={() => {
+                      if (!stream) {
+                        toast.error("Please connect the trading chart first.");
+                        return;
+                      }
+                      setIsLiveObservationEnabled(true);
+                    }} 
+                    variant="outline" 
+                    className="h-7 text-[10px] w-full mt-1 border-zinc-700 hover:bg-zinc-800"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full border border-zinc-500 mr-2" />
+                    Start Live Observation
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={() => setShowStopObservationModal(true)} 
+                    variant="outline" 
+                    className="h-7 text-[10px] w-full mt-1 border-zinc-700 hover:bg-zinc-800 text-green-400"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse mr-2" />
+                    Live Observation ON
+                  </Button>
+                )}
 
                 <div className="flex items-center justify-between gap-4">
                   <span>Current Frames:</span>
@@ -1933,6 +1972,43 @@ export default function Dashboard() {
           </Card>
         </div>
       )}
+
+      <Dialog open={showStopObservationModal} onOpenChange={setShowStopObservationModal}>
+        <DialogContent className="sm:max-w-[425px] bg-zinc-900 border-zinc-800 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>Stop Live Observation?</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Stopping Live Observation will clear the current live observation data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-zinc-300">
+              Current captured frames: <strong className="text-white">{useTradingStore.getState().totalFramesCaptured}</strong>
+            </p>
+            <p className="text-sm text-zinc-400 mt-2">
+              Pending progressive analysis data will also be cleared. This data cannot be recovered.
+            </p>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              variant="secondary"
+              onClick={() => setShowStopObservationModal(false)}
+              className="bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border-none"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                stopLiveObservationSession();
+                setShowStopObservationModal(false);
+              }}
+            >
+              Turn Off & Clear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <canvas ref={canvasRef} className="hidden" />
     </main>

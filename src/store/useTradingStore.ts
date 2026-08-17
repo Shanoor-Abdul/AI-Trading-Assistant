@@ -8,6 +8,7 @@ import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 
 export interface TradingState {
   isAnalyzing: boolean; setIsAnalyzing: (val: boolean) => void;
+  isLiveObservationEnabled: boolean; setIsLiveObservationEnabled: (val: boolean) => void;
   symbol: string; setSymbol: (val: string) => void;
   timeframe: string; setTimeframe: (val: string) => void;
   stream: MediaStream | null; setStream: (stream: MediaStream | null) => void;
@@ -45,6 +46,7 @@ export interface TradingState {
   incrementTotalFrames: () => void; incrementBatchId: () => void;
   lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;
   clearProgressiveSession: () => void; resetFramesButKeepSession: () => void;
+  stopLiveObservationSession: () => void;
   aiReadiness: string | null;
   aiEstimatedConfidence: string | null;
   retryProgressiveAnalysis: boolean; setRetryProgressiveAnalysis: (val: boolean) => void;
@@ -84,6 +86,7 @@ const invalidateProgressiveAnalyses = () => ({ ...resetObservationSessionState()
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
+  isLiveObservationEnabled: false, setIsLiveObservationEnabled: (val) => set({ isLiveObservationEnabled: val }),
   symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }),
   timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
@@ -139,6 +142,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
   resetFramesButKeepSession: () => set((state) => ({ observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId })),
+  stopLiveObservationSession: () => set({ 
+    isLiveObservationEnabled: false,
+    observations: [],
+    lastAnalyzedObservationIndex: -1,
+    totalFramesCaptured: 0,
+    lastObservationTimestamp: 0,
+    retryProgressiveAnalysis: false,
+    lastFailedPendingCount: 0,
+    aiReadiness: null,
+    aiEstimatedConfidence: null,
+  }),
   clearProgressiveSession: () => set({ ...resetObservationSessionState() }),
   aiReadiness: null, aiEstimatedConfidence: null,
   retryProgressiveAnalysis: false, setRetryProgressiveAnalysis: (val) => set({ retryProgressiveAnalysis: val }),
