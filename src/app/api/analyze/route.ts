@@ -857,6 +857,10 @@ export async function POST(
             },
       strategyRules,
       previousData: body.previousData,
+      macroTimeframe: body.macroTimeframeImage,
+      confirmationTimeframeImage: body.confirmationTimeframeImage,
+      structureTimeframe: body.structureTimeframeImage,
+      primaryTimeframe: body.primaryTimeframe,
     } as any);
 
     /*

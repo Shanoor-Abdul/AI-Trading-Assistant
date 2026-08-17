@@ -65,6 +65,15 @@ export interface AnalyzeRequest {
   previousData?: any;
   isProgressive?: boolean;
   progressiveState?: any;
+  screenshots?: any[]; // Keep flexible for 5M frames
+
+  macroTimeframeImage?: MultiTimeframeContext;
+  confirmationTimeframeImage?: MultiTimeframeContext;
+  structureTimeframeImage?: MultiTimeframeContext;
+  primaryTimeframe?: {
+    timeframe: string;
+    screenshots: any[];
+  };
 }
 
 export interface TradingAnalysis {
@@ -139,6 +148,12 @@ export interface TradeHistoryEntry extends TradingAnalysis {
 
 export interface AIProviderResponse {
   text: string;
+}
+
+export interface MultiTimeframeContext {
+  timeframe: string;
+  image: string; // base64
+  timestamp?: string;
 }
 
 export interface ProgressiveAnalysisSummary {

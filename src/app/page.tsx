@@ -448,13 +448,19 @@ export default function Dashboard() {
                 activeConnectionId: current.activeConnectionId,
                 isProgressive: true,
                 progressiveState: current.progressiveAnalyses,
-                screenshots: framesToAnalyze.map((obs) => ({
-                  timestamp: new Date(obs.timestamp).toISOString(),
-                  mimeType: "image/jpeg",
-                  base64: obs.imageBase64,
-                  platform: current.platform,
-                  symbol: current.symbol,
-                })),
+                macroTimeframeImage: current.macroTimeframeImage ? { timeframe: "4h", image: current.macroTimeframeImage } : undefined,
+                confirmationTimeframeImage: current.confirmationTimeframeImage ? { timeframe: "1h", image: current.confirmationTimeframeImage } : undefined,
+                structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
+                primaryTimeframe: {
+                  timeframe: "5m",
+                  screenshots: framesToAnalyze.map((obs) => ({
+                    timestamp: new Date(obs.timestamp).toISOString(),
+                    mimeType: "image/jpeg",
+                    base64: obs.imageBase64,
+                    platform: current.platform,
+                    symbol: current.symbol,
+                  })),
+                },
               }),
             });
 
@@ -529,6 +535,42 @@ export default function Dashboard() {
     void runProgressiveAnalysis();
   }, [observations.length, stream, marketDataMode]);
 
+  const handleCaptureMTF = (timeframe: '4h' | '1h' | '15m') => {
+    if (!videoRef.current || !canvasRef.current || !stream) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (video.videoWidth === 0) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const store = useTradingStore.getState();
+    const text1 = `Symbol: ${store.symbol} | MTF: ${timeframe.toUpperCase()}`;
+    const text2 = `Platform: ${store.platform} | Time: ${new Date().toLocaleTimeString()}`;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+
+    ctx.fillStyle = "#f59e0b"; // amber-500
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+
+    ctx.fillStyle = "#e4e4e7"; // zinc-200
+    ctx.font = "16px Arial";
+    ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
+    
+    const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
+    
+    if (timeframe === '4h') store.setMacroTimeframeImage(imageBase64);
+    else if (timeframe === '1h') store.setConfirmationTimeframeImage(imageBase64);
+    else if (timeframe === '15m') store.setStructureTimeframeImage(imageBase64);
+    
+    toast.success(`${timeframe.toUpperCase()} Context Captured!`, { icon: '📸' });
+  };
+
   const handleAnalyzeSnapshot = async () => {
     if (!videoRef.current || !canvasRef.current || !stream) return;
 
@@ -577,6 +619,9 @@ export default function Dashboard() {
         visibleIndicators: useTradingStore.getState().visibleIndicators,
         isProgressive: false,
         progressiveState: useTradingStore.getState().progressiveAnalyses,
+        macroTimeframeImage: useTradingStore.getState().macroTimeframeImage ? { timeframe: "4h", image: useTradingStore.getState().macroTimeframeImage } : undefined,
+        confirmationTimeframeImage: useTradingStore.getState().confirmationTimeframeImage ? { timeframe: "1h", image: useTradingStore.getState().confirmationTimeframeImage } : undefined,
+        structureTimeframeImage: useTradingStore.getState().structureTimeframeImage ? { timeframe: "15m", image: useTradingStore.getState().structureTimeframeImage } : undefined,
       };
 
       if (useTradingStore.getState().marketDataMode === "visual_only") {
@@ -735,13 +780,19 @@ export default function Dashboard() {
           activeConnectionId: current.activeConnectionId,
           isProgressive: true,
           progressiveState: current.progressiveAnalyses,
-          screenshots: framesToAnalyze.map((obs) => ({
-            timestamp: new Date(obs.timestamp).toISOString(),
-            mimeType: "image/jpeg",
-            base64: obs.imageBase64,
-            platform: current.platform,
-            symbol: current.symbol,
-          })),
+          macroTimeframeImage: current.macroTimeframeImage ? { timeframe: "4h", image: current.macroTimeframeImage } : undefined,
+          confirmationTimeframeImage: current.confirmationTimeframeImage ? { timeframe: "1h", image: current.confirmationTimeframeImage } : undefined,
+          structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
+          primaryTimeframe: {
+            timeframe: "5m",
+            screenshots: framesToAnalyze.map((obs) => ({
+              timestamp: new Date(obs.timestamp).toISOString(),
+              mimeType: "image/jpeg",
+              base64: obs.imageBase64,
+              platform: current.platform,
+              symbol: current.symbol,
+            })),
+          },
         }),
       });
 
@@ -1197,6 +1248,37 @@ export default function Dashboard() {
 
           {stream && marketDataMode === "visual_only" && (
             <div className="flex-1 flex flex-col md:flex-row items-start md:items-center gap-4 lg:border-l lg:border-zinc-800 lg:pl-4 justify-end">
+              
+              <div className="flex flex-col text-[10px] text-zinc-400 min-w-[140px] space-y-1 md:border-r md:border-zinc-800 md:pr-4 mr-2">
+                <div className="font-semibold text-amber-500/90 mb-1 tracking-wide">
+                  MTF CONTEXT
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span>4H:</span>
+                  {useTradingStore.getState().macroTimeframeImage ? (
+                    <span className="text-green-400">✓ Captured</span>
+                  ) : (
+                    <button onClick={() => handleCaptureMTF("4h")} className="text-amber-500 hover:text-amber-400 underline">Capture 4H</button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span>1H:</span>
+                  {useTradingStore.getState().confirmationTimeframeImage ? (
+                    <span className="text-green-400">✓ Captured</span>
+                  ) : (
+                    <button onClick={() => handleCaptureMTF("1h")} className="text-amber-500 hover:text-amber-400 underline">Capture 1H</button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span>15M:</span>
+                  {useTradingStore.getState().structureTimeframeImage ? (
+                    <span className="text-green-400">✓ Captured</span>
+                  ) : (
+                    <button onClick={() => handleCaptureMTF("15m")} className="text-amber-500 hover:text-amber-400 underline">Capture 15M</button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex flex-col text-[10px] text-zinc-400 min-w-[140px] space-y-1">
                 <div className="flex items-center gap-1.5 font-semibold text-green-400 mb-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />

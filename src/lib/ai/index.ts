@@ -50,6 +50,10 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     previousAnalysis: req.previousData,
     isProgressive: req.isProgressive,
     progressiveState: req.progressiveState,
+    macroTimeframe: (req as any).macroTimeframe,
+    confirmationTimeframeImage: (req as any).confirmationTimeframe,
+    structureTimeframe: (req as any).structureTimeframe,
+    primaryTimeframePayload: (req as any).primaryTimeframe,
   };
 
   if ((req as any).screenshots && (req as any).screenshots.length > 0) {

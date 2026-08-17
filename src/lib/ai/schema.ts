@@ -24,6 +24,22 @@ export const UniversalAIRequestSchema = z.object({
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
     base64: z.string(),
   })).optional(),
+  macroTimeframe: z.object({
+    timeframe: z.string(),
+    image: z.string(),
+  }).optional(),
+  confirmationTimeframeImage: z.object({
+    timeframe: z.string(),
+    image: z.string(),
+  }).optional(),
+  structureTimeframe: z.object({
+    timeframe: z.string(),
+    image: z.string(),
+  }).optional(),
+  primaryTimeframePayload: z.object({
+    timeframe: z.string(),
+    screenshots: z.array(z.any()),
+  }).optional(),
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
   riskContext: z.any().optional(),

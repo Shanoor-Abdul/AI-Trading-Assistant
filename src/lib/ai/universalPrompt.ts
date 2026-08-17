@@ -14,6 +14,12 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
     ? JSON.stringify(req.progressiveState, null, 2)
     : "None";
   const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
+  const mtfContext = [
+    `4H Macro Trend Image: ${req.macroTimeframe ? "AVAILABLE" : "MISSING"}`,
+    `1H Confirmation Image: ${req.confirmationTimeframeImage ? "AVAILABLE" : "MISSING"}`,
+    `15M Market Structure Image: ${req.structureTimeframe ? "AVAILABLE" : "MISSING"}`,
+    `5M Primary Frames: ${req.primaryTimeframePayload?.screenshots?.length || (req.screenshots?.length || 1)}AVAILABLE`
+  ].join("\n");
 
   if (isApiData) {
     return `
@@ -135,11 +141,24 @@ Previous progressive state:
 ${history}
 
 ==================================================
-TEMPORAL ANALYSIS
+TEMPORAL & MULTI-TIMEFRAME (MTF) ANALYSIS
 ==================================================
-Frames are ordered oldest → newest. The newest frame is the current state.
-Use older frames to understand development over time.
-Evaluate:
+${mtfContext}
+
+If higher timeframe screenshots (4H, 1H, 15M) are provided, you MUST analyze them hierarchically before analyzing the 5M primary frames:
+
+STEP 1: Analyze 4H macro direction (if available).
+STEP 2: Analyze 1H confirmation (if available).
+STEP 3: Analyze 15M market structure (if available).
+STEP 4: Analyze the chronological 5M primary frames for entry, momentum, candlestick behavior, and short-term changes.
+STEP 5: Compare all timeframes.
+STEP 6: Detect timeframe conflicts (e.g., 4H/1H Bearish but 5M Bullish).
+STEP 7: Only produce BUY/SELL when the evidence supports the signal across timeframes.
+STEP 8: Otherwise return WAIT / NO_TRADE.
+
+If any higher timeframe images are MISSING, you must clearly acknowledge that the timeframe evidence is unavailable. Lower your data confidence and readiness appropriately rather than inventing the missing analysis.
+
+For the primary 5M frames (ordered oldest → newest), evaluate:
 - trend direction and changes
 - market structure evolution
 - momentum strengthening/weakening

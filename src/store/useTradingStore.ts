@@ -46,6 +46,9 @@ export interface TradingState {
   retryProgressiveAnalysis: boolean; setRetryProgressiveAnalysis: (val: boolean) => void;
   retryLoading: boolean; setRetryLoading: (val: boolean) => void;
   lastFailedPendingCount: number; setLastFailedPendingCount: (val: number) => void;
+  macroTimeframeImage: string | null; setMacroTimeframeImage: (val: string | null) => void;
+  confirmationTimeframeImage: string | null; setConfirmationTimeframeImage: (val: string | null) => void;
+  structureTimeframeImage: string | null; setStructureTimeframeImage: (val: string | null) => void;
 }
 
 const resetObservationState = () => ({
@@ -60,6 +63,9 @@ const resetObservationState = () => ({
   retryProgressiveAnalysis: false,
   retryLoading: false,
   lastFailedPendingCount: 0,
+  macroTimeframeImage: null as string | null,
+  confirmationTimeframeImage: null as string | null,
+  structureTimeframeImage: null as string | null,
 });
 
 type ClearAnalysisState = Pick<TradingState, "trend" | "signal" | "confidence" | "entryPrice" | "stopLoss" | "takeProfit" | "recommendedTimeframe" | "requestedIndicators" | "open" | "high" | "low" | "close" | "explanation">;
@@ -240,6 +246,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   retryProgressiveAnalysis: false, setRetryProgressiveAnalysis: (val) => set({ retryProgressiveAnalysis: val }),
   retryLoading: false, setRetryLoading: (val) => set({ retryLoading: val }),
   lastFailedPendingCount: 0, setLastFailedPendingCount: (val) => set({ lastFailedPendingCount: val }),
+  macroTimeframeImage: null, setMacroTimeframeImage: (val) => set({ macroTimeframeImage: val }),
+  confirmationTimeframeImage: null, setConfirmationTimeframeImage: (val) => set({ confirmationTimeframeImage: val }),
+  structureTimeframeImage: null, setStructureTimeframeImage: (val) => set({ structureTimeframeImage: val }),
   updateAnalysis: (data) => {
     set((state) => {
       const newState = { ...state, ...data };
