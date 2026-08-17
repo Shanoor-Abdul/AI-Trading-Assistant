@@ -537,7 +537,8 @@ export default function Dashboard() {
             latest.setLastAnalyzedObservationIndex(lastBatchIndex);
             latest.incrementBatchId();
           } catch (error) {
-            console.error("Progressive analysis failed:", error);
+            console.warn("Progressive analysis failed:", error);
+            toast.error("Live Observation batch failed. Please retry when ready.");
             const store = useTradingStore.getState();
             store.setRetryProgressiveAnalysis(true);
             store.setLastFailedPendingCount(framesToAnalyzeCount);
@@ -864,7 +865,8 @@ export default function Dashboard() {
         latest.incrementBatchId();
       }
     } catch (error) {
-      console.error("Progressive analysis retry failed:", error);
+      console.warn("Progressive analysis retry failed:", error);
+      toast.error("Retry failed. Please ensure the API is reachable.");
       const store = useTradingStore.getState();
       store.setRetryProgressiveAnalysis(true);
       // Keep lastFailedPendingCount as is, so it remains the same failed batch.
