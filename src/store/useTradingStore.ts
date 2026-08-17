@@ -14,7 +14,6 @@ export interface TradingState {
   stream: MediaStream | null; setStream: (stream: MediaStream | null) => void;
   lastImageBase64: string | null; setLastImageBase64: (val: string | null) => void;
   isFetchingAnalysis: boolean; setIsFetchingAnalysis: (val: boolean) => void;
-  isAutoScan: boolean; setIsAutoScan: (val: boolean) => void;
   trend: "Bullish" | "Bearish" | "Sideways" | null;
   signal: "BUY" | "SELL" | "WAIT" | "UNSURE" | "NO_TRADE" | null;
   confidence: number;
@@ -93,7 +92,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
   isFetchingAnalysis: false,
   setIsFetchingAnalysis: (val) => set((state) => val ? { ...state, isFetchingAnalysis: true, ...clearAnalysisState } : { isFetchingAnalysis: false }),
-  isAutoScan: false, setIsAutoScan: (val) => set({ isAutoScan: val }),
   trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
   recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
   capital: 1000, setCapital: (val) => set({ capital: val }), riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),

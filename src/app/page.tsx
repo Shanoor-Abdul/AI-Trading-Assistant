@@ -102,8 +102,6 @@ export default function Dashboard() {
     tradeHistory,
     isFetchingAnalysis,
     setIsFetchingAnalysis,
-    isAutoScan,
-    setIsAutoScan,
     marketDataMode,
     setMarketDataMode,
     observations,
@@ -246,29 +244,6 @@ export default function Dashboard() {
   }, [stream]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Auto-Scan Logic
-  useEffect(() => {
-    if (!isAutoScan || !isAnalyzing || !stream) return;
-
-    let intervalMs = 300000; // Default 5 minutes
-    if (timeframe.endsWith("m")) {
-      intervalMs = parseInt(timeframe) * 60 * 1000;
-    } else if (timeframe.endsWith("h")) {
-      intervalMs = parseInt(timeframe) * 60 * 60 * 1000;
-    } else if (timeframe.endsWith("s")) {
-      intervalMs = parseInt(timeframe) * 1000;
-    }
-
-    const timer = setInterval(() => {
-      // Avoid overlapping calls if an analysis is still running
-      if (!useTradingStore.getState().isFetchingAnalysis) {
-        handleAnalyzeSnapshot();
-      }
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, [isAutoScan, isAnalyzing, stream, timeframe]);
 
   // UI Timer for Next Observation Countdown
   useEffect(() => {
@@ -1233,20 +1208,6 @@ export default function Dashboard() {
                     </>
                   )}
                 </Button>
-                <div className="flex items-center gap-2 bg-zinc-900/80 px-2 py-1.5 rounded-md border border-zinc-800 h-8">
-                  <Switch
-                    checked={isAutoScan}
-                    onCheckedChange={setIsAutoScan}
-                    id="auto-scan"
-                    className="scale-75"
-                  />
-                  <Label
-                    htmlFor="auto-scan"
-                    className="text-zinc-300 text-xs font-medium cursor-pointer"
-                  >
-                    Auto
-                  </Label>
-                </div>
                 <Button
                   onClick={() => useTradingStore.getState().clearAnalysis()}
                   variant="secondary"
