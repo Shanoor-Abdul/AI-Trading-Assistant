@@ -85,10 +85,6 @@ const invalidateProgressiveAnalyses = () => ({
 
 async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
   const stateBeforeRequest = useTradingStore.getState();
-
-  // If a new local signal is waiting for the asynchronous database journal,
-  // give /api/analyze time to finish inserting the trade before reading the
-  // database. This prevents an older server list from replacing the new signal.
   const pendingLocalTrades = stateBeforeRequest.tradeHistory.filter(
     (trade) => !trade.dbTradeId,
   );
@@ -105,8 +101,6 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
       if (Array.isArray(data.trades)) {
         const state = useTradingStore.getState();
 
-        // A deletion is authoritative in the current UI session. Never let a
-        // late GET response resurrect trades that the user already deleted.
         if (state.tradeHistoryLoaded && state.tradeHistory.length === 0) {
           return;
         }
@@ -115,8 +109,6 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
           (trade) => !trade.dbTradeId,
         );
 
-        // Do not replace a newly generated local trade with an older database
-        // snapshot. Wait until the newly generated trade is visible in the DB.
         if (pendingTrades.length > 0) {
           const hasPersistedPendingTrade = pendingTrades.every((localTrade) =>
             data.trades.some((serverTrade: TradeHistoryEntry) => {
@@ -148,7 +140,7 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
       }
     }
   } catch (error) {
-    console.error("Failed to sync trade history", error);
+    console.error("Failed to load trade history", error);
   }
 
   if (attempt < 15) {
@@ -172,12 +164,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   capital: 1000, setCapital: (val) => set({ capital: val }),
   riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
-  setSelectedModel: (provider, model) => set(() => ({
-    selectedProvider: provider,
-    selectedModel: model,
-    apiFailCount: 0,
-    ...invalidateProgressiveAnalyses(),
-  })),
+  setSelectedModel: (provider, model) => set(() => ({ selectedProvider: provider, selectedModel: model, apiFailCount: 0, ...invalidateProgressiveAnalyses() })),
   selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
@@ -188,16 +175,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
     if (evictedCount > 0) {
       observations = observations.slice(evictedCount);
-      if (lastAnalyzedObservationIndex >= 0) {
-        lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
-      }
+      if (lastAnalyzedObservationIndex >= 0) lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
     }
-    return {
-      observations,
-      lastAnalyzedObservationIndex,
-      totalFramesCaptured: state.totalFramesCaptured + 1,
-      lastObservationTimestamp: newObservation.timestamp,
-    };
+    return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
   }),
   clearObservations: () => set({ ...resetObservationSessionState() }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
@@ -219,29 +199,18 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       source: summary.source || "progressive",
     };
 
-    const withoutDuplicate = state.progressiveAnalyses.filter(
-      (analysis) => analysis.batchId !== normalized.batchId,
-    );
+    const withoutDuplicate = state.progressiveAnalyses.filter((analysis) => analysis.batchId !== normalized.batchId);
 
     return {
-      progressiveAnalyses: [...withoutDuplicate, normalized]
-        .sort((a, b) => a.batchId - b.batchId)
-        .slice(-50),
+      progressiveAnalyses: [...withoutDuplicate, normalized].sort((a, b) => a.batchId - b.batchId).slice(-50),
     };
   }),
   isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
   lastAnalyzedObservationIndex: -1,
   setLastAnalyzedObservationIndex: (val) => set((state) => {
-    if (val < 0 || val >= state.observations.length) {
-      return { lastAnalyzedObservationIndex: val };
-    }
-
+    if (val < 0 || val >= state.observations.length) return { lastAnalyzedObservationIndex: val };
     const consumedCount = val + 1;
-    return {
-      observations: state.observations.slice(consumedCount),
-      lastAnalyzedObservationIndex: -1,
-      totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumedCount),
-    };
+    return { observations: state.observations.slice(consumedCount), lastAnalyzedObservationIndex: -1, totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumedCount) };
   }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
@@ -252,8 +221,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     lastAnalyzedObservationIndex: -1,
     totalFramesCaptured: 0,
     lastObservationTimestamp: 0,
-    aiReadiness: null,
-    aiEstimatedConfidence: null,
+    // Preserve the latest completed progressive batch readiness/confidence.
+    // Manual Analyze must not reset the live observation status to NOT READY/LOW.
+    aiReadiness: state.aiReadiness,
+    aiEstimatedConfidence: state.aiEstimatedConfidence,
     progressiveAnalyses: state.progressiveAnalyses,
     currentBatchId: state.currentBatchId,
   })),
@@ -279,8 +250,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           trend: historyTrend, signal: historySignal, confidence: newState.confidence,
           recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
-          explanation: newState.explanation,
-          status: "OPEN",
+          explanation: newState.explanation, status: "OPEN",
           open: newState.open, high: newState.high, low: newState.low, close: newState.close,
           screenshotBase64: newState.lastImageBase64 || undefined,
           dbTradeId: (data as any).dbTradeId, requiredTimeframe: (data as any).requiredTimeframe,
@@ -296,8 +266,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       return newState;
     });
 
-    if (data.signal === "BUY" || data.signal === "SELL") {
-      void syncTradeHistoryFromDatabase();
-    }
+    if (data.signal === "BUY" || data.signal === "SELL") void syncTradeHistoryFromDatabase();
   },
 }));
