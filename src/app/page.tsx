@@ -130,6 +130,29 @@ export default function Dashboard() {
   const [timeUntilNextFrame, setTimeUntilNextFrame] =
     useState<number>(observationFrequency);
   const [showStopObservationModal, setShowStopObservationModal] = useState(false);
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
+
+  const isFieldInvalid = (val: string | null | undefined) => {
+    if (!val) return true;
+    const trimmed = val.trim().toLowerCase();
+    return trimmed === "" || trimmed.startsWith("select");
+  };
+
+  const validateRequiredFields = () => {
+    const { platform, tradeDuration } = useTradingStore.getState();
+    const isSymbolInvalid = isFieldInvalid(symbol);
+    const isPlatformInvalid = isFieldInvalid(platform);
+    const isTimeframeInvalid = isFieldInvalid(timeframe);
+    const isDurationInvalid = isFieldInvalid(tradeDuration);
+
+    if (isSymbolInvalid || isPlatformInvalid || isTimeframeInvalid || isDurationInvalid) {
+      setShowValidationErrors(true);
+      toast.error("Please complete all required fields before continuing.");
+      return false;
+    }
+    setShowValidationErrors(false);
+    return true;
+  };
 
   useEffect(() => {
     const fetchTrades = async () => {
@@ -530,6 +553,7 @@ export default function Dashboard() {
   }, [observations.length, stream, marketDataMode, isLiveObservationEnabled]);
 
   const handleCaptureMTF = (timeframe: '4h' | '1h' | '15m') => {
+    if (!validateRequiredFields()) return;
     if (!videoRef.current || !canvasRef.current || !stream) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -566,6 +590,7 @@ export default function Dashboard() {
   };
 
   const handleAnalyzeSnapshot = async () => {
+    if (!validateRequiredFields()) return;
     if (!videoRef.current || !canvasRef.current || !stream) return;
 
     if (useTradingStore.getState().isFetchingAnalysis) return;
@@ -1271,6 +1296,7 @@ export default function Dashboard() {
                         toast.error("Please connect the trading chart first.");
                         return;
                       }
+                      if (!validateRequiredFields()) return;
                       setIsLiveObservationEnabled(true);
                     }} 
                     variant="outline" 
@@ -1434,7 +1460,7 @@ export default function Dashboard() {
             )}
             {isAnalyzing && marketDataMode === "visual_only" && (
               <div className="absolute top-4 right-4 flex gap-2 z-20 bg-black/60 p-2 rounded-lg backdrop-blur-sm border border-white/10">
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">
                     Platform
                   </Label>
@@ -1442,7 +1468,7 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: showValidationErrors && isFieldInvalid(useTradingStore.getState().platform) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-24 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1452,8 +1478,11 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. Binomo"
                   />
+                  {showValidationErrors && isFieldInvalid(useTradingStore.getState().platform) && (
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">
                     Symbol
                   </Label>
@@ -1461,7 +1490,7 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: showValidationErrors && isFieldInvalid(symbol) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-28 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1473,8 +1502,11 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. EUR/USD"
                   />
+                  {showValidationErrors && isFieldInvalid(symbol) && (
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">
                     Chart TF
                   </Label>
@@ -1482,7 +1514,7 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: showValidationErrors && isFieldInvalid(timeframe) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1492,8 +1524,11 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. 5m"
                   />
+                  {showValidationErrors && isFieldInvalid(timeframe) && (
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">
                     Duration
                   </Label>
@@ -1501,7 +1536,7 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: showValidationErrors && isFieldInvalid(useTradingStore.getState().tradeDuration) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1513,6 +1548,9 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. 5m"
                   />
+                  {showValidationErrors && isFieldInvalid(useTradingStore.getState().tradeDuration) && (
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                  )}
                 </div>
               </div>
             )}
