@@ -86,6 +86,18 @@ const invalidateProgressiveAnalyses = () => ({
 async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
   const stateBeforeRequest = useTradingStore.getState();
 
+  // If a new local signal is waiting for the asynchronous database journal,
+  // give /api/analyze time to finish inserting the trade before reading the
+  // database. This prevents an older server list from replacing the new signal.
+  const pendingLocalTrades = stateBeforeRequest.tradeHistory.filter(
+    (trade) => !trade.dbTradeId,
+  );
+
+  if (pendingLocalTrades.length > 0 && attempt === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return syncTradeHistoryFromDatabase(1);
+  }
+
   try {
     const res = await fetch("/api/trades", { cache: "no-store" });
     if (res.ok) {
@@ -93,22 +105,39 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
       if (Array.isArray(data.trades)) {
         const state = useTradingStore.getState();
 
-        // A signal has just been generated locally. The analyze endpoint
-        // journals the trade asynchronously, so an empty response here can
-        // legitimately arrive before the new database row exists. Never
-        // replace the new local signal with an empty/stale database response.
-        if (data.trades.length === 0 && state.tradeHistory.length > 0) {
-          if (attempt < 15) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            return syncTradeHistoryFromDatabase(attempt + 1);
-          }
+        // A deletion is authoritative in the current UI session. Never let a
+        // late GET response resurrect trades that the user already deleted.
+        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0) {
           return;
         }
 
-        // If the user explicitly deleted the history and there is no local
-        // trade waiting for persistence, keep the empty state.
-        if (state.tradeHistoryLoaded && state.tradeHistory.length === 0 && data.trades.length === 0) {
-          return;
+        const pendingTrades = state.tradeHistory.filter(
+          (trade) => !trade.dbTradeId,
+        );
+
+        // Do not replace a newly generated local trade with an older database
+        // snapshot. Wait until the newly generated trade is visible in the DB.
+        if (pendingTrades.length > 0) {
+          const hasPersistedPendingTrade = pendingTrades.every((localTrade) =>
+            data.trades.some((serverTrade: TradeHistoryEntry) => {
+              const sameSymbol = serverTrade.symbol === localTrade.symbol;
+              const sameSignal = serverTrade.signal === localTrade.signal;
+              const sameEntry =
+                localTrade.entryPrice == null ||
+                serverTrade.entryPrice == null ||
+                Math.abs(serverTrade.entryPrice - localTrade.entryPrice) < 1e-8;
+
+              return sameSymbol && sameSignal && sameEntry;
+            }),
+          );
+
+          if (!hasPersistedPendingTrade) {
+            if (attempt < 15) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              return syncTradeHistoryFromDatabase(attempt + 1);
+            }
+            return;
+          }
         }
 
         useTradingStore.setState({
@@ -126,8 +155,6 @@ async function syncTradeHistoryFromDatabase(attempt = 0): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return syncTradeHistoryFromDatabase(attempt + 1);
   }
-
-  void stateBeforeRequest;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -180,7 +207,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
   activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
-  tradeHistory: [], tradeHistoryLoaded: false,
+  tradeHistory: [], tradeHistoryLoaded: true,
   clearAnalysis: () => set({ ...clearAnalysisState }),
   analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
   progressiveAnalyses: [],
@@ -264,6 +291,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           dataConfidence: (data as any).dataConfidence,
         };
         newState.tradeHistory = [historyEntry, ...state.tradeHistory];
+        newState.tradeHistoryLoaded = true;
       }
       return newState;
     });
