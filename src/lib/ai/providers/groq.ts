@@ -33,6 +33,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     const response = await groq.chat.completions.create({
       model: currentModel,
       messages: [{ role: "user", content: messagesContent }],
+      max_tokens: 2000,
     });
 
     if (!response?.choices?.length) {
