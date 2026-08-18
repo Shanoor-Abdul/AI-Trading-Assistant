@@ -1,5 +1,9 @@
 export type AIProvider = "gemini" | "groq" | "openai" | "openrouter";
 
+export const AI_REQUEST_CONFIG = {
+  maxOutputTokens: 3000,
+};
+
 export interface AIModel {
   id: string;
   name: string;
@@ -24,8 +28,8 @@ export const AI_MODELS: AIModel[] = [
 
   // Groq (Free Tier)
   {
-    id: "llama-3.2-90b-vision-preview",
-    name: "Llama 3.2 90B Vision",
+    id: "qwen/qwen3.6-27b",
+    name: "Qwen 3.6 27B Vision",
     provider: "groq",
     isFree: true,
   },
@@ -33,25 +37,7 @@ export const AI_MODELS: AIModel[] = [
   // OpenRouter (Free Vision Models)
   {
     id: "qwen/qwen-2-vl-7b-instruct:free",
-    name: "Qwen 2 VL 7B (Best Free)",
-    provider: "openrouter",
-    isFree: true,
-  },
-  {
-    id: "google/gemini-2.0-flash-lite-preview-02-05:free",
-    name: "Gemini Flash Lite (OpenRouter)",
-    provider: "openrouter",
-    isFree: true,
-  },
-  {
-    id: "google/gemma-4-31b-it:free",
-    name: "Gemma 4 31B (OpenRouter)",
-    provider: "openrouter",
-    isFree: true,
-  },
-  {
-    id: "google/gemma-4-26b-a4b-it:free",
-    name: "Gemma 4 26B (OpenRouter)",
+    name: "Qwen 2 VL 7B (Best Free Vision)",
     provider: "openrouter",
     isFree: true,
   },
@@ -61,24 +47,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "openrouter",
     isFree: true,
   },
-  {
-    id: "openrouter/free",
-    name: "OpenRouter Free Router",
-    provider: "openrouter",
-    isFree: true,
-  },
-
-  // OpenAI (Paid / Credits Required)
-  { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", isFree: false },
-  { id: "gpt-4o", name: "GPT-4o", provider: "openai", isFree: false },
-  {
-    id: "gpt-4.5-preview",
-    name: "GPT-4.5 Preview",
-    provider: "openai",
-    isFree: false,
-  },
-  { id: "o1-mini", name: "o1 Mini", provider: "openai", isFree: false },
-  { id: "o1-preview", name: "o1 Preview", provider: "openai", isFree: false },
 ];
 
 export const getModelsByProvider = (provider: AIProvider) => {
