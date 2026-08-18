@@ -14,6 +14,12 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   const currentModel = req.model || "llama-3.2-90b-vision-preview";
 
   try {
+    try {
+      const fs = require('fs');
+      const logData = `\n\n[${new Date().toISOString()}] === GROQ OUTGOING ===\n${JSON.stringify({...req, screenshot: req.screenshot ? 'base64...' : undefined, screenshots: req.screenshots ? req.screenshots.length + ' images' : undefined}, null, 2)}`;
+      fs.appendFileSync('api-payloads.log', logData);
+    } catch (e) {}
+
     const messagesContent: any[] = [{ type: "text", text: prompt }];
 
     if (req.screenshots && req.screenshots.length > 0) {

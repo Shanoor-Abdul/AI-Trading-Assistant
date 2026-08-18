@@ -15,6 +15,12 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   const currentModel = req.model || "qwen/qwen-2-vl-7b-instruct:free";
 
   try {
+    try {
+      const fs = require('fs');
+      const logData = `\n\n[${new Date().toISOString()}] === OPENROUTER OUTGOING ===\n${JSON.stringify({...req, screenshot: req.screenshot ? 'base64...' : undefined, screenshots: req.screenshots ? req.screenshots.length + ' images' : undefined}, null, 2)}`;
+      fs.appendFileSync('api-payloads.log', logData);
+    } catch (e) {}
+
     const messagesContent: any[] = [{ type: "text", text: prompt }];
 
     if (req.screenshots && req.screenshots.length > 0) {
