@@ -123,12 +123,11 @@ export interface TradingAnalysis {
   explanation: string;
   requestedIndicators: string[];
 
-  readiness?: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
+  // These fields are part of the normalized AI response contract.
+  readiness: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
   estimatedConfidence?: "LOW" | "MEDIUM" | "HIGH";
-
-  // Deterministic signal qualification fields.
-  signalQuality?: "GOOD" | "FAIR" | "POOR" | "AVOID";
-  confirmationStatus?: string;
+  signalQuality?: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" | "AVOID";
+  confirmationStatus?: "CONFIRMED" | "DEVELOPING" | "WEAKENING" | "INVALIDATED" | "REVERSING" | "UNCLEAR";
   evidenceScore?: number;
   bullishEvidence?: string[];
   bearishEvidence?: string[];
