@@ -119,61 +119,18 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
     if (evictedCount > 0) {
       observations = observations.slice(evictedCount);
-      if (lastAnalyzedObservationIndex >= 0) lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
+      lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
     }
-    return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
+    return { observations, lastAnalyzedObservationIndex };
   }),
-  clearObservations: () => set({ ...resetObservationSessionState() }),
+  clearObservations: () => set({ observations: [], lastAnalyzedObservationIndex: -1 }),
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
-  marketDataMode: "api", setMarketDataMode: (val) => set((state) => state.marketDataMode !== val ? { marketDataMode: val, ...resetObservationSessionState() } : { marketDataMode: val }),
-  platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationSessionState() } : { platform: val }),
-  tradeDuration: "5m", setTradeDuration: (val) => set((state) => state.tradeDuration !== val ? { tradeDuration: val, ...resetObservationSessionState() } : { tradeDuration: val }),
-  visibleIndicators: [], setVisibleIndicators: (val) => set((state) => JSON.stringify(state.visibleIndicators) !== JSON.stringify(val) ? { visibleIndicators: val, ...resetObservationSessionState() } : { visibleIndicators: val }),
+  marketDataMode: "visual_only", setMarketDataMode: (val) => set({ marketDataMode: val }),
+  platform: "Auto", setPlatform: (val) => set({ platform: val }),
+  tradeDuration: "5m", setTradeDuration: (val) => set({ tradeDuration: val }),
+  visibleIndicators: [], setVisibleIndicators: (val) => set({ visibleIndicators: val }),
   activeConnectionId: null, setActiveConnectionId: (val) => set({ activeConnectionId: val }),
   apiFailCount: 0, incrementFailCount: () => set((state) => ({ apiFailCount: state.apiFailCount + 1 })), resetFailCount: () => set({ apiFailCount: 0 }),
-  tradeHistory: [], tradeHistoryLoaded: false,
-  clearAnalysis: () => set({ ...clearAnalysisState }),
-  analysisSessionKey: null, setAnalysisSessionKey: (val) => set({ analysisSessionKey: val }),
-  progressiveAnalyses: [],
-  addProgressiveAnalysis: (summary) => set((state) => {
-    const normalized: ProgressiveAnalysisSummary = { ...summary, frameStart: (summary.batchId - 1) * 20 + 1, frameEnd: summary.batchId * 20, source: summary.source || "progressive" };
-    const withoutDuplicate = state.progressiveAnalyses.filter((analysis) => analysis.batchId !== normalized.batchId);
-    return { progressiveAnalyses: [...withoutDuplicate, normalized].sort((a, b) => a.batchId - b.batchId).slice(-50) };
-  }),
-  isProgressiveAnalyzing: false, setIsProgressiveAnalyzing: (val) => set({ isProgressiveAnalyzing: val }),
-  lastAnalyzedObservationIndex: -1,
-  setLastAnalyzedObservationIndex: (val) => set((state) => {
-    if (val < 0 || val >= state.observations.length) return { lastAnalyzedObservationIndex: val };
-    const consumedCount = val + 1;
-    return { observations: state.observations.slice(consumedCount), lastAnalyzedObservationIndex: -1, totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumedCount) };
-  }),
-  totalFramesCaptured: 0, currentBatchId: 1,
-  lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
-  incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
-  incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () => set((state) => ({ observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId })),
-  stopLiveObservationSession: () => set({ 
-    isLiveObservationEnabled: false,
-    observations: [],
-    lastAnalyzedObservationIndex: -1,
-    totalFramesCaptured: 0,
-    lastObservationTimestamp: 0,
-    retryProgressiveAnalysis: false,
-    lastFailedPendingCount: 0,
-    aiReadiness: null,
-    aiEstimatedConfidence: null,
-  }),
-  clearProgressiveSession: () => set({ ...resetObservationSessionState() }),
-  aiReadiness: null, aiEstimatedConfidence: null,
-  retryProgressiveAnalysis: false, setRetryProgressiveAnalysis: (val) => set({ retryProgressiveAnalysis: val }),
-  retryLoading: false, setRetryLoading: (val) => set({ retryLoading: val }),
-  lastFailedPendingCount: 0, setLastFailedPendingCount: (val) => set({ lastFailedPendingCount: val }),
-  macroTimeframeImage: null, setMacroTimeframeImage: (val) => set({ macroTimeframeImage: val }),
-  macroTimeframeCapturedAt: null, setMacroTimeframeCapturedAt: (val) => set({ macroTimeframeCapturedAt: val }),
-  confirmationTimeframeImage: null, setConfirmationTimeframeImage: (val) => set({ confirmationTimeframeImage: val }),
-  confirmationTimeframeCapturedAt: null, setConfirmationTimeframeCapturedAt: (val) => set({ confirmationTimeframeCapturedAt: val }),
-  structureTimeframeImage: null, setStructureTimeframeImage: (val) => set({ structureTimeframeImage: val }),
-  structureTimeframeCapturedAt: null, setStructureTimeframeCapturedAt: (val) => set({ structureTimeframeCapturedAt: val }),
   updateAnalysis: (data) => {
     set((state) => {
       const newState = { ...state, ...data };
@@ -190,14 +147,31 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           symbol: (data as any).detectedSymbol || newState.symbol,
           timeframe: (data as any).recommendedTimeframe || newState.timeframe,
           trend: historyTrend, signal: historySignal, confidence: newState.confidence,
-          recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
+          readiness: (data as any).readiness ?? "NOT READY",
+          estimatedConfidence: (data as any).estimatedConfidence,
+          signalQuality: (data as any).signalQuality,
+          confirmationStatus: (data as any).confirmationStatus,
+          evidenceScore: (data as any).evidenceScore,
+          bullishEvidence: (data as any).bullishEvidence,
+          bearishEvidence: (data as any).bearishEvidence,
+          invalidationConditions: (data as any).invalidationConditions,
+          recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe || "",
+          requiredTimeframe: (data as any).requiredTimeframe ?? null,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
-          explanation: newState.explanation, status: "OPEN", open: newState.open, high: newState.high, low: newState.low, close: newState.close,
-          screenshotBase64: newState.lastImageBase64 || undefined, dbTradeId: (data as any).dbTradeId,
-          requiredTimeframe: (data as any).requiredTimeframe, requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
-          detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
-          exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
-          riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning, dataConfidence: (data as any).dataConfidence,
+          explanation: newState.explanation, requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators || [],
+          detectedSymbol: (data as any).detectedSymbol ?? null, detectedTimeframe: (data as any).detectedTimeframe ?? null,
+          exchange: (data as any).exchange ?? null, marketProvider: (data as any).marketProvider || "unknown",
+          riskDecision: (data as any).riskDecision || "UNSURE", reasoning: (data as any).reasoning || "", dataConfidence: (data as any).dataConfidence ?? 0,
+          riskReward: (data as any).riskReward, marketRegime: (data as any).marketRegime, marketState: (data as any).marketState,
+          changesFromPrevious: (data as any).changesFromPrevious, momentum: (data as any).momentum,
+          candlestickBehavior: (data as any).candlestickBehavior, indicatorState: (data as any).indicatorState,
+          strategyConsensus: (data as any).strategyConsensus, strategyConflicts: (data as any).strategyConflicts,
+          analysisId: (data as any).analysisId, dataTimestamp: (data as any).dataTimestamp, dataAge: (data as any).dataAge,
+          primaryTimeframe: (data as any).primaryTimeframe, confirmationTimeframe: (data as any).confirmationTimeframe,
+          trendTimeframe: (data as any).trendTimeframe, tradeDuration: (data as any).tradeDuration,
+          marketDataMode: (data as any).marketDataMode, marketDataStatus: (data as any).marketDataStatus,
+          open: newState.open, high: newState.high, low: newState.low, close: newState.close,
+          status: "OPEN", screenshotBase64: newState.lastImageBase64 || undefined, dbTradeId: (data as any).dbTradeId,
         };
         newState.tradeHistory = [historyEntry, ...state.tradeHistory];
         newState.tradeHistoryLoaded = true;
