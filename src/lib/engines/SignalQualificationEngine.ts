@@ -25,8 +25,8 @@ function evidenceCount(values: unknown): number {
  */
 export function qualifySignal(result: TradingAnalysis): SignalQualification {
   const signal = normalize(result.signal);
-  const quality = normalize(result.signalQuality);
-  const confirmation = normalize(result.confirmationStatus);
+  const quality = normalize((result as any).signalQuality);
+  const confirmation = normalize((result as any).confirmationStatus);
   const trend = normalize(result.trend);
   const strategy = normalize(result.strategyConsensus);
   const confidence = Number(result.confidence) || 0;
