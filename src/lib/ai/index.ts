@@ -8,13 +8,14 @@ import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
 import { applySignalQualification } from "../engines/SignalQualificationEngine";
 
 function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
-  // AI-supplied readiness/confidence remains authoritative for observation,
-  // while final directional signals are additionally gated deterministically.
+  // Progressive observations keep the model's descriptive state. Final
+  // directional decisions are additionally passed through deterministic gates.
   return result;
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
-  const isFinalDual = !!req.useDualModel && !req.isProgressive;
+  const isFinal = !req.isProgressive;
+  const isFinalDual = !!req.useDualModel && isFinal;
 
   // Dual Model: final analysis is text-only and must never receive images.
   if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
@@ -48,8 +49,8 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     }
   }
 
-  // In final text-only mode, the structured progressive state is the market
-  // context. This prevents the universal prompt from falling back to image mode.
+  // In final dual-model mode, the structured progressive state is the market
+  // context. This prevents the text reasoner from falling back to image mode.
   const textReasoningContext = isFinalDual && !req.marketData
     ? {
         progressiveState: req.progressiveState || [],
@@ -59,7 +60,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     : req.marketData;
 
   const universalReq: UniversalAIRequest = {
-    mode: textReasoningContext ? "api_data" : (req.marketDataMode === "visual_only" ? "visual_only" : "visual_only"),
+    mode: textReasoningContext ? "api_data" : "visual_only",
     provider: req.provider,
     model: req.model,
     platform: req.platform || "Auto",
@@ -136,7 +137,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
       default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
     }
 
-    if (isFinalDual) {
+    if (isFinal) {
       return normalizeAIObservationStatus(
         applySignalQualification(result as any) as UniversalAIResponse
       );
