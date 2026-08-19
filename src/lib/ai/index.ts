@@ -8,19 +8,24 @@ import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
 import { applySignalQualification } from "../engines/SignalQualificationEngine";
 
 function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
-  // Progressive observations keep the model's descriptive state. Final
-  // directional decisions are additionally passed through deterministic gates.
   return result;
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
-  const isFinal = !req.isProgressive;
-  const isFinalDual = !!req.useDualModel && isFinal;
+  const isFinalDual = !!req.useDualModel && !req.isProgressive;
 
-  // Dual Model: final analysis is text-only and must never receive images.
-  if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
+  // Final dual-model reasoning is deliberately a hot text-only path.
+  // Prefer Groq's low-latency 8B model when its key is configured; the user's
+  // selected reasoning model remains the fallback when Groq is unavailable.
+  if (isFinalDual && process.env.GROQ_API_KEY) {
+    req.provider = "groq";
+    req.model = "llama-3.1-8b-instant";
+  } else if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
     req.provider = req.reasoningProvider;
     req.model = req.reasoningModel;
+  }
+
+  if (isFinalDual) {
     req.imageBase64 = undefined;
     req.screenshots = [];
     req.macroTimeframeImage = undefined;
@@ -49,8 +54,6 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     }
   }
 
-  // In final dual-model mode, the structured progressive state is the market
-  // context. This prevents the text reasoner from falling back to image mode.
   const textReasoningContext = isFinalDual && !req.marketData
     ? {
         progressiveState: req.progressiveState || [],
@@ -60,7 +63,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     : req.marketData;
 
   const universalReq: UniversalAIRequest = {
-    mode: textReasoningContext ? "api_data" : "visual_only",
+    mode: textReasoningContext ? "api_data" : (req.marketDataMode === "visual_only" ? "visual_only" : "visual_only"),
     provider: req.provider,
     model: req.model,
     platform: req.platform || "Auto",
@@ -82,7 +85,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     structureTimeframe: (req as any).structureTimeframeImage,
   };
 
-  // Never attach visual payloads to a final dual-model request.
+  // Only non-final requests are allowed to carry visual payloads.
   if (!isFinalDual && req.screenshots?.length) {
     const maxImages = cap.maxImageCount || 1;
     let limitedScreenshots = req.screenshots;
@@ -137,7 +140,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
       default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
     }
 
-    if (isFinal) {
+    if (isFinalDual) {
       return normalizeAIObservationStatus(
         applySignalQualification(result as any) as UniversalAIResponse
       );
