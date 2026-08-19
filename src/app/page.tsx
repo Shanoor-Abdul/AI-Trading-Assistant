@@ -44,6 +44,7 @@ import {
   Info,
   Calculator,
   Layers,
+  ChevronDown,
   Trash2,
 } from "lucide-react";
 import {
@@ -131,6 +132,7 @@ export default function Dashboard() {
     useState<number>(observationFrequency);
   const [showStopObservationModal, setShowStopObservationModal] = useState(false);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   const isFieldInvalid = (val: string | null | undefined) => {
     if (!val) return true;
@@ -906,254 +908,333 @@ export default function Dashboard() {
       <TradeTracker />
       <header className="flex flex-col gap-6 mb-6">
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
-          <div className="flex-shrink-0">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-4">
-              AI Trading Assistant
-              <LogoutButton />
-            </h1>
-            <p className="text-sm md:text-base text-zinc-400">
-              Live AI chart analysis and probability-based signals
-            </p>
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-4">
+                AI Trading Assistant
+                <LogoutButton />
+              </h1>
+              <p className="text-sm md:text-base text-zinc-400">
+                Live AI chart analysis and probability-based signals
+              </p>
+            </div>
+            
+            <Button
+              variant="outline"
+              onClick={() => setIsConfigOpen(!isConfigOpen)}
+              className="bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-2 shadow-sm"
+            >
+              <Settings2 className="w-4 h-4 text-amber-500" />
+              Configuration
+              <ChevronDown className={`w-4 h-4 transition-transform ${isConfigOpen ? "rotate-180" : ""}`} />
+            </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-            <TooltipProvider>
-              <div className="flex flex-col space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                    AI Model
-                  </Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="w-3 h-3 text-zinc-600 cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                      <p>
-                        Select which AI provider and model will analyze your
-                        chart.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
+          {isConfigOpen && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-zinc-950 border border-zinc-800/50 rounded-xl p-5 animate-in slide-in-from-top-2 fade-in duration-200 shadow-xl w-full">
+              
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-zinc-800/50">
+                  <div className="w-6 h-6 rounded-md bg-purple-500/10 flex items-center justify-center">
+                    <Activity className="w-3.5 h-3.5 text-purple-400" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">1. AI Engine</h3>
                 </div>
-                <Select
-                  value={`${selectedProvider}:${selectedModel}`}
-                  onValueChange={(val) => {
-                    if (!val) return;
-                    const [provider, model] = val.split(":");
-                    setSelectedModel(provider, model);
-                  }}
-                >
-                  <SelectTrigger className="w-[180px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                    <Settings2 className="w-3 h-3 mr-2 text-zinc-400" />
-                    <SelectValue placeholder="AI Model" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
-                    <SelectGroup>
-                      <SelectLabel className="text-zinc-500">
-                        Google (Free)
-                      </SelectLabel>
-                      {getModelsByProvider("gemini").map((m) => (
-                        <SelectItem key={m.id} value={`gemini:${m.id}`}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel className="text-zinc-500 mt-2">
-                        Groq (Free)
-                      </SelectLabel>
-                      {getModelsByProvider("groq").map((m) => (
-                        <SelectItem key={m.id} value={`groq:${m.id}`}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel className="text-zinc-500 mt-2">
-                        OpenAI
-                      </SelectLabel>
-                      {getModelsByProvider("openai").map((m) => (
-                        <SelectItem key={m.id} value={`openai:${m.id}`}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel className="text-zinc-500 mt-2">
-                        OpenRouter
-                      </SelectLabel>
-                      {getModelsByProvider("openrouter").map((m) => (
-                        <SelectItem key={m.id} value={`openrouter:${m.id}`}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {marketDataMode === "api" && (
-                <div className="flex flex-col justify-end h-[46px] pb-0.5">
-                  <SettingsDialog />
-                </div>
-              )}
-
-              <div className="flex flex-col space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                    Strategy
-                  </Label>
-                </div>
-                <Select
-                  value={useTradingStore
-                    .getState()
-                    .selectedStrategies.join(",")}
-                  onValueChange={(val: string | null) => {
-                    if (!val) return;
-                    const current =
-                      useTradingStore.getState().selectedStrategies;
-                    if (current.includes(val)) {
-                      useTradingStore
-                        .getState()
-                        .setSelectedStrategies(
-                          current.filter((s) => s !== val),
-                        );
-                    } else {
-                      useTradingStore
-                        .getState()
-                        .setSelectedStrategies([...current, val]);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-[140px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                    <Target className="w-3 h-3 mr-2 text-zinc-400" />
-                    <SelectValue placeholder="Strategy" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                    {[
-                      "Scalping",
-                      "Trend Following",
-                      "Breakout",
-                      "Mean Reversion",
-                      "SMC",
-                      "ICT",
-                      "Swing Trading",
-                      "Custom",
-                    ].map((strat) => (
-                      <SelectItem key={strat} value={strat}>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={useTradingStore
-                              .getState()
-                              .selectedStrategies.includes(strat)}
-                            readOnly
-                            className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
-                          />
-                          {strat}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex flex-col space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                    Mode
-                  </Label>
-                </div>
-                <Select
-                  value={marketDataMode}
-                  onValueChange={(val: any) => setMarketDataMode(val)}
-                >
-                  <SelectTrigger className="w-[110px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                    <SelectValue placeholder="Data" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                    <SelectItem value="api">API Data</SelectItem>
-                    <SelectItem value="visual_only">Visual Only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex flex-col space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                    Exec
-                  </Label>
-                </div>
-                <Select
-                  value={useTradingStore.getState().tradingMode}
-                  onValueChange={(val: any) =>
-                    useTradingStore.getState().setTradingMode(val)
-                  }
-                >
-                  <SelectTrigger className="w-[110px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                    <SelectValue placeholder="Exec" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                    <SelectItem value="MANUAL">MANUAL</SelectItem>
-                    <SelectItem value="PAPER">PAPER</SelectItem>
-                    <SelectItem value="LIVE">LIVE</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {marketDataMode === "visual_only" && (
-                <>
-                  <div className="flex flex-col space-y-1">
+                
+                <TooltipProvider>
+                  <div className="flex flex-col space-y-1.5">
                     <div className="flex items-center gap-1">
                       <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                        Indicators
+                        {useTradingStore.getState().useDualModel ? "Progressive Analysis Model (Vision)" : "AI Model"}
+                      </Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                          <p>
+                            {useTradingStore.getState().useDualModel 
+                              ? "This model is used ONLY by: /api/progressive-analyze" 
+                              : "Select which AI provider and model will analyze your chart."}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <Select
+                      value={`${selectedProvider}:${selectedModel}`}
+                      onValueChange={(val) => {
+                        if (!val) return;
+                        const idx = val.indexOf(":");
+                        const provider = val.substring(0, idx) as any;
+                        const model = val.substring(idx + 1);
+                        setSelectedModel(provider, model);
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                        <Settings2 className="w-3 h-3 mr-2 text-zinc-400" />
+                        <SelectValue placeholder="AI Model" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
+                        <SelectGroup>
+                          <SelectLabel className="text-zinc-500">
+                            Google (Free)
+                          </SelectLabel>
+                          {getModelsByProvider("gemini").map((m) => (
+                            <SelectItem key={m.id} value={`gemini:${m.id}`}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel className="text-zinc-500 mt-2">
+                            Groq (Free)
+                          </SelectLabel>
+                          {getModelsByProvider("groq").map((m) => (
+                            <SelectItem key={m.id} value={`groq:${m.id}`}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel className="text-zinc-500 mt-2">
+                            OpenAI
+                          </SelectLabel>
+                          {getModelsByProvider("openai").map((m) => (
+                            <SelectItem key={m.id} value={`openai:${m.id}`}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel className="text-zinc-500 mt-2">
+                            OpenRouter
+                          </SelectLabel>
+                          {getModelsByProvider("openrouter").map((m) => (
+                            <SelectItem key={m.id} value={`openrouter:${m.id}`}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col space-y-1.5 mt-4">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                        Use Dual Model
+                      </Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                          <p>Enable Dual Model mode to save tokens. Vision model extracts data, Text model analyzes it.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="flex items-center gap-2 h-8">
+                      <Switch
+                        checked={useTradingStore.getState().useDualModel}
+                        onCheckedChange={(val) => useTradingStore.getState().setUseDualModel(val)}
+                        className="data-[state=checked]:bg-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {useTradingStore.getState().useDualModel && (
+                    <div className="flex flex-col space-y-1.5 mt-4">
+                      <div className="flex items-center gap-1">
+                        <Label className="text-[9px] text-amber-500 uppercase tracking-wider font-semibold">
+                          Final Analysis Model (Text)
+                        </Label>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Info className="w-3 h-3 text-zinc-600 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                            <p>This model is used ONLY by: /api/analyze</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <Select
+                        value={`${useTradingStore.getState().selectedReasoningProvider}:${useTradingStore.getState().selectedReasoningModel}`}
+                        onValueChange={(val) => {
+                          if (!val) return;
+                          const idx = val.indexOf(":");
+                          const provider = val.substring(0, idx) as any;
+                          const model = val.substring(idx + 1);
+                          useTradingStore.getState().setSelectedReasoningModel(provider, model);
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                          <Settings2 className="w-3 h-3 mr-2 text-zinc-400" />
+                          <SelectValue placeholder="Reasoning Model" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
+                          <SelectGroup>
+                            <SelectLabel className="text-zinc-500">OpenRouter (Text Only)</SelectLabel>
+                            {getModelsByProvider("openrouter").map((m) => (
+                              <SelectItem key={m.id} value={`openrouter:${m.id}`}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel className="text-zinc-500 mt-2">Groq (Text Only)</SelectLabel>
+                            {getModelsByProvider("groq").map((m) => (
+                              <SelectItem key={m.id} value={`groq:${m.id}`}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </TooltipProvider>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-zinc-800/50">
+                  <div className="w-6 h-6 rounded-md bg-amber-500/10 flex items-center justify-center">
+                    <Target className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">2. Trading Rules</h3>
+                </div>
+
+                <div className="flex flex-col space-y-1.5">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                      Strategy
+                    </Label>
+                  </div>
+                  <Select
+                    value={useTradingStore.getState().selectedStrategies.join(",")}
+                    onValueChange={(val: string | null) => {
+                      if (!val) return;
+                      const current = useTradingStore.getState().selectedStrategies;
+                      if (current.includes(val)) {
+                        useTradingStore.getState().setSelectedStrategies(current.filter((s) => s !== val));
+                      } else {
+                        useTradingStore.getState().setSelectedStrategies([...current, val]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <Target className="w-3 h-3 mr-2 text-zinc-400" />
+                      <SelectValue placeholder="Strategy" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      {[
+                        "Auto (AI Selection)",
+                        "Scalping",
+                        "Trend Following",
+                        "Breakout",
+                        "Mean Reversion",
+                        "SMC",
+                        "ICT",
+                        "Swing Trading",
+                        "Custom",
+                      ].map((strat) => (
+                        <SelectItem key={strat} value={strat}>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={useTradingStore.getState().selectedStrategies.includes(strat)}
+                              readOnly
+                              className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
+                            />
+                            {strat}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col space-y-1.5 mt-4">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                      Exec Mode
+                    </Label>
+                  </div>
+                  <Select
+                    value={useTradingStore.getState().tradingMode}
+                    onValueChange={(val: any) => useTradingStore.getState().setTradingMode(val)}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <SelectValue placeholder="Exec" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <SelectItem value="MANUAL">MANUAL</SelectItem>
+                      <SelectItem value="PAPER">PAPER</SelectItem>
+                      <SelectItem value="LIVE">LIVE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col space-y-1.5 mt-4">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                      Data Source
+                    </Label>
+                  </div>
+                  <Select
+                    value={marketDataMode}
+                    onValueChange={(val: any) => setMarketDataMode(val)}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <SelectValue placeholder="Data Source" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <SelectItem value="api">API Data</SelectItem>
+                      <SelectItem value="visual_only">Visual Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-zinc-800/50">
+                  <div className="w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center">
+                    <Layers className="w-3.5 h-3.5 text-blue-400" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">3. Context & Filters</h3>
+                </div>
+
+                {marketDataMode === "visual_only" && (
+                  <div className="flex flex-col space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                        Indicators Overlay
                       </Label>
                     </div>
                     <Select
-                      value={useTradingStore
-                        .getState()
-                        .visibleIndicators.join(",")}
+                      value={useTradingStore.getState().visibleIndicators.join(",")}
                       onValueChange={(val: string | null) => {
                         if (!val) return;
-                        const current =
-                          useTradingStore.getState().visibleIndicators;
+                        const current = useTradingStore.getState().visibleIndicators;
                         if (current.includes(val)) {
-                          useTradingStore
-                            .getState()
-                            .setVisibleIndicators(
-                              current.filter((i) => i !== val),
-                            );
+                          useTradingStore.getState().setVisibleIndicators(current.filter((i) => i !== val));
                         } else {
-                          useTradingStore
-                            .getState()
-                            .setVisibleIndicators([...current, val]);
+                          useTradingStore.getState().setVisibleIndicators([...current, val]);
                         }
                       }}
                     >
-                      <SelectTrigger className="w-[110px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
                         <Layers className="w-3 h-3 mr-2 text-zinc-400" />
-                        <SelectValue placeholder="Ind" />
+                        <SelectValue placeholder="Indicators" />
                       </SelectTrigger>
                       <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
                         {[
-                          "RSI",
-                          "MACD",
-                          "Bollinger Bands",
-                          "EMA 20",
-                          "EMA 50",
-                          "EMA 200",
-                          "Volume",
-                          "Stochastic",
-                          "VWAP",
-                          "ATR",
+                          "RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR",
                         ].map((ind) => (
                           <SelectItem key={ind} value={ind}>
                             <div className="flex items-center gap-2">
                               <input
                                 type="checkbox"
-                                checked={useTradingStore
-                                  .getState()
-                                  .visibleIndicators.includes(ind)}
+                                checked={useTradingStore.getState().visibleIndicators.includes(ind)}
                                 readOnly
                                 className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
                               />
@@ -1164,36 +1245,43 @@ export default function Dashboard() {
                       </SelectContent>
                     </Select>
                   </div>
+                )}
 
-                  <div className="flex flex-col space-y-1">
-                    <div className="flex items-center gap-1">
-                      <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                        Freq
-                      </Label>
-                    </div>
-                    <Select
-                      value={observationFrequency.toString()}
-                      onValueChange={(val: string | null) => {
-                        if (val) setObservationFrequency(parseInt(val));
-                      }}
-                    >
-                      <SelectTrigger className="w-[80px] h-8 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
-                        <Clock className="w-3 h-3 mr-1 text-zinc-400" />
-                        <SelectValue placeholder="Freq" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                        <SelectItem value="15">15s</SelectItem>
-                        <SelectItem value="30">30s</SelectItem>
-                        <SelectItem value="60">60s</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="flex flex-col space-y-1.5 mt-4">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
+                      Observation Frequency
+                    </Label>
                   </div>
-                </>
-              )}
-            </TooltipProvider>
-          </div>
-        </div>
+                  <Select
+                    value={observationFrequency.toString()}
+                    onValueChange={(val: string | null) => {
+                      if (val) setObservationFrequency(parseInt(val));
+                    }}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
+                      <Clock className="w-3 h-3 mr-2 text-zinc-400" />
+                      <SelectValue placeholder="Frequency" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+                      <SelectItem value="15">Every 15 Seconds</SelectItem>
+                      <SelectItem value="30">Every 30 Seconds</SelectItem>
+                      <SelectItem value="60">Every 60 Seconds</SelectItem>
+                      <SelectItem value="120">Every 2 Minutes</SelectItem>
+                      <SelectItem value="300">Every 5 Minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
+                {marketDataMode === "api" && (
+                  <div className="flex flex-col justify-end mt-4 pt-4 border-t border-zinc-800/50">
+                    <SettingsDialog />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="flex flex-col lg:flex-row lg:items-center gap-4 bg-zinc-950 border border-zinc-800/50 rounded-lg p-3">
           <div className="flex items-center gap-3">
             <Badge

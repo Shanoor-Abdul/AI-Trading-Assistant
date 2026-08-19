@@ -10,6 +10,9 @@ export interface MobileState {
   selectedStrategies: string[];
   selectedProvider: string;
   selectedModel: string;
+  useDualModel: boolean;
+  selectedReasoningProvider: string;
+  selectedReasoningModel: string;
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
   previewImageBase64: string | null;
@@ -30,9 +33,12 @@ export const useMobileStore = create<MobileState>((set) => ({
   tradeDuration: "5m",
   primaryTimeframe: "5m",
   confirmationTimeframe: "15m",
-  selectedStrategies: ["Trend Following"],
+  selectedStrategies: ["Auto (AI Selection)"],
   selectedProvider: "gemini",
   selectedModel: "gemini-2.0-flash",
+  useDualModel: false,
+  selectedReasoningProvider: "openrouter",
+  selectedReasoningModel: "meta-llama/llama-3-8b-instruct:free",
   marketDataMode: "visual_only",
   visibleIndicators: [],
   previewImageBase64: null,

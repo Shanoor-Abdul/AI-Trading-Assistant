@@ -752,6 +752,11 @@ export async function POST(
 
     const body =
       (await req.json()) as AnalyzeRequest;
+
+    if (body.useDualModel && !body.isProgressive && body.reasoningProvider && body.reasoningModel) {
+      body.provider = body.reasoningProvider;
+      body.model = body.reasoningModel;
+    }
     
     try {
       const fs = require('fs');
@@ -849,6 +854,9 @@ export async function POST(
       platform: body.platform,
       tradeDuration: body.tradeDuration,
       provider: body.provider || "gemini",
+      useDualModel: body.useDualModel,
+      reasoningProvider: body.reasoningProvider,
+      reasoningModel: body.reasoningModel,
       visibleIndicators: body.visibleIndicators,
       selectedStrategies: body.selectedStrategies,
       model: body.model,
@@ -882,12 +890,13 @@ export async function POST(
 
     const screenshotToUpload = body.imageBase64 || ((body as any).screenshots && (body as any).screenshots.length > 0 ? (body as any).screenshots[(body as any).screenshots.length - 1].base64 : undefined);
     
-    const screenshotUrlPromise =
-      uploadScreenshot(
-        supabase,
-        user?.id,
-        screenshotToUpload
-      );
+    const screenshotUrlPromise = body.isProgressive 
+      ? Promise.resolve(null)
+      : uploadScreenshot(
+          supabase,
+          user?.id,
+          screenshotToUpload
+        );
 
     /*
      * AI + screenshot upload continue
@@ -988,21 +997,23 @@ export async function POST(
        * Preserve existing fire-and-forget
        * persistence behavior.
        */
-      persistAnalysis(
-        supabase,
-        user.id,
-        body,
-        riskValidatedResult,
-        {
-          ...marketContext,
-          primaryTimeframe,
-          confirmationTimeframe,
-          trendTimeframe,
-          strategyRules,
-        },
-        screenshotUrl,
-        tradingMode
-      );
+      if (!body.isProgressive) {
+        persistAnalysis(
+          supabase,
+          user.id,
+          body,
+          riskValidatedResult,
+          {
+            ...marketContext,
+            primaryTimeframe,
+            confirmationTimeframe,
+            trendTimeframe,
+            strategyRules,
+          },
+          screenshotUrl,
+          tradingMode
+        );
+      }
 
       timings.databaseMs =
         performance.now() - tDbStart;
@@ -1051,3 +1062,4 @@ export async function POST(
     );
   }
 }
+

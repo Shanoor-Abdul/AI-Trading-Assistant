@@ -25,6 +25,9 @@ export interface TradingState {
   riskPercent: number; setRiskPercent: (val: number) => void;
   selectedProvider: string; selectedModel: string;
   setSelectedModel: (provider: string, model: string) => void;
+  useDualModel: boolean; setUseDualModel: (val: boolean) => void;
+  selectedReasoningProvider: string; selectedReasoningModel: string;
+  setSelectedReasoningModel: (provider: string, model: string) => void;
   selectedStrategies: string[]; setSelectedStrategies: (val: string[]) => void;
   observations: Observation[]; addObservation: (imageBase64: string) => void; clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE"; setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
@@ -52,8 +55,11 @@ export interface TradingState {
   retryLoading: boolean; setRetryLoading: (val: boolean) => void;
   lastFailedPendingCount: number; setLastFailedPendingCount: (val: number) => void;
   macroTimeframeImage: string | null; setMacroTimeframeImage: (val: string | null) => void;
+  macroTimeframeCapturedAt: number | null; setMacroTimeframeCapturedAt: (val: number | null) => void;
   confirmationTimeframeImage: string | null; setConfirmationTimeframeImage: (val: string | null) => void;
+  confirmationTimeframeCapturedAt: number | null; setConfirmationTimeframeCapturedAt: (val: number | null) => void;
   structureTimeframeImage: string | null; setStructureTimeframeImage: (val: string | null) => void;
+  structureTimeframeCapturedAt: number | null; setStructureTimeframeCapturedAt: (val: number | null) => void;
 }
 
 const resetObservationState = () => ({
@@ -69,8 +75,11 @@ const resetObservationState = () => ({
   retryLoading: false,
   lastFailedPendingCount: 0,
   macroTimeframeImage: null as string | null,
+  macroTimeframeCapturedAt: null as number | null,
   confirmationTimeframeImage: null as string | null,
+  confirmationTimeframeCapturedAt: null as number | null,
   structureTimeframeImage: null as string | null,
+  structureTimeframeCapturedAt: null as number | null,
 });
 
 type ClearAnalysisState = Pick<TradingState, "trend" | "signal" | "confidence" | "entryPrice" | "stopLoss" | "takeProfit" | "recommendedTimeframe" | "requestedIndicators" | "open" | "high" | "low" | "close" | "explanation">;
@@ -96,8 +105,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
   capital: 1000, setCapital: (val) => set({ capital: val }), riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
   selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
-  setSelectedModel: (provider, model) => set(() => ({ selectedProvider: provider, selectedModel: model, apiFailCount: 0, ...invalidateProgressiveAnalyses() })),
-  selectedStrategies: ["Trend Following"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
+  setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model }),
+  useDualModel: false, setUseDualModel: (val) => set({ useDualModel: val }),
+  selectedReasoningProvider: "openrouter", selectedReasoningModel: "meta-llama/llama-3-8b-instruct:free",
+  setSelectedReasoningModel: (provider, model) => set({ selectedReasoningProvider: provider, selectedReasoningModel: model }),
+  selectedStrategies: ["Auto (AI Selection)"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
   addObservation: (imageBase64) => set((state) => {
@@ -157,8 +169,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   retryLoading: false, setRetryLoading: (val) => set({ retryLoading: val }),
   lastFailedPendingCount: 0, setLastFailedPendingCount: (val) => set({ lastFailedPendingCount: val }),
   macroTimeframeImage: null, setMacroTimeframeImage: (val) => set({ macroTimeframeImage: val }),
+  macroTimeframeCapturedAt: null, setMacroTimeframeCapturedAt: (val) => set({ macroTimeframeCapturedAt: val }),
   confirmationTimeframeImage: null, setConfirmationTimeframeImage: (val) => set({ confirmationTimeframeImage: val }),
+  confirmationTimeframeCapturedAt: null, setConfirmationTimeframeCapturedAt: (val) => set({ confirmationTimeframeCapturedAt: val }),
   structureTimeframeImage: null, setStructureTimeframeImage: (val) => set({ structureTimeframeImage: val }),
+  structureTimeframeCapturedAt: null, setStructureTimeframeCapturedAt: (val) => set({ structureTimeframeCapturedAt: val }),
   updateAnalysis: (data) => {
     set((state) => {
       const newState = { ...state, ...data };

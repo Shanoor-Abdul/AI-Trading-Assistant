@@ -3,6 +3,7 @@ import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
 import { normalizeResponse } from "../normalizeResponse";
+import { AI_REQUEST_CONFIG } from "@/config/models";
 
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY!,
@@ -39,7 +40,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     const response = await groq.chat.completions.create({
       model: currentModel,
       messages: [{ role: "user", content: messagesContent }],
-      max_tokens: 2000,
+      max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
     });
 
     if (!response?.choices?.length) {

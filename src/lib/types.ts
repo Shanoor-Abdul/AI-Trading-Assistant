@@ -1,6 +1,31 @@
 export type AIProvider = "gemini" | "groq" | "openai" | "openrouter";
 export type TradingMode = "MANUAL" | "PAPER" | "LIVE";
 
+export interface UnifiedDataPoint<T> {
+  value: T | null;
+  source: "visual" | "api" | "hybrid" | "none";
+  confidence?: number;
+}
+
+export interface UnifiedMarketContext {
+  symbol: string;
+  timeframe: string;
+  currentPrice: UnifiedDataPoint<number>;
+  completedCandle: UnifiedDataPoint<any>;
+  currentIncompleteCandle: UnifiedDataPoint<any>;
+  volume: UnifiedDataPoint<number>;
+  bidAskSpread: UnifiedDataPoint<number>;
+  supportLevels: UnifiedDataPoint<number[]>;
+  resistanceLevels: UnifiedDataPoint<number[]>;
+  indicators: Record<string, UnifiedDataPoint<any>>;
+  marketStructure: UnifiedDataPoint<string>;
+  trend: UnifiedDataPoint<string>;
+  momentum: UnifiedDataPoint<string>;
+  tradingSession: UnifiedDataPoint<string>;
+  dataConflict: boolean;
+  conflictDetails?: string;
+}
+
 export interface ExchangeConnection {
   id: string;
   user_id: string;
@@ -51,6 +76,9 @@ export interface AnalyzeRequest {
   timeframe?: string;
   provider: AIProvider;
   model?: string;
+  useDualModel?: boolean;
+  reasoningProvider?: AIProvider;
+  reasoningModel?: string;
   selectedStrategies?: string[];
   strategyRules?: string;
   marketData?: any;
@@ -65,6 +93,7 @@ export interface AnalyzeRequest {
   previousData?: any;
   isProgressive?: boolean;
   progressiveState?: any;
+  marketHistorySummary?: any;
   screenshots?: any[]; // Keep flexible for 5M frames
 
   macroTimeframeImage?: MultiTimeframeContext;
@@ -72,7 +101,13 @@ export interface AnalyzeRequest {
   structureTimeframeImage?: MultiTimeframeContext;
   primaryTimeframe?: {
     timeframe: string;
-    screenshots: any[];
+    screenshots: {
+      timestamp: string;
+      mimeType: string;
+      base64: string;
+      platform?: string;
+      symbol?: string;
+    }[];
   };
 }
 
@@ -159,9 +194,11 @@ export interface MultiTimeframeContext {
 export interface ProgressiveAnalysisSummary {
   analysisId: string;
   batchId: number;
+  status?: "COMPLETED" | "PARTIAL";
   timestamp: string;
   frameStart: number;
   frameEnd: number;
+  unifiedMarketData?: UnifiedMarketContext; // NEW: Replaces flat fields
   trend: string;
   momentum: string;
   marketState: string;

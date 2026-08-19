@@ -5,6 +5,7 @@ import { useMobileStore } from "@/store/useMobileStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { MobileMultiSelect } from "@/components/mobile/MobileMultiSelect";
 
 const STRATEGY_OPTIONS = [
+  "Auto (AI Selection)",
   "Scalping",
   "Trend Following",
   "Breakout",
@@ -148,7 +150,8 @@ export default function MobileDashboard() {
     setField("isAnalyzing", true);
 
     try {
-      const payload = {
+      const state = useMobileStore.getState();
+      let payload: any = {
         imageBase64: previewImageBase64,
         platform: platform?.trim() || "OlympTrade",
         symbol: symbol?.trim().toUpperCase(),
@@ -161,17 +164,52 @@ export default function MobileDashboard() {
         confirmationTimeframe: confirmationTimeframe?.trim(),
         provider: selectedProvider,
         model: selectedModel,
+        useDualModel: state.useDualModel,
+        reasoningProvider: state.selectedReasoningProvider,
+        reasoningModel: state.selectedReasoningModel,
         selectedStrategies,
         visibleIndicators,
         marketDataMode: "visual_only",
         previousData: pendingUnsureRequest ? previousAnalysisData : undefined,
       };
 
+      if (state.useDualModel) {
+        toast.loading("Step 1: Progressive Vision Extraction...");
+        const progRes = await fetch("/api/progressive-analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, isProgressive: true }),
+        });
+        toast.dismiss();
+
+        if (progRes.ok) {
+          const progData = await progRes.json();
+          // Attach the extracted JSON to the final payload
+          payload.progressiveState = [progData];
+          payload.isProgressive = false;
+        } else {
+          throw new Error("Progressive Vision Extraction failed");
+        }
+      }
+
+      if (state.useDualModel) {
+        toast.loading("Step 2: Text Reasoning...");
+        payload.model = payload.reasoningModel;
+        payload.provider = payload.reasoningProvider;
+        delete payload.screenshots;
+        delete payload.macroTimeframeImage;
+        delete payload.confirmationTimeframeImage;
+        delete payload.structureTimeframeImage;
+      } else {
+        toast.loading("Analyzing...");
+      }
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      toast.dismiss();
 
       if (!res.ok) throw new Error("API request failed");
 
@@ -323,27 +361,31 @@ export default function MobileDashboard() {
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <Label className="text-xs text-zinc-400">AI Model</Label>
+                <Label className="text-xs text-zinc-400">
+                  {useMobileStore.getState().useDualModel ? "Progressive Analysis Model (Vision)" : "AI Model"}
+                </Label>
                 <Tooltip>
                   <TooltipTrigger>
                     <Info className="w-3 h-3 text-zinc-500" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Select the AI provider and model for analysis.</p>
+                    <p>{useMobileStore.getState().useDualModel ? "This model is used ONLY by: /api/progressive-analyze" : "Select the AI provider and model for analysis."}</p>
                   </TooltipContent>
                 </Tooltip>
               </div>
               <Select
-                value={`${selectedProvider}:${selectedModel}`}
-                onValueChange={(val) => {
-                  if (!val) return;
-                  const [provider, model] = val.split(":");
-                  setField("selectedProvider", provider);
-                  setField("selectedModel", model);
-                }}
+                  value={`${selectedProvider}:${selectedModel}`}
+                  onValueChange={(val) => {
+                    if (!val) return;
+                    const idx = val.indexOf(":");
+                    const provider = val.substring(0, idx) as any;
+                    const model = val.substring(idx + 1);
+                    setField("selectedProvider", provider);
+                    setField("selectedModel", model);
+                  }}
               >
                 <SelectTrigger className="h-9 w-full bg-zinc-900 border-zinc-800 text-sm">
-                  <SelectValue />
+                  <SelectValue placeholder="AI Model" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   <SelectGroup>
@@ -381,6 +423,66 @@ export default function MobileDashboard() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-1.5 flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-zinc-400">Use Dual Model</Label>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="w-3 h-3 text-zinc-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Enable Dual Model mode to save tokens. Vision model extracts data, Text model analyzes it.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Switch
+                checked={useMobileStore.getState().useDualModel}
+                onCheckedChange={(val) => setField("useDualModel", val)}
+                className="data-[state=checked]:bg-amber-500"
+              />
+            </div>
+            
+            {useMobileStore.getState().useDualModel && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-amber-500">Final Analysis Model (Text)</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-zinc-500" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>This model is used ONLY by: /api/analyze</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={`${useMobileStore.getState().selectedReasoningProvider}:${useMobileStore.getState().selectedReasoningModel}`}
+                  onValueChange={(val) => {
+                    if (!val) return;
+                    const idx = val.indexOf(":");
+                    const provider = val.substring(0, idx) as any;
+                    const model = val.substring(idx + 1);
+                    setField("selectedReasoningProvider", provider);
+                    setField("selectedReasoningModel", model);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full bg-zinc-900 border-zinc-800 text-sm">
+                    <SelectValue placeholder="Reasoning Model" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500 text-xs">OpenRouter (Text Only)</SelectLabel>
+                      {getModelsByProvider("openrouter").map((model) => (
+                        <SelectItem key={model.id} value={`openrouter:${model.id}`}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
@@ -523,3 +625,4 @@ export default function MobileDashboard() {
     </TooltipProvider>
   );
 }
+

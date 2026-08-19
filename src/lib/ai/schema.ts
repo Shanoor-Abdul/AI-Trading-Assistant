@@ -42,6 +42,7 @@ export const UniversalAIRequestSchema = z.object({
   }).optional(),
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
+  marketHistorySummary: z.any().optional(),
   riskContext: z.any().optional(),
 });
 
@@ -69,12 +70,13 @@ export const UniversalAIResponseSchema = z.object({
   dataConfidence: z.coerce.number().min(0).max(100).default(0),
   riskReward: z.number().optional(),
   marketState: z.string().optional(),
+  unifiedMarketData: z.any().optional(),
   changesFromPrevious: z.string().optional(),
   momentum: z.string().optional(),
   candlestickBehavior: z.string().optional(),
   indicatorState: z.any().optional(),
   strategyConsensus: z.string().optional(),
-  strategyConflicts: z.any().optional(),
+  strategyConflicts: z.array(z.string()).optional(),
   analysisId: z.string().optional(),
   evidenceScore: z.coerce.number().min(0).max(100).optional(),
   signalQuality: z.enum(["EXCELLENT", "GOOD", "FAIR", "POOR", "AVOID"]).optional(),

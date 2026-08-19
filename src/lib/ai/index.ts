@@ -13,11 +13,27 @@ function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIR
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
+  // Dual Model Split logic
+  // If useDualModel is ON, and this is the FINAL analyze request (not progressive),
+  // then we switch to the Reasoning Provider and strip all images.
+  if (req.useDualModel && !req.isProgressive && req.reasoningProvider && req.reasoningModel) {
+    req.provider = req.reasoningProvider;
+    req.model = req.reasoningModel;
+    
+    // Strip all visual context to save tokens and enforce text-only reasoning
+    req.imageBase64 = undefined;
+    req.screenshots = [];
+    req.macroTimeframeImage = undefined;
+    req.confirmationTimeframeImage = undefined;
+    req.structureTimeframeImage = undefined;
+    (req as any).primaryTimeframe = undefined;
+  }
+
   const cap = PROVIDER_CAPABILITIES[req.provider];
   if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
 
   const needsVision = !!req.imageBase64 || !!(req as any).screenshots?.length;
-  if (needsVision && !cap.vision) {
+  if (needsVision && !cap.vision && !req.useDualModel) {
     throw new Error(`AI_MODEL_NO_VISION: Selected AI model (${req.model}) does not support image analysis.`);
   }
 
@@ -28,7 +44,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     const parts = base64Data.split(";base64,");
     if (parts.length === 2) {
       const parsedMime = parts[0].replace("data:", "");
-      if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") mimeType = parsedMime;
+      if (parsedMime === "image/jpeg" || parsedMime === "image/png" || parsedMime === "image/webp") mimeType = parsedMime as any;
       base64Data = parts[1];
     }
   }
@@ -50,10 +66,10 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     previousAnalysis: req.previousData,
     isProgressive: req.isProgressive,
     progressiveState: req.progressiveState,
-    macroTimeframe: (req as any).macroTimeframe,
-    confirmationTimeframeImage: (req as any).confirmationTimeframe,
-    structureTimeframe: (req as any).structureTimeframe,
-    primaryTimeframePayload: (req as any).primaryTimeframe,
+    marketHistorySummary: req.marketHistorySummary,
+    macroTimeframe: (req as any).macroTimeframeImage,
+    confirmationTimeframeImage: (req as any).confirmationTimeframeImage,
+    structureTimeframe: (req as any).structureTimeframeImage,
   };
 
   if ((req as any).screenshots && (req as any).screenshots.length > 0) {

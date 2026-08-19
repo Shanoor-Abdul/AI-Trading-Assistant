@@ -156,6 +156,17 @@ STEP 6: Detect timeframe conflicts (e.g., 4H/1H Bearish but 5M Bullish).
 STEP 7: Only produce BUY/SELL when the evidence supports the signal across timeframes.
 STEP 8: Otherwise return WAIT / NO_TRADE.
 
+AUTOMATIC STRATEGY SELECTION
+1. First identify the Market Regime (e.g., TRENDING, SIDEWAYS, BREAKOUT, REVERSAL, HIGH_VOLATILITY, LOW_VOLATILITY, CHOPPY, UNCLEAR).
+2. Determine Strategy Compatibility based on the regime:
+   - TRENDING -> Prefer Trend Following, Price Action
+   - BREAKOUT -> Prefer Breakout, Support/Resistance
+   - SIDEWAYS -> Prefer Mean Reversion, Support/Resistance
+   - REVERSAL -> Prefer Reversal, Price Action
+   - CHOPPY/UNCLEAR -> Prefer WAIT
+3. If strategies conflict strongly, reduce confidence and prefer WAIT.
+4. Calculate strategy relevance, evidence strength, and consensus.
+
 If any higher timeframe images are MISSING, you must clearly acknowledge that the timeframe evidence is unavailable. Lower your data confidence and readiness appropriately rather than inventing the missing analysis.
 
 For the primary 5M frames (ordered oldest → newest), evaluate:
@@ -226,6 +237,7 @@ ${req.isProgressive ? "This is progressive background observation. Preserve an a
 ==================================================
 FINAL RESPONSE
 ==================================================
+- confidence, evidenceScore, and dataConfidence MUST be an integer percentage from 0 to 100 (e.g., 85, 95). DO NOT use a 1-5 rating scale.
 Return ONLY valid JSON matching UniversalAIResponse.
 ` + responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode);
 }
@@ -235,7 +247,7 @@ function responseSchema(timeframe: string, symbol: string, platform: string, mod
 {
   "trend": "Bullish | Bearish | Sideways",
   "signal": "${SIGNALS}",
-  "confidence": 0,
+  "confidence": 0, // MUST be an integer from 0 to 100 representing a percentage
   "readiness": "NOT READY | FAIR | GOOD | VERY GOOD | READY | READY / COMPLETE | EXCELLENT",
   "estimatedConfidence": "LOW | MEDIUM | HIGH",
   "recommendedTimeframe": "${timeframe}",
@@ -251,7 +263,7 @@ function responseSchema(timeframe: string, symbol: string, platform: string, mod
   "indicatorState": {},
   "strategyConsensus": "Bullish | Bearish | Neutral | Mixed",
   "strategyConflicts": [],
-  "evidenceScore": 0,
+  "evidenceScore": 0, // MUST be an integer from 0 to 100 representing a percentage
   "signalQuality": "EXCELLENT | GOOD | FAIR | POOR | AVOID",
   "bullishEvidence": [],
   "bearishEvidence": [],
@@ -264,7 +276,58 @@ function responseSchema(timeframe: string, symbol: string, platform: string, mod
   "exchange": "${platform}",
   "marketProvider": "${mode}",
   "riskDecision": "APPROVED | UNSURE | REJECTED",
-  "dataConfidence": 0
+  "dataConfidence": 0, // MUST be an integer from 0 to 100 representing a percentage
+  "unifiedMarketData": {
+    "symbol": "${symbol}",
+    "timeframe": "${timeframe}",
+    "accountData": {
+      "balance": { "value": null, "source": "visual" },
+      "equity": { "value": null, "source": "visual" },
+      "margin": { "value": null, "source": "visual" },
+      "leverage": { "value": null, "source": "visual" },
+      "positions": { "value": [], "source": "visual" },
+      "orderHistory": { "value": [], "source": "visual" },
+      "tradeLogs": { "value": [], "source": "visual" }
+    },
+    "marketData": {
+      "currentPrice": { "value": null, "source": "visual", "confidence": 0 },
+      "bidAskSpread": { "value": null, "source": "visual" },
+      "orderBookDepth": { "value": null, "source": "visual" },
+      "volume": { "value": null, "source": "visual", "confidence": 0 }
+    },
+    "historicalData": {
+      "completedCandle": { "value": null, "source": "visual", "confidence": 0 },
+      "currentIncompleteCandle": { "value": null, "source": "visual", "confidence": 0 },
+      "supportLevels": { "value": [], "source": "visual", "confidence": 0 },
+      "resistanceLevels": { "value": [], "source": "visual", "confidence": 0 },
+      "indicators": {}
+    },
+    "orderExecution": {
+      "orderStatus": { "value": null, "source": "visual" },
+      "executionPrice": { "value": null, "source": "visual" },
+      "filledQuantities": { "value": null, "source": "visual" },
+      "transactionIds": { "value": null, "source": "visual" },
+      "fees": { "value": null, "source": "visual" }
+    },
+    "referenceData": {
+      "lotSizes": { "value": null, "source": "visual" },
+      "tickSizes": { "value": null, "source": "visual" },
+      "marginRequirements": { "value": null, "source": "visual" },
+      "tradingHours": { "value": null, "source": "visual" }
+    },
+    "marketStructure": { "value": null, "source": "visual", "confidence": 0 },
+    "trend": { "value": null, "source": "visual", "confidence": 0 },
+    "momentum": { "value": null, "source": "visual", "confidence": 0 },
+    "tradingSession": { "value": null, "source": "visual", "confidence": 0 },
+    "dataConflict": false,
+    "conflictDetails": ""
+  }
 }
+
+IMPORTANT UNIFIED DATA INSTRUCTIONS:
+- For 'unifiedMarketData', NEVER hallucinate data. If you cannot clearly read exact numbers (like price or volume) from the visual chart, set "value": null.
+- Always set "source": "visual" for values you extract from the image.
+- Distinguish between a 'completedCandle' and the 'currentIncompleteCandle'.
 `;
 }
+
