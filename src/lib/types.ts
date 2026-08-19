@@ -94,7 +94,7 @@ export interface AnalyzeRequest {
   isProgressive?: boolean;
   progressiveState?: any;
   marketHistorySummary?: any;
-  screenshots?: any[]; // Keep flexible for 5M frames
+  screenshots?: any[];
 
   macroTimeframeImage?: MultiTimeframeContext;
   confirmationTimeframeImage?: MultiTimeframeContext;
@@ -125,6 +125,21 @@ export interface TradingAnalysis {
 
   readiness?: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
   estimatedConfidence?: "LOW" | "MEDIUM" | "HIGH";
+
+  // Deterministic signal qualification fields.
+  signalQuality?: "GOOD" | "FAIR" | "POOR" | "AVOID";
+  confirmationStatus?: string;
+  evidenceScore?: number;
+  bullishEvidence?: string[];
+  bearishEvidence?: string[];
+  invalidationConditions?: string[];
+  signalQualification?: {
+    approved: boolean;
+    score: number;
+    reasons: string[];
+    blockers: string[];
+    grade: "A+" | "A" | "B" | "C" | "NO_TRADE";
+  };
 
   detectedSymbol: string | null;
   detectedTimeframe: string | null;
@@ -187,7 +202,7 @@ export interface AIProviderResponse {
 
 export interface MultiTimeframeContext {
   timeframe: string;
-  image: string; // base64
+  image: string;
   timestamp?: string;
 }
 
@@ -198,7 +213,7 @@ export interface ProgressiveAnalysisSummary {
   timestamp: string;
   frameStart: number;
   frameEnd: number;
-  unifiedMarketData?: UnifiedMarketContext; // NEW: Replaces flat fields
+  unifiedMarketData?: UnifiedMarketContext;
   trend: string;
   momentum: string;
   marketState: string;
@@ -208,9 +223,6 @@ export interface ProgressiveAnalysisSummary {
   strategyConflicts: string[];
   changesFromPrevious: string;
   confidence: number;
-
-  // Manual final analyses are also kept in the context stream so the next
-  // analysis can compare new frames against the previous conclusion.
   source?: "progressive" | "manual";
   signal?: string;
   explanation?: string;
