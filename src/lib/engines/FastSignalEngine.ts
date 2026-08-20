@@ -56,6 +56,22 @@ function collectBatches(progressive: any): any[] {
   return [];
 }
 
+function sourceConfidence(batches: any[], previous: any): number {
+  const values = batches
+    .map((batch) => Number(batch?.confidence))
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
+
+  if (values.length === 0) {
+    const fallback = Number(previous?.dataConfidence ?? previous?.confidence);
+    return Number.isFinite(fallback) ? Math.min(100, Math.max(0, fallback)) : 65;
+  }
+
+  // The final signal can never claim more confidence than the evidence supplied
+  // by the progressive/vision stage. This prevents a 60–65% visual observation
+  // from becoming an unjustified 80–90% trade signal.
+  return Math.min(...values);
+}
+
 /**
  * Hot entry path. It consumes all completed progressive batches plus any
  * supplied partial batch. It never calls an LLM, exchange API or database.
@@ -114,17 +130,55 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   if (bullishScore > bearishScore && bullishScore > 0) trend = "Bullish";
   else if (bearishScore > bullishScore && bearishScore > 0) trend = "Bearish";
 
-  const minimumDirectionalScore = batches.length >= 2 ? 5 : 4;
-  const dominantBull = !conflict && bullishScore >= minimumDirectionalScore && scoreGap >= 3 && bearishScore <= 1;
-  const dominantBear = !conflict && bearishScore >= minimumDirectionalScore && scoreGap >= 3 && bullishScore <= 1;
+  // A single progressive batch must have at least three independent evidence
+  // categories before a directional signal is allowed. More batches can add
+  // temporal confirmation, but do not replace missing evidence categories.
+  const sourceConfidenceValue = sourceConfidence(batches, previous);
+  const independentBull = [
+    bullTrendCount > 0,
+    bullMomentumCount > 0,
+    bullStructureCount > 0,
+    positiveIndicatorText.length > 0,
+    bullishEvidence.some((item) => /support level/i.test(item)),
+  ].filter(Boolean).length;
+  const independentBear = [
+    bearTrendCount > 0,
+    bearMomentumCount > 0,
+    bearStructureCount > 0,
+    negativeIndicatorText.length > 0,
+    bearishEvidence.some((item) => /resistance level/i.test(item)),
+  ].filter(Boolean).length;
+
+  const minimumDirectionalScore = batches.length >= 2 ? 5 : 6;
+  const minimumIndependentEvidence = batches.length >= 2 ? 3 : 3;
+  const dominantBull = !conflict
+    && bullishScore >= minimumDirectionalScore
+    && scoreGap >= 3
+    && bearishScore <= 1
+    && independentBull >= minimumIndependentEvidence;
+  const dominantBear = !conflict
+    && bearishScore >= minimumDirectionalScore
+    && scoreGap >= 3
+    && bullishScore <= 1
+    && independentBear >= minimumIndependentEvidence;
 
   if (dominantBull) signal = "BUY";
   else if (dominantBear) signal = "SELL";
 
-  const totalEvidence = bullishScore + bearishScore;
-  const confidence = signal === "WAIT"
-    ? Math.min(69, Math.round(40 + Math.min(25, scoreGap * 4)))
-    : Math.min(95, Math.round(60 + Math.min(35, scoreGap * 5)));
+  const evidenceScore = Math.min(100, Math.round(
+    Math.min(60, Math.max(bullishScore, bearishScore) * 7)
+    + Math.min(20, scoreGap * 4)
+    + Math.min(20, Math.max(independentBull, independentBear) * 5),
+  ));
+
+  // Confidence is bounded by the quality of the source data and the strength
+  // of independent evidence. It can never exceed the weakest progressive batch.
+  const evidenceCap = Math.min(100, Math.max(35, evidenceScore));
+  const temporalBonus = batches.length >= 3 && scoreGap >= 4 ? 5 : batches.length >= 2 && scoreGap >= 4 ? 3 : 0;
+  const rawConfidence = signal === "WAIT"
+    ? Math.min(69, Math.max(40, 40 + scoreGap * 4 + Math.max(0, independentBull + independentBear - 2) * 3))
+    : Math.min(95, 55 + Math.min(25, scoreGap * 4) + Math.min(10, Math.max(independentBull, independentBear) * 3) + temporalBonus);
+  const confidence = Math.min(sourceConfidenceValue, evidenceCap, rawConfidence);
 
   const latestConfidence = Number(previous.confidence);
   const dataConfidence = unified.currentPrice || unified.trend || unified.momentum
@@ -132,9 +186,9 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     : Number.isFinite(latestConfidence) ? Math.min(90, Math.max(0, latestConfidence)) : 65;
 
   const quality = signal === "WAIT"
-    ? (scoreGap >= 2 ? "FAIR" : "POOR")
-    : confidence >= 85 ? "GOOD" : "FAIR";
-  const readiness = signal === "WAIT" ? "NOT READY" : confidence >= 85 ? "READY" : "GOOD";
+    ? (confidence >= 55 ? "FAIR" : "POOR")
+    : confidence >= 80 && independentBull + independentBear >= 4 ? "GOOD" : "FAIR";
+  const readiness = signal === "WAIT" ? "NOT READY" : confidence >= 80 ? "READY" : "GOOD";
 
   const invalidationConditions = signal === "BUY"
     ? ["Bullish trend/momentum alignment breaks or price loses the supporting structure."]
