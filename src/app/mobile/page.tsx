@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { useMobileStore } from "@/store/useMobileStore";
+import { selectMobileAnalysisFrames } from "@/lib/mobile/visualHistory";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,25 +63,16 @@ const INDICATOR_OPTIONS = [
   "ATR",
 ];
 
+const STRATEGIES = ["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading"];
+const INDICATORS = ["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"];
+
 export default function MobileDashboard() {
   const {
-    platform,
-    symbol,
-    tradeDuration,
-    primaryTimeframe,
-    confirmationTimeframe,
-    selectedStrategies,
-    selectedProvider,
-    selectedModel,
-    visibleIndicators,
-    previewImageBase64,
-    isAnalyzing,
-    analysisResult,
-    pendingUnsureRequest,
-    requestedTimeframe,
-    previousAnalysisData,
-    setField,
-    clearAnalysis,
+    platform, symbol, tradeDuration, primaryTimeframe, confirmationTimeframe,
+    selectedStrategies, selectedProvider, selectedModel, visibleIndicators,
+    previewImageBase64, visualHistory, isAnalyzing, analysisResult,
+    pendingUnsureRequest, requestedTimeframe, previousAnalysisData,
+    setField, addVisualObservation, clearVisualHistory, clearAnalysis,
   } = useMobileStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -133,17 +125,16 @@ export default function MobileDashboard() {
           setField("previewImageBase64", canvas.toDataURL("image/jpeg", 0.7));
         }
       };
-      img.src = event.target?.result as string;
+      img.src = String(event.target?.result ?? "");
     };
     reader.readAsDataURL(file);
-
-    // Allow selecting the same file again after replacing/removing it.
     e.target.value = "";
   };
 
   const handleAnalyze = async () => {
-    if (!previewImageBase64) {
-      toast.error("Please upload a chart screenshot first.");
+    const frames = selectMobileAnalysisFrames(visualHistory);
+    if (frames.length === 0) {
+      toast.error("Upload at least one chart screenshot first.");
       return;
     }
 
@@ -212,52 +203,42 @@ export default function MobileDashboard() {
       toast.dismiss();
 
       if (!res.ok) throw new Error("API request failed");
-
       const data = await res.json();
-
-      if (data.marketDataStatus === "fallback") {
-        toast("Live data not found for this symbol. Falling back to Visual-Only mode.", {
-          icon: "👀",
-        });
-      }
 
       if (data.signal === "UNSURE" && data.requiredTimeframe) {
         setField("pendingUnsureRequest", true);
         setField("requestedTimeframe", data.requiredTimeframe);
         setField("previousAnalysisData", data);
-        setField("previewImageBase64", null);
         toast("Additional confirmation needed.");
-      } else {
-        setField("analysisResult", data);
-        setField("pendingUnsureRequest", false);
-        setField("requestedTimeframe", null);
-
-        const newTrade = {
-          id: Math.random().toString(36).substring(2, 9),
-          timestamp: Date.now(),
-          symbol,
-          timeframe: primaryTimeframe,
-          trend: data.trend,
-          signal: data.signal,
-          confidence: data.confidence,
-          recommendedTimeframe: data.recommendedTimeframe,
-          entryPrice: data.entryPrice,
-          stopLoss: data.stopLoss,
-          takeProfit: data.takeProfit,
-          explanation: data.explanation,
-          status:
-            data.signal === "WAIT" || data.signal === "NO_TRADE"
-              ? "SKIPPED"
-              : "OPEN",
-        };
-
-        const currentHistory = useMobileStore.getState().tradeHistory;
-        setField("tradeHistory", [newTrade, ...currentHistory]);
-        setField("previewImageBase64", null);
-        toast.success("Analysis complete!");
+        return;
       }
-    } catch (err) {
-      console.error(err);
+
+      setField("analysisResult", data);
+      setField("pendingUnsureRequest", false);
+      setField("requestedTimeframe", null);
+      setField("previousAnalysisData", data);
+
+      const newTrade = {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        symbol,
+        timeframe: primaryTimeframe,
+        trend: data.trend,
+        signal: data.signal,
+        confidence: data.confidence,
+        recommendedTimeframe: data.recommendedTimeframe,
+        entryPrice: data.entryPrice,
+        stopLoss: data.stopLoss,
+        takeProfit: data.takeProfit,
+        explanation: data.explanation,
+        status: data.signal === "WAIT" || data.signal === "NO_TRADE" ? "SKIPPED" : "OPEN",
+      };
+
+      const history = useMobileStore.getState().tradeHistory;
+      setField("tradeHistory", [newTrade, ...history]);
+      toast.success(`Analysis complete using ${frames.length} frame${frames.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      console.error(error);
       toast.error("Failed to analyze chart.");
     } finally {
       setField("isAnalyzing", false);
