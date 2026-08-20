@@ -12,10 +12,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (!body?.symbol || !body?.timeframe) {
-      return NextResponse.json(
-        { error: "symbol and timeframe are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "symbol and timeframe are required" }, { status: 400 });
     }
 
     const completedBatches = Array.isArray(body.progressive)
@@ -27,9 +24,8 @@ export async function POST(req: NextRequest) {
     let analysisContext = [...completedBatches];
     let partialBatch: any = null;
 
-    // Current frames are not yet a completed 20-frame batch. Process them
-    // through the Progressive/Vision layer first, then feed the resulting
-    // structured text into the low-latency Fast Signal engine.
+    // Current frames are not a completed batch. They are converted to a partial
+    // structured observation first, then evaluated together with all completed batches.
     const currentFrames = Array.isArray(body.currentFrames) ? body.currentFrames : [];
     if (currentFrames.length > 0) {
       const progressiveRequest: any = {
@@ -55,7 +51,6 @@ export async function POST(req: NextRequest) {
       };
 
       const progressiveResult: any = await analyze(progressiveRequest);
-
       partialBatch = {
         analysisId: progressiveResult.analysisId || crypto.randomUUID(),
         batchId: body.nextBatchId ?? completedBatches.length + 1,
@@ -76,7 +71,6 @@ export async function POST(req: NextRequest) {
         unifiedMarketData: progressiveResult.unifiedMarketData,
         source: "partial_progressive",
       };
-
       analysisContext.push(partialBatch);
     }
 
@@ -87,6 +81,7 @@ export async function POST(req: NextRequest) {
       platform: body.platform,
       market: body.market,
       progressive: analysisContext,
+      performance: body.performance,
     });
 
     return NextResponse.json({
@@ -110,14 +105,14 @@ export async function POST(req: NextRequest) {
       indicatorState: partialBatch?.indicatorState || {},
       strategyConsensus: result.strategyConsensus,
       strategyConflicts: partialBatch?.strategyConflicts || [],
-      evidenceScore: Math.min(100, (result.bullishEvidence.length + result.bearishEvidence.length) * 20),
+      evidenceScore: result.evidenceScore,
       signalQuality: result.signalQuality,
       bullishEvidence: result.bullishEvidence,
       bearishEvidence: result.bearishEvidence,
       invalidationConditions: result.invalidationConditions,
       confirmationStatus: result.signal === "WAIT" ? "UNCLEAR" : "CONFIRMED",
       explanation: result.explanation,
-      reasoning: "Low-latency evaluation of completed progressive batches plus any current partial batch.",
+      reasoning: `Low-latency structured-data reasoning: ${result.marketRegime} regime, ${result.selectedStrategy}, ${result.bullishEvidence.length} bullish evidence items, ${result.bearishEvidence.length} bearish evidence items${result.riskReward !== null ? `, R:R ${result.riskReward.toFixed(2)}` : ""}.`,
       detectedSymbol: body.symbol,
       detectedTimeframe: body.timeframe,
       exchange: body.platform || "visual_only",
@@ -132,11 +127,16 @@ export async function POST(req: NextRequest) {
       generatedAt: result.generatedAt,
       progressiveBatchCount: completedBatches.length,
       partialBatch,
+      reasoningMetrics: {
+        marketRegime: result.marketRegime,
+        selectedStrategy: result.selectedStrategy,
+        progressiveBatchCount: completedBatches.length,
+        partialBatchIncluded: Boolean(partialBatch),
+        riskReward: result.riskReward,
+        evidenceScore: result.evidenceScore,
+      },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Fast signal generation failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error?.message || "Fast signal generation failed" }, { status: 500 });
   }
 }
