@@ -10,8 +10,14 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const indicatorsList = req.visibleIndicators && req.visibleIndicators.length > 0
     ? req.visibleIndicators.map((i) => `- ${i}`).join("\n")
     : "None specified";
-  const history = req.progressiveState && req.progressiveState.length > 0
-    ? JSON.stringify(req.progressiveState, null, 2)
+  
+  let historyState = req.progressiveState || [];
+  if (req.partialBatch) {
+    historyState = [...historyState, req.partialBatch];
+  }
+  
+  const history = historyState.length > 0
+    ? JSON.stringify(historyState, null, 2)
     : "None";
   const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
   const mtfContext = [

@@ -53,6 +53,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
   const textReasoningContext = isFinalDual && !req.marketData
     ? {
         progressiveState: req.progressiveState || [],
+        partialBatch: (req as any).partialBatch || null,
         marketHistorySummary: req.marketHistorySummary || null,
         previousData: req.previousData || null,
       }
@@ -75,6 +76,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     previousAnalysis: req.previousData,
     isProgressive: req.isProgressive,
     progressiveState: req.progressiveState,
+    partialBatch: (req as any).partialBatch,
     marketHistorySummary: req.marketHistorySummary,
     macroTimeframe: (req as any).macroTimeframeImage,
     confirmationTimeframeImage: (req as any).confirmationTimeframeImage,

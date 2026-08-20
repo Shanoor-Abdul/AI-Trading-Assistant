@@ -43,6 +43,7 @@ export const UniversalAIRequestSchema = z.object({
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
   marketHistorySummary: z.any().optional(),
+  partialBatch: z.any().optional(),
   riskContext: z.any().optional(),
 });
 

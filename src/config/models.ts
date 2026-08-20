@@ -37,14 +37,14 @@ export const AI_MODELS: AIModel[] = [
     isFree: false,
   },
   {
-    id: "llama-3.1-8b-instant",
-    name: "Llama 3.1 8B Instant — Fast Signal",
+    id: "meta-llama/llama-3.1-8b-instruct",
+    name: "Llama — Fast Signal",
     provider: "groq",
     isFree: false,
   },
   {
-    id: "meta-llama/llama-4-scout-17b-16e-instruct",
-    name: "Llama 4 Scout — Vision + Fast Inference",
+    id: "meta-llama/llama-4-scout",
+    name: "Llama Scout Vision + Fast Inference",
     provider: "groq",
     isFree: false,
   },

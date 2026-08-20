@@ -1,7 +1,10 @@
 import type { UniversalAIRequest } from "./schema";
 
 export function buildFastTextSignalPrompt(req: UniversalAIRequest): string {
-  const progressive = Array.isArray(req.progressiveState) ? req.progressiveState.slice(-3) : [];
+  let progressive = Array.isArray(req.progressiveState) ? req.progressiveState.slice(-3) : [];
+  if (req.partialBatch) {
+    progressive = [...progressive, req.partialBatch];
+  }
   const market = req.marketData || null;
 
   return `You are a low-latency trading signal classifier.

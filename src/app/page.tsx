@@ -633,6 +633,8 @@ export default function Dashboard() {
     const storeState = useTradingStore.getState();
     const unanalyzedCount = storeState.observations.length - (storeState.lastAnalyzedObservationIndex === -1 ? 0 : storeState.lastAnalyzedObservationIndex + 1);
     
+    let partialBatchData: any = null;
+
     // Check if there are partial frames (e.g. 5/20) and we are using Dual Model with progressive API
     if (storeState.isLiveObservationEnabled && storeState.useDualModel && unanalyzedCount > 0 && unanalyzedCount < 20) {
       toast.loading("Analyzing partial batch before final signal...", { id: "partial_batch" });
@@ -676,7 +678,9 @@ export default function Dashboard() {
         if (progressiveResponse.ok) {
           const progData = await progressiveResponse.json();
           if (progData.marketState) {
-            useTradingStore.getState().addProgressiveAnalysis({
+            // Keep the partial batch entirely ephemeral for this request only.
+            // Do NOT commit it to progressiveAnalyses or increment observation index.
+            partialBatchData = {
               analysisId: progData.analysisId || crypto.randomUUID(),
               batchId,
               timestamp: new Date().toISOString(),
@@ -691,9 +695,8 @@ export default function Dashboard() {
               strategyConflicts: progData.strategyConflicts || [],
               changesFromPrevious: progData.changesFromPrevious || "None",
               confidence: progData.confidence || 0,
-            });
-            useTradingStore.getState().setLastAnalyzedObservationIndex(startIndex + unanalyzedCount - 1);
-            useTradingStore.getState().incrementBatchId();
+              source: "partial_progressive"
+            };
             toast.success("Partial batch analyzed!", { id: "partial_batch" });
           } else {
             toast.dismiss("partial_batch");
@@ -753,6 +756,7 @@ export default function Dashboard() {
         reasoningProvider: useTradingStore.getState().selectedReasoningProvider,
         reasoningModel: useTradingStore.getState().selectedReasoningModel,
         progressiveState: useTradingStore.getState().progressiveAnalyses,
+        partialBatch: partialBatchData,
         macroTimeframeImage: useTradingStore.getState().macroTimeframeImage ? { timeframe: "4h", image: useTradingStore.getState().macroTimeframeImage } : undefined,
         confirmationTimeframeImage: useTradingStore.getState().confirmationTimeframeImage ? { timeframe: "1h", image: useTradingStore.getState().confirmationTimeframeImage } : undefined,
         structureTimeframeImage: useTradingStore.getState().structureTimeframeImage ? { timeframe: "15m", image: useTradingStore.getState().structureTimeframeImage } : undefined,
