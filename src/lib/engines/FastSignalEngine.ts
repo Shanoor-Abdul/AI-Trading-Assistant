@@ -7,6 +7,12 @@ export interface FastSignalInput {
   platform?: string;
   market?: Partial<UnifiedMarketContext> & Record<string, any>;
   progressive?: any;
+  performance?: {
+    sampleSize?: number;
+    winRate?: number;
+    profitFactor?: number | null;
+    byStrategy?: Record<string, { sampleSize: number; winRate: number }>;
+  };
 }
 
 export interface FastSignalResult {
@@ -25,6 +31,10 @@ export interface FastSignalResult {
   explanation: string;
   latencyMode: "LOCAL_TEXT";
   generatedAt: number;
+  evidenceScore: number;
+  marketRegime: "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "BREAKOUT" | "UNCLEAR";
+  selectedStrategy: string;
+  riskReward: number | null;
 }
 
 function text(value: any): string {
@@ -42,8 +52,8 @@ function asArray(value: any): any[] {
 
 function direction(value: string): "bull" | "bear" | "neutral" {
   const v = value.toLowerCase();
-  if (/(bull|upward|rising|positive|buy|higher high|higher low|strong green|continuation)/.test(v)) return "bull";
-  if (/(bear|downward|falling|negative|sell|lower high|lower low|strong red|rejection)/.test(v)) return "bear";
+  if (/(bull|upward|rising|positive|buy|higher high|higher low|strong green|continuation|above support|breakout up|expanding upward)/.test(v)) return "bull";
+  if (/(bear|downward|falling|negative|sell|lower high|lower low|strong red|rejection|below resistance|breakout down|expanding downward)/.test(v)) return "bear";
   return "neutral";
 }
 
@@ -60,21 +70,48 @@ function sourceConfidence(batches: any[], previous: any): number {
   const values = batches
     .map((batch) => Number(batch?.confidence))
     .filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
-
-  if (values.length === 0) {
+  if (!values.length) {
     const fallback = Number(previous?.dataConfidence ?? previous?.confidence);
     return Number.isFinite(fallback) ? Math.min(100, Math.max(0, fallback)) : 65;
   }
-
-  // The final signal can never claim more confidence than the evidence supplied
-  // by the progressive/vision stage. This prevents a 60–65% visual observation
-  // from becoming an unjustified 80–90% trade signal.
   return Math.min(...values);
 }
 
+function regimeFromBatches(batches: any[]): FastSignalResult["marketRegime"] {
+  const trends = batches.map((b) => direction(text(b.trend))).filter((v) => v !== "neutral");
+  if (!trends.length) return "UNCLEAR";
+  const bull = trends.filter((v) => v === "bull").length;
+  const bear = trends.length - bull;
+  const last = trends[trends.length - 1];
+  const previous = trends.slice(0, -1);
+  const changed = previous.length > 0 && previous[previous.length - 1] !== last;
+  if (changed && batches.length >= 2) return "BREAKOUT";
+  if (bull === trends.length) return "TRENDING_UP";
+  if (bear === trends.length) return "TRENDING_DOWN";
+  return "RANGING";
+}
+
+function strategyForRegime(regime: FastSignalResult["marketRegime"]): string {
+  switch (regime) {
+    case "TRENDING_UP": return "Trend Following / Momentum";
+    case "TRENDING_DOWN": return "Trend Following / Momentum";
+    case "BREAKOUT": return "Breakout";
+    case "RANGING": return "Mean Reversion";
+    default: return "WAIT / Confirmation";
+  }
+}
+
+function numberFromObject(obj: any, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = numeric(obj?.[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 /**
- * Hot entry path. It consumes all completed progressive batches plus any
- * supplied partial batch. It never calls an LLM, exchange API or database.
+ * Low-latency reasoning gate. It consumes only structured progressive text/data.
+ * No screenshot, exchange, database, or network call is made here.
  */
 export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const started = Date.now();
@@ -82,36 +119,40 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const batches = collectBatches(input.progressive);
   const previous = batches[batches.length - 1] || {};
   const unified = (market.unifiedMarketData || previous.unifiedMarketData || {}) as any;
+  const regime = regimeFromBatches(batches);
+  const selectedStrategy = strategyForRegime(regime);
 
   const trendVotes = batches.map((b) => direction(text(b.trend || b.strategyConsensus))).filter((v) => v !== "neutral");
   const momentumVotes = batches.map((b) => direction(text(b.momentum))).filter((v) => v !== "neutral");
   const structureVotes = batches.map((b) => direction(text(b.marketStructure || b.marketState || b.candlestickBehavior))).filter((v) => v !== "neutral");
-
   const bullishEvidence: string[] = [];
   const bearishEvidence: string[] = [];
 
   const latestTrend = direction(text(unified.trend || market.trend || previous.trend));
   const latestMomentum = direction(text(unified.momentum || market.momentum || previous.momentum));
-  const latestStructure = direction(text(unified.marketStructure || market.marketStructure || previous.marketState));
+  const latestStructure = direction(text(unified.marketStructure || market.marketStructure || previous.marketStructure || previous.marketState));
 
-  if (latestTrend === "bull") bullishEvidence.push("Latest progressive trend is bullish.");
-  if (latestTrend === "bear") bearishEvidence.push("Latest progressive trend is bearish.");
-  if (latestMomentum === "bull") bullishEvidence.push("Latest progressive momentum supports upside.");
-  if (latestMomentum === "bear") bearishEvidence.push("Latest progressive momentum supports downside.");
-  if (latestStructure === "bull") bullishEvidence.push("Latest market structure supports upside.");
-  if (latestStructure === "bear") bearishEvidence.push("Latest market structure supports downside.");
+  if (latestTrend === "bull") bullishEvidence.push("Trend structure supports upside.");
+  if (latestTrend === "bear") bearishEvidence.push("Trend structure supports downside.");
+  if (latestMomentum === "bull") bullishEvidence.push("Momentum supports upside.");
+  if (latestMomentum === "bear") bearishEvidence.push("Momentum supports downside.");
+  if (latestStructure === "bull") bullishEvidence.push("Market/candle structure supports upside.");
+  if (latestStructure === "bear") bearishEvidence.push("Market/candle structure supports downside.");
 
-  const positiveIndicatorText = batches.flatMap((b) => Object.values(b.indicatorState || {})).map((v) => text(v)).filter((v) => v && direction(v) === "bull");
-  const negativeIndicatorText = batches.flatMap((b) => Object.values(b.indicatorState || {})).map((v) => text(v)).filter((v) => v && direction(v) === "bear");
+  const indicatorValues = batches.flatMap((b) => Object.values(b.indicatorState || {})).map((v) => text(v)).filter(Boolean);
+  const positiveIndicatorText = indicatorValues.filter((v) => direction(v) === "bull");
+  const negativeIndicatorText = indicatorValues.filter((v) => direction(v) === "bear");
   if (positiveIndicatorText.length) bullishEvidence.push(`Indicators provide ${positiveIndicatorText.length} bullish confirmation${positiveIndicatorText.length > 1 ? "s" : ""}.`);
   if (negativeIndicatorText.length) bearishEvidence.push(`Indicators provide ${negativeIndicatorText.length} bearish confirmation${negativeIndicatorText.length > 1 ? "s" : ""}.`);
 
-  const price = numeric(unified.currentPrice || market.currentPrice);
-  const supports = asArray(unified.supportLevels?.value || market.supportLevels?.value || market.supportLevels);
-  const resistances = asArray(unified.resistanceLevels?.value || market.resistanceLevels?.value || market.resistanceLevels);
-
-  if (price !== null && supports.some((level) => Number(level) < price)) bullishEvidence.push("Price is above a visible support level.");
-  if (price !== null && resistances.some((level) => Number(level) > price)) bearishEvidence.push("Price is below a visible resistance level.");
+  const price = numberFromObject(unified, ["currentPrice", "price", "close"])
+    ?? numberFromObject(market, ["currentPrice", "price", "close"]);
+  const supports = asArray(unified.supportLevels?.value || market.supportLevels?.value || market.supportLevels).map(Number).filter(Number.isFinite);
+  const resistances = asArray(unified.resistanceLevels?.value || market.resistanceLevels?.value || market.resistanceLevels).map(Number).filter(Number.isFinite);
+  const supportBelow = price !== null && supports.some((level) => level < price);
+  const resistanceAbove = price !== null && resistances.some((level) => level > price);
+  if (supportBelow) bullishEvidence.push("Price is holding above a visible support level.");
+  if (resistanceAbove) bearishEvidence.push("Price is below a visible resistance level.");
 
   const bullTrendCount = trendVotes.filter((v) => v === "bull").length;
   const bearTrendCount = trendVotes.filter((v) => v === "bear").length;
@@ -120,81 +161,96 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const bullStructureCount = structureVotes.filter((v) => v === "bull").length;
   const bearStructureCount = structureVotes.filter((v) => v === "bear").length;
 
-  const conflict = Boolean(unified.dataConflict || market.dataConflict);
-  const bullishScore = bullTrendCount * 2 + bullMomentumCount * 2 + bullStructureCount + positiveIndicatorText.length;
-  const bearishScore = bearTrendCount * 2 + bearMomentumCount * 2 + bearStructureCount + negativeIndicatorText.length;
+  const bullishScore = bullTrendCount * 2 + bullMomentumCount * 2 + bullStructureCount * 2 + positiveIndicatorText.length;
+  const bearishScore = bearTrendCount * 2 + bearMomentumCount * 2 + bearStructureCount * 2 + negativeIndicatorText.length;
   const scoreGap = Math.abs(bullishScore - bearishScore);
+  const conflict = Boolean(unified.dataConflict || market.dataConflict) || Math.abs(bullTrendCount - bearTrendCount) === 0 && trendVotes.length > 1;
 
-  let signal: Signal = "WAIT";
-  let trend: Trend = "Sideways";
-  if (bullishScore > bearishScore && bullishScore > 0) trend = "Bullish";
-  else if (bearishScore > bullishScore && bearishScore > 0) trend = "Bearish";
-
-  // A single progressive batch must have at least three independent evidence
-  // categories before a directional signal is allowed. More batches can add
-  // temporal confirmation, but do not replace missing evidence categories.
-  const sourceConfidenceValue = sourceConfidence(batches, previous);
   const independentBull = [
     bullTrendCount > 0,
     bullMomentumCount > 0,
     bullStructureCount > 0,
     positiveIndicatorText.length > 0,
-    bullishEvidence.some((item) => /support level/i.test(item)),
+    supportBelow,
   ].filter(Boolean).length;
   const independentBear = [
     bearTrendCount > 0,
     bearMomentumCount > 0,
     bearStructureCount > 0,
     negativeIndicatorText.length > 0,
-    bearishEvidence.some((item) => /resistance level/i.test(item)),
+    resistanceAbove,
   ].filter(Boolean).length;
 
-  const minimumDirectionalScore = batches.length >= 2 ? 5 : 6;
-  const minimumIndependentEvidence = batches.length >= 2 ? 3 : 3;
-  const dominantBull = !conflict
-    && bullishScore >= minimumDirectionalScore
-    && scoreGap >= 3
-    && bearishScore <= 1
-    && independentBull >= minimumIndependentEvidence;
-  const dominantBear = !conflict
-    && bearishScore >= minimumDirectionalScore
-    && scoreGap >= 3
-    && bullishScore <= 1
-    && independentBear >= minimumIndependentEvidence;
+  const sourceConfidenceValue = sourceConfidence(batches, previous);
+  const temporalAgreement = batches.length > 1
+    ? Math.max(bullTrendCount, bearTrendCount) / Math.max(1, trendVotes.length)
+    : 0;
 
-  if (dominantBull) signal = "BUY";
-  else if (dominantBear) signal = "SELL";
+  const chosenDirection = bullishScore > bearishScore ? "bull" : bearishScore > bullishScore ? "bear" : "neutral";
+  const independentEvidence = chosenDirection === "bull" ? independentBull : independentBear;
+  const opposingScore = chosenDirection === "bull" ? bearishScore : bullishScore;
+
+  // Entry quality is deliberately stricter than trend detection. A directional
+  // signal needs three independent evidence categories, temporal agreement, and
+  // no material opposing evidence.
+  const minimumScore = batches.length >= 3 ? 6 : batches.length >= 2 ? 7 : 8;
+  const dominant = chosenDirection !== "neutral"
+    && !conflict
+    && Math.max(bullishScore, bearishScore) >= minimumScore
+    && scoreGap >= 3
+    && opposingScore <= 2
+    && independentEvidence >= 3
+    && (batches.length === 1 || temporalAgreement >= 0.67);
+
+  let signal: Signal = dominant ? (chosenDirection === "bull" ? "BUY" : "SELL") : "WAIT";
+  let trend: Trend = "Sideways";
+  if (bullishScore > bearishScore && bullishScore > 0) trend = "Bullish";
+  else if (bearishScore > bullishScore && bearishScore > 0) trend = "Bearish";
+
+  // Risk/reward is used only when concrete entry/SL/TP data is available.
+  const entry = numberFromObject(unified, ["entryPrice", "currentPrice", "price"])
+    ?? numberFromObject(market, ["entryPrice", "currentPrice", "price"]);
+  const stop = numberFromObject(unified, ["stopLoss", "sl"])
+    ?? numberFromObject(market, ["stopLoss", "sl"]);
+  const target = numberFromObject(unified, ["takeProfit", "tp"])
+    ?? numberFromObject(market, ["takeProfit", "tp"]);
+  const risk = entry !== null && stop !== null ? Math.abs(entry - stop) : null;
+  const reward = entry !== null && target !== null ? Math.abs(target - entry) : null;
+  const riskReward = risk && reward !== null && risk > 0 ? reward / risk : null;
+  if (signal !== "WAIT" && riskReward !== null && riskReward < 1) {
+    signal = "WAIT";
+  }
 
   const evidenceScore = Math.min(100, Math.round(
-    Math.min(60, Math.max(bullishScore, bearishScore) * 7)
-    + Math.min(20, scoreGap * 4)
-    + Math.min(20, Math.max(independentBull, independentBear) * 5),
+    Math.min(45, Math.max(bullishScore, bearishScore) * 5)
+      + Math.min(20, scoreGap * 4)
+      + Math.min(20, Math.max(independentBull, independentBear) * 4)
+      + (temporalAgreement >= 0.8 ? 10 : temporalAgreement >= 0.67 ? 5 : 0)
+      + (riskReward !== null && riskReward >= 1.5 ? 5 : 0),
   ));
 
-  // Confidence is bounded by the quality of the source data and the strength
-  // of independent evidence. It can never exceed the weakest progressive batch.
   const evidenceCap = Math.min(100, Math.max(35, evidenceScore));
-  const temporalBonus = batches.length >= 3 && scoreGap >= 4 ? 5 : batches.length >= 2 && scoreGap >= 4 ? 3 : 0;
+  const temporalBonus = batches.length >= 3 && temporalAgreement >= 0.8 ? 5 : batches.length >= 2 && temporalAgreement >= 0.67 ? 2 : 0;
   const rawConfidence = signal === "WAIT"
-    ? Math.min(69, Math.max(40, 40 + scoreGap * 4 + Math.max(0, independentBull + independentBear - 2) * 3))
-    : Math.min(95, 55 + Math.min(25, scoreGap * 4) + Math.min(10, Math.max(independentBull, independentBear) * 3) + temporalBonus);
+    ? Math.min(69, Math.max(40, 42 + scoreGap * 3 + Math.max(0, independentEvidence - 2) * 4))
+    : Math.min(95, 55 + Math.min(20, scoreGap * 3) + Math.min(12, independentEvidence * 3) + temporalBonus);
   const confidence = Math.min(sourceConfidenceValue, evidenceCap, rawConfidence);
 
   const latestConfidence = Number(previous.confidence);
-  const dataConfidence = unified.currentPrice || unified.trend || unified.momentum
-    ? 90
-    : Number.isFinite(latestConfidence) ? Math.min(90, Math.max(0, latestConfidence)) : 65;
+  const dataConfidence = Number.isFinite(latestConfidence)
+    ? Math.min(90, Math.max(0, latestConfidence))
+    : 65;
 
   const quality = signal === "WAIT"
     ? (confidence >= 55 ? "FAIR" : "POOR")
-    : confidence >= 80 && independentBull + independentBear >= 4 ? "GOOD" : "FAIR";
-  const readiness = signal === "WAIT" ? "NOT READY" : confidence >= 80 ? "READY" : "GOOD";
+    : confidence >= 80 && independentEvidence >= 4 ? "GOOD" : "FAIR";
+  const readiness = signal === "WAIT" ? "NOT READY" : confidence >= 80 && independentEvidence >= 4 ? "READY" : "GOOD";
 
   const invalidationConditions = signal === "BUY"
-    ? ["Bullish trend/momentum alignment breaks or price loses the supporting structure."]
+    ? ["Bullish trend, momentum or structure alignment breaks.", "Price loses the supporting structure."]
     : signal === "SELL"
-      ? ["Bearish trend/momentum alignment breaks or price reclaims the opposing structure."]
-      : ["Wait for trend, momentum and structure to align with a clear directional edge."];
+      ? ["Bearish trend, momentum or structure alignment breaks.", "Price reclaims the opposing structure."]
+      : ["Wait for trend, momentum and structure to align with a clear directional edge.", "Avoid entry while evidence remains mixed or incomplete."];
 
   const batchLabel = batches.length ? `${batches.length} progressive batch${batches.length > 1 ? "es" : ""}` : "latest progressive state";
 
@@ -212,9 +268,13 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     bearishEvidence,
     invalidationConditions,
     explanation: signal === "WAIT"
-      ? `Fast gate evaluated ${batchLabel}; evidence is not sufficiently dominant for a directional entry.`
-      : `Fast ${signal} signal from ${batchLabel}; directional evidence is dominant with no material opposing conflict.`,
+      ? `Fast gate evaluated ${batchLabel}; ${selectedStrategy} is not actionable until independent evidence aligns.`
+      : `Fast ${signal} signal from ${batchLabel}; ${selectedStrategy} is compatible with the detected ${regime.toLowerCase().replace(/_/g, " ")} regime.`,
     latencyMode: "LOCAL_TEXT",
     generatedAt: started,
+    evidenceScore,
+    marketRegime: regime,
+    selectedStrategy,
+    riskReward,
   };
 }
