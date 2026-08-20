@@ -1515,6 +1515,7 @@ export default function Dashboard() {
                       }
                       if (!validateRequiredFields()) return;
                       setIsLiveObservationEnabled(true);
+                      setIsLiveObservationPaused(false);
                     }} 
                     variant="outline" 
                     className="h-7 text-[10px] w-full mt-1 border-zinc-700 hover:bg-zinc-800"
@@ -1523,14 +1524,33 @@ export default function Dashboard() {
                     Start Live Observation
                   </Button>
                 ) : (
-                  <Button 
-                    onClick={() => setShowStopObservationModal(true)} 
-                    variant="outline" 
-                    className="h-7 text-[10px] w-full mt-1 border-zinc-700 hover:bg-zinc-800 text-green-400"
-                  >
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse mr-2" />
-                    Live Observation ON
-                  </Button>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Button 
+                      onClick={() => setIsLiveObservationPaused(!isLiveObservationPaused)} 
+                      variant="outline" 
+                      className={`h-7 text-[10px] flex-1 border-zinc-700 hover:bg-zinc-800 ${isLiveObservationPaused ? "text-amber-400" : "text-green-400"}`}
+                    >
+                      {isLiveObservationPaused ? (
+                        <>
+                          <Square className="w-2.5 h-2.5 mr-1.5 fill-current" />
+                          Paused
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse mr-2" />
+                          Active
+                        </>
+                      )}
+                    </Button>
+                    <Button 
+                      onClick={() => setShowStopObservationModal(true)} 
+                      variant="outline" 
+                      className="h-7 w-7 p-0 border-zinc-700 hover:bg-zinc-800 hover:text-red-400 text-zinc-400 shrink-0"
+                      title="Stop Live Observation"
+                    >
+                      <Square className="w-3 h-3" />
+                    </Button>
+                  </div>
                 )}
 
                 <div className="flex items-center justify-between gap-4">
