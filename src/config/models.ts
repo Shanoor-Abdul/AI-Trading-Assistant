@@ -12,6 +12,24 @@ export interface AIModel {
 }
 
 export const AI_MODELS: AIModel[] = [
+   {
+    id: "openai/gpt-4o-mini",
+    name: "GPT-4o Mini",
+    provider: "openrouter",
+    isFree: false,
+  },
+  {
+    id: "google/gemini-2.5-flash",
+    name: "google/gemini-2.5",
+    provider: "openrouter",
+    isFree: false,
+  },
+  {
+    id: "openai/gpt-4.1-mini",
+    name: "openai/gpt-4.1-mini",
+    provider: "openrouter",
+    isFree: false,
+  },
   {
     id: "llama-3.1-8b-instant",
     name: "Llama 3.1 8B Instant — Fast Signal",
