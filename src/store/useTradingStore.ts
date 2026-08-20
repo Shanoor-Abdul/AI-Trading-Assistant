@@ -47,6 +47,7 @@ export interface TradingState {
   totalFramesCaptured: number; currentBatchId: number;
   incrementTotalFrames: () => void; incrementBatchId: () => void;
   lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;
+  visualChangeCount: number; incrementVisualChangeCount: () => void;
   clearProgressiveSession: () => void; resetFramesButKeepSession: () => void;
   stopLiveObservationSession: () => void;
   aiReadiness: string | null;
@@ -149,6 +150,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
+  visualChangeCount: 0, incrementVisualChangeCount: () => set((state) => ({ visualChangeCount: state.visualChangeCount + 1 })),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
   resetFramesButKeepSession: () => set((state) => ({ observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId })),

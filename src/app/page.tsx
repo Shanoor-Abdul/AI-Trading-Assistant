@@ -71,6 +71,7 @@ import {
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { calculateExpectedFrames } from "@/lib/observation/calculation";
 import { createObservationSessionKey } from "@/lib/observation/session";
+import { hasSignificantVisualChange } from "@/lib/observation/visualChange";
 
 export default function Dashboard() {
   const {
@@ -290,14 +291,15 @@ export default function Dashboard() {
     return () => clearInterval(uiTimer);
   }, [stream, marketDataMode, isLiveObservationEnabled, observationFrequency]);
 
-  // Background Screen Capture for Live Observation
+  // Background Screen Capture: sample the shared screen every heartbeat.
+  // The browser watches every second, but AI is called only when the raw chart
+  // image changes meaningfully. The watermark is added after change detection.
   useEffect(() => {
     if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
 
     // We intentionally do not stop capturing to maintain a continuous observation circle.
 
     const captureObservation = () => {
-      if (!videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (video.videoWidth === 0) return;
@@ -308,10 +310,16 @@ export default function Dashboard() {
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+
+      // Compare the clean screen, before the timestamp watermark is added.
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       // Add reference watermark for AI validation
       const state = useTradingStore.getState();
+      if (changed) {
+        state.incrementVisualChangeCount();
+      }
+
       const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
       const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
 
@@ -325,8 +333,13 @@ export default function Dashboard() {
       ctx.fillStyle = "#e4e4e7"; // zinc-200
       ctx.font = "16px Arial";
       ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
+
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
-      useTradingStore.getState().addObservation(imageBase64);
+      state.addObservation(imageBase64);
+
+      if (changed) {
+        void observeLatestFrame(imageBase64);
+      }
     };
 
     const initialTimer = setTimeout(captureObservation, 2000); // 2s after start
@@ -336,8 +349,10 @@ export default function Dashboard() {
     );
 
     return () => {
-      clearTimeout(initialTimer);
-      clearInterval(intervalTimer);
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+      previousRawFrameRef.current = null;
+      pendingLiveObservationRef.current = null;
     };
   }, [
     stream,
