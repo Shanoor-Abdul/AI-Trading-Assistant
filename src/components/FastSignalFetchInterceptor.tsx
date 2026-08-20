@@ -34,7 +34,8 @@ export function FastSignalFetchInterceptor() {
         if (
           body.isProgressive === false &&
           body.marketDataMode === "visual_only" &&
-          progressiveState.length > 0
+          progressiveState.length > 0 &&
+          !body.useDualModel
         ) {
           const fastPayload = {
             symbol: body.symbol,
