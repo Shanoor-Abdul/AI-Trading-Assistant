@@ -15,12 +15,8 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
   const isFinalDual = !!req.useDualModel && !req.isProgressive;
 
   // Final dual-model reasoning is deliberately a hot text-only path.
-  // Prefer Groq's low-latency 8B model when its key is configured; the user's
-  // selected reasoning model remains the fallback when Groq is unavailable.
-  if (isFinalDual && process.env.GROQ_API_KEY) {
-    req.provider = "groq";
-    req.model = "llama-3.1-8b-instant";
-  } else if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
+  // The user's selected reasoning model is used directly.
+  if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
     req.provider = req.reasoningProvider;
     req.model = req.reasoningModel;
   }

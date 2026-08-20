@@ -31,6 +31,12 @@ export const AI_MODELS: AIModel[] = [
     isFree: false,
   },
   {
+    id: "llama3-8b-8192",
+    name: "Llama 3 8B (Groq Fast)",
+    provider: "groq",
+    isFree: false,
+  },
+  {
     id: "llama-3.1-8b-instant",
     name: "Llama 3.1 8B Instant — Fast Signal",
     provider: "groq",
