@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:fast-signal": "vitest run src/lib/engines/FastSignalEngine.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.39",
@@ -22,7 +23,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.29.0",
     "next": "16.3.0",
-    "next-themes": "^0.4.6",
+    "next-themes": "^0.4.0",
     "openai": "^7.4.0",
     "prisma": "^7.9.1",
     "react": "19.2.8",

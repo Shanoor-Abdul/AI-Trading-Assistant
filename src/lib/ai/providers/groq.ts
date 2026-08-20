@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
+import { buildFastTextSignalPrompt } from "../fastTextPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
 import { normalizeResponse } from "../normalizeResponse";
 import { AI_REQUEST_CONFIG } from "@/config/models";
@@ -10,37 +11,43 @@ const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
 });
 
+const FAST_TEXT_MODEL = "llama-3.1-8b-instant";
+
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
-  const currentModel = req.model || "llama-3.2-90b-vision-preview";
+  const currentModel = req.model || FAST_TEXT_MODEL;
+  // If there are no images attached, this is a fast text-to-text reasoning pass
+  const isFastText = !req.screenshot && (!req.screenshots || req.screenshots.length === 0);
+  const prompt = isFastText
+    ? buildFastTextSignalPrompt(req)
+    : buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
 
   try {
-    try {
-      const fs = require('fs');
-      const logData = `\n\n[${new Date().toISOString()}] === GROQ OUTGOING ===\n${JSON.stringify({...req, screenshot: req.screenshot ? 'base64...' : undefined, screenshots: req.screenshots ? req.screenshots.length + ' images' : undefined}, null, 2)}`;
-      fs.appendFileSync('api-payloads.log', logData);
-    } catch (e) {}
-
     const messagesContent: any[] = [{ type: "text", text: prompt }];
 
-    if (req.screenshots && req.screenshots.length > 0) {
-      for (const shot of req.screenshots) {
+    // Fast text mode must remain text-only. This prevents accidental image
+    // encoding/upload from becoming part of the latency-critical request.
+    if (!isFastText) {
+      if (req.screenshots && req.screenshots.length > 0) {
+        for (const shot of req.screenshots) {
+          messagesContent.push({
+            type: "image_url",
+            image_url: { url: `data:${shot.mimeType};base64,${shot.base64}` },
+          });
+        }
+      } else if (req.screenshot) {
         messagesContent.push({
           type: "image_url",
-          image_url: { url: `data:${shot.mimeType};base64,${shot.base64}` },
+          image_url: { url: `data:${req.screenshot.mimeType};base64,${req.screenshot.base64}` },
         });
       }
-    } else if (req.screenshot) {
-      messagesContent.push({
-        type: "image_url",
-        image_url: { url: `data:${req.screenshot.mimeType};base64,${req.screenshot.base64}` },
-      });
     }
 
     const response = await groq.chat.completions.create({
       model: currentModel,
       messages: [{ role: "user", content: messagesContent }],
-      max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
+      max_tokens: isFastText ? 350 : AI_REQUEST_CONFIG.maxOutputTokens,
+      temperature: isFastText ? 0 : undefined,
+      response_format: isFastText ? { type: "json_object" } : undefined,
     });
 
     if (!response?.choices?.length) {
@@ -48,7 +55,9 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     }
 
     const text = response.choices[0]?.message?.content ?? "";
-    return normalizeResponse(text, { marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown" });
+    return normalizeResponse(text, {
+      marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
+    });
   } catch (error: any) {
     console.warn(`Groq model failed: ${currentModel} - ${error.message}`);
     throw error;

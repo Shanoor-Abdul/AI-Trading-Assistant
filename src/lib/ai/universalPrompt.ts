@@ -10,8 +10,14 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const indicatorsList = req.visibleIndicators && req.visibleIndicators.length > 0
     ? req.visibleIndicators.map((i) => `- ${i}`).join("\n")
     : "None specified";
-  const history = req.progressiveState && req.progressiveState.length > 0
-    ? JSON.stringify(req.progressiveState, null, 2)
+  
+  let historyState = req.progressiveState || [];
+  if (req.partialBatch) {
+    historyState = [...historyState, req.partialBatch];
+  }
+  
+  const history = historyState.length > 0
+    ? JSON.stringify(historyState, null, 2)
     : "None";
   const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
   const mtfContext = [
@@ -169,20 +175,17 @@ AUTOMATIC STRATEGY SELECTION
 
 If any higher timeframe images are MISSING, you must clearly acknowledge that the timeframe evidence is unavailable. Lower your data confidence and readiness appropriately rather than inventing the missing analysis.
 
-For the primary 5M frames (ordered oldest → newest), evaluate:
-- trend direction and changes
-- market structure evolution
+For the primary 5M frames (ordered oldest -> newest), evaluate:
+- **Primary Trend**: Look at the left/older history of the frames to establish the dominant direction.
+- **Short-Term Direction**: Look at the newest/rightmost candles to establish the immediate price action.
+- **Structure Transition**: Compare the Primary Trend with the Short-Term Direction to explicitly classify the state (e.g., CONTINUATION, PULLBACK, RECOVERY, BREAKOUT, REVERSAL_DEVELOPING).
 - momentum strengthening/weakening
 - candle progression
 - breakouts and failed breakouts
-- pullbacks and continuations
-- rejection and reversal behavior
 - indicator progression
 - support/resistance interaction
-- choppiness or loss of structure
 
-Do not treat the mere presence of multiple frames as evidence of higher confidence.
-Evidence must come from meaningful market changes across the sequence.
+Do not blindly combine old and new frames into a single flat trend. Older frames represent history; newer frames represent current action. Your output MUST explicitly distinguish the transition between them (e.g., "Bearish Trend with Bullish Recovery").
 
 ==================================================
 BULL VS BEAR CHECK
@@ -269,6 +272,9 @@ function responseSchema(timeframe: string, symbol: string, platform: string, mod
   "bearishEvidence": [],
   "invalidationConditions": [],
   "confirmationStatus": "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR",
+  "primaryTrend": "Bullish | Bearish | Sideways (Extract from left side/history)",
+  "shortTermDirection": "Bullish | Bearish | Sideways (Extract from newest candles)",
+  "structureTransition": "CONTINUATION | PULLBACK | RECOVERY | REVERSAL_DEVELOPING | REVERSAL_CONFIRMED | BREAKOUT | FALSE_BREAKOUT | RANGE | CHOPPY",
   "explanation": "Concise user-facing explanation of the decision and strongest evidence.",
   "reasoning": "Concise structured reasoning summary; do not expose private chain-of-thought.",
   "detectedSymbol": "${symbol}",

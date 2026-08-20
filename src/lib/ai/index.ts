@@ -5,35 +5,36 @@ import { analyze as analyzeOpenRouter } from "./providers/openrouter";
 import { AnalyzeRequest } from "../types";
 import { UniversalAIRequest, UniversalAIResponse } from "./schema";
 import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
+import { applySignalQualification } from "../engines/SignalQualificationEngine";
 
 function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
-  // AI-supplied readiness/confidence remains authoritative. Do not infer a
-  // stronger trading state merely because more frames were captured.
   return result;
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
-  // Dual Model Split logic
-  // If useDualModel is ON, and this is the FINAL analyze request (not progressive),
-  // then we switch to the Reasoning Provider and strip all images.
-  if (req.useDualModel && !req.isProgressive && req.reasoningProvider && req.reasoningModel) {
+  const isFinalDual = !!req.useDualModel && !req.isProgressive;
+
+  // Final dual-model reasoning is deliberately a hot text-only path.
+  // The user's selected reasoning model is used directly.
+  if (isFinalDual && req.reasoningProvider && req.reasoningModel) {
     req.provider = req.reasoningProvider;
     req.model = req.reasoningModel;
-    
-    // Strip all visual context to save tokens and enforce text-only reasoning
+  }
+
+  if (isFinalDual) {
     req.imageBase64 = undefined;
     req.screenshots = [];
     req.macroTimeframeImage = undefined;
     req.confirmationTimeframeImage = undefined;
     req.structureTimeframeImage = undefined;
-    (req as any).primaryTimeframe = undefined;
+    req.primaryTimeframe = undefined;
   }
 
   const cap = PROVIDER_CAPABILITIES[req.provider];
   if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
 
-  const needsVision = !!req.imageBase64 || !!(req as any).screenshots?.length;
-  if (needsVision && !cap.vision && !req.useDualModel) {
+  const needsVision = !!req.imageBase64 || !!req.screenshots?.length || !!req.macroTimeframeImage || !!req.confirmationTimeframeImage || !!req.structureTimeframeImage;
+  if (needsVision && !cap.vision) {
     throw new Error(`AI_MODEL_NO_VISION: Selected AI model (${req.model}) does not support image analysis.`);
   }
 
@@ -49,8 +50,17 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     }
   }
 
+  const textReasoningContext = isFinalDual && !req.marketData
+    ? {
+        progressiveState: req.progressiveState || [],
+        partialBatch: (req as any).partialBatch || null,
+        marketHistorySummary: req.marketHistorySummary || null,
+        previousData: req.previousData || null,
+      }
+    : req.marketData;
+
   const universalReq: UniversalAIRequest = {
-    mode: req.marketDataMode === "visual_only" || !req.marketData ? "visual_only" : "api_data",
+    mode: textReasoningContext ? "api_data" : (req.marketDataMode === "visual_only" ? "visual_only" : "visual_only"),
     provider: req.provider,
     model: req.model,
     platform: req.platform || "Auto",
@@ -62,26 +72,28 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     selectedStrategies: req.selectedStrategies,
     strategyRules: req.strategyRules,
     visibleIndicators: req.visibleIndicators || [],
-    marketData: req.marketData,
+    marketData: textReasoningContext,
     previousAnalysis: req.previousData,
     isProgressive: req.isProgressive,
     progressiveState: req.progressiveState,
+    partialBatch: (req as any).partialBatch,
     marketHistorySummary: req.marketHistorySummary,
     macroTimeframe: (req as any).macroTimeframeImage,
     confirmationTimeframeImage: (req as any).confirmationTimeframeImage,
     structureTimeframe: (req as any).structureTimeframeImage,
   };
 
-  if ((req as any).screenshots && (req as any).screenshots.length > 0) {
+  // Only non-final requests are allowed to carry visual payloads.
+  if (!isFinalDual && req.screenshots?.length) {
     const maxImages = cap.maxImageCount || 1;
-    let limitedScreenshots = (req as any).screenshots;
+    let limitedScreenshots = req.screenshots;
 
     if (limitedScreenshots.length > maxImages) {
       if (maxImages === 1) {
         limitedScreenshots = [limitedScreenshots[limitedScreenshots.length - 1]];
       } else {
         const step = (limitedScreenshots.length - 1) / (maxImages - 1);
-        const sampled = [];
+        const sampled = [] as any[];
         for (let i = 0; i < maxImages - 1; i++) sampled.push(limitedScreenshots[Math.floor(i * step)]);
         sampled.push(limitedScreenshots[limitedScreenshots.length - 1]);
         limitedScreenshots = sampled;
@@ -105,7 +117,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
         base64: b64,
       };
     });
-  } else if (base64Data) {
+  } else if (!isFinalDual && base64Data) {
     if (req.previousData && req.previousData.screenshotBase64) {
       universalReq.screenshots = [
         { timeframe: req.previousData.primaryTimeframe || "Previous", mimeType: "image/jpeg", base64: req.previousData.screenshotBase64 },
@@ -125,6 +137,13 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
       case "openrouter": result = await analyzeOpenRouter(universalReq); break;
       default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
     }
+
+    if (isFinalDual) {
+      return normalizeAIObservationStatus(
+        applySignalQualification(result as any) as UniversalAIResponse
+      );
+    }
+
     return normalizeAIObservationStatus(result);
   } catch (error: any) {
     if (error.message?.includes("AI_ANALYSIS_INVALID")) throw error;

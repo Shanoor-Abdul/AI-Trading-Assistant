@@ -43,6 +43,7 @@ export const UniversalAIRequestSchema = z.object({
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
   marketHistorySummary: z.any().optional(),
+  partialBatch: z.any().optional(),
   riskContext: z.any().optional(),
 });
 
@@ -84,6 +85,9 @@ export const UniversalAIResponseSchema = z.object({
   bearishEvidence: z.array(z.string()).default([]),
   invalidationConditions: z.array(z.string()).default([]),
   confirmationStatus: z.enum(["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"]).optional(),
+  primaryTrend: z.string().optional(),
+  shortTermDirection: z.string().optional(),
+  structureTransition: z.enum(["CONTINUATION", "PULLBACK", "RECOVERY", "REVERSAL_DEVELOPING", "REVERSAL_CONFIRMED", "BREAKOUT", "FALSE_BREAKOUT", "RANGE", "CHOPPY"]).optional(),
 });
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;

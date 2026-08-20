@@ -2,13 +2,11 @@ import { create } from "zustand";
 import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation, Trend, Signal } from "@/lib/types";
 import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 
-// Trade history is synchronized by the dashboard's single initial loader and
-// explicit create/delete operations. Do not refetch the whole table after
-// every signal; doing so can race with deletes and resurrect stale rows.
-
+// Trade history is synchronized by the dashboard's single initial loader and explicit create/delete operations.
 export interface TradingState {
   isAnalyzing: boolean; setIsAnalyzing: (val: boolean) => void;
   isLiveObservationEnabled: boolean; setIsLiveObservationEnabled: (val: boolean) => void;
+  isLiveObservationPaused: boolean; setIsLiveObservationPaused: (val: boolean) => void;
   symbol: string; setSymbol: (val: string) => void;
   timeframe: string; setTimeframe: (val: string) => void;
   stream: MediaStream | null; setStream: (stream: MediaStream | null) => void;
@@ -23,17 +21,14 @@ export interface TradingState {
   explanation: string;
   capital: number; setCapital: (val: number) => void;
   riskPercent: number; setRiskPercent: (val: number) => void;
-  selectedProvider: string; selectedModel: string;
-  setSelectedModel: (provider: string, model: string) => void;
+  selectedProvider: string; selectedModel: string; setSelectedModel: (provider: string, model: string) => void;
   useDualModel: boolean; setUseDualModel: (val: boolean) => void;
-  selectedReasoningProvider: string; selectedReasoningModel: string;
-  setSelectedReasoningModel: (provider: string, model: string) => void;
+  selectedReasoningProvider: string; selectedReasoningModel: string; setSelectedReasoningModel: (provider: string, model: string) => void;
   selectedStrategies: string[]; setSelectedStrategies: (val: string[]) => void;
   observations: Observation[]; addObservation: (imageBase64: string) => void; clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE"; setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
   marketDataMode: "api" | "visual_only"; setMarketDataMode: (val: "api" | "visual_only") => void;
-  platform: string; setPlatform: (val: string) => void;
-  tradeDuration: string; setTradeDuration: (val: string) => void;
+  platform: string; setPlatform: (val: string) => void; tradeDuration: string; setTradeDuration: (val: string) => void;
   visibleIndicators: string[]; setVisibleIndicators: (val: string[]) => void;
   activeConnectionId: string | null; setActiveConnectionId: (val: string | null) => void;
   apiFailCount: number; incrementFailCount: () => void; resetFailCount: () => void;
@@ -44,8 +39,7 @@ export interface TradingState {
   progressiveAnalyses: ProgressiveAnalysisSummary[]; addProgressiveAnalysis: (summary: ProgressiveAnalysisSummary) => void;
   isProgressiveAnalyzing: boolean; setIsProgressiveAnalyzing: (val: boolean) => void;
   lastAnalyzedObservationIndex: number; setLastAnalyzedObservationIndex: (val: number) => void;
-  totalFramesCaptured: number; currentBatchId: number;
-  incrementTotalFrames: () => void; incrementBatchId: () => void;
+  totalFramesCaptured: number; currentBatchId: number; incrementTotalFrames: () => void; incrementBatchId: () => void;
   lastObservationTimestamp: number; setLastObservationTimestamp: (val: number) => void;
   visualChangeCount: number; incrementVisualChangeCount: () => void;
   clearProgressiveSession: () => void; resetFramesButKeepSession: () => void;
@@ -63,35 +57,10 @@ export interface TradingState {
   structureTimeframeCapturedAt: number | null; setStructureTimeframeCapturedAt: (val: number | null) => void;
 }
 
-const resetObservationState = () => ({
-  observations: [] as Observation[],
-  progressiveAnalyses: [] as ProgressiveAnalysisSummary[],
-  lastAnalyzedObservationIndex: -1,
-  totalFramesCaptured: 0,
-  currentBatchId: 1,
-  lastObservationTimestamp: 0,
-  aiReadiness: null as string | null,
-  aiEstimatedConfidence: null as string | null,
-  retryProgressiveAnalysis: false,
-  retryLoading: false,
-  lastFailedPendingCount: 0,
-  macroTimeframeImage: null as string | null,
-  macroTimeframeCapturedAt: null as number | null,
-  confirmationTimeframeImage: null as string | null,
-  confirmationTimeframeCapturedAt: null as number | null,
-  structureTimeframeImage: null as string | null,
-  structureTimeframeCapturedAt: null as number | null,
-});
-
+const resetObservationState = () => ({ observations: [] as Observation[], progressiveAnalyses: [] as ProgressiveAnalysisSummary[], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, currentBatchId: 1, lastObservationTimestamp: 0, aiReadiness: null as string | null, aiEstimatedConfidence: null as string | null, retryProgressiveAnalysis: false, retryLoading: false, lastFailedPendingCount: 0, macroTimeframeImage: null as string | null, macroTimeframeCapturedAt: null as number | null, confirmationTimeframeImage: null as string | null, confirmationTimeframeCapturedAt: null as number | null, structureTimeframeImage: null as string | null, structureTimeframeCapturedAt: null as number | null });
 type ClearAnalysisState = Pick<TradingState, "trend" | "signal" | "confidence" | "entryPrice" | "stopLoss" | "takeProfit" | "recommendedTimeframe" | "requestedIndicators" | "open" | "high" | "low" | "close" | "explanation">;
-
-const clearAnalysisState: ClearAnalysisState = {
-  trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
-  recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
-};
-
+const clearAnalysisState: ClearAnalysisState = { trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "" };
 const resetObservationSessionState = () => ({ ...resetObservationState(), ...clearAnalysisState });
-const invalidateProgressiveAnalyses = () => ({ ...resetObservationSessionState() });
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
