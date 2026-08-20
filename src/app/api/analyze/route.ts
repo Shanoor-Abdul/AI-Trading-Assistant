@@ -125,6 +125,17 @@ async function makeEphemeralPartialBatch(body: any, completed: any[]): Promise<a
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
+  // If this is a Progressive Analysis request (e.g., from progressiveAnalyzePOST or the client),
+  // it MUST use the Vision model to extract candle/momentum state. Route it to legacyRoute.
+  if (body?.isProgressive) {
+    const forwardedRequest = new NextRequest(req.url, {
+      method: "POST",
+      headers: req.headers,
+      body: JSON.stringify(body),
+    });
+    return legacyAnalyzePOST(forwardedRequest);
+  }
+
   // Dual OFF: Progressive Vision may create the ephemeral current partial batch;
   // the final decision itself is always local deterministic reasoning.
   if (!body?.useDualModel) {

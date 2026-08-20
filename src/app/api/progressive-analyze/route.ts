@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
 
     const normalizedBody = {
       ...body,
+      isProgressive: true,
       screenshots:
         Array.isArray(body?.screenshots) && body.screenshots.length > 0
           ? body.screenshots
