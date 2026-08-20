@@ -1,22 +1,15 @@
 import { UniversalAIResponseSchema, UniversalAIResponse } from "./schema";
 
 export function extractJSON(text: string): any {
-  // First, check if there is a User Safety refusal from free models
   if (text.includes("User Safety:")) {
     throw new Error(`The selected AI model's safety filter blocked the analysis or failed to output JSON. Raw: ${text}`);
   }
 
-  // Try to find Markdown JSON blocks first
   const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
   if (markdownMatch && markdownMatch[1]) {
-    try {
-      return JSON.parse(markdownMatch[1]);
-    } catch (e) {
-      // Fall through to standard extraction
-    }
+    try { return JSON.parse(markdownMatch[1]); } catch { /* continue */ }
   }
 
-  // Extract from the first '{' to the last '}'
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error(`No JSON payload found in AI response. Raw output: ${text.substring(0, 200)}...`);
@@ -33,7 +26,6 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
   try {
     const rawObj = extractJSON(rawText);
 
-    // Normalization mapping (handling snake_case vs camelCase, or slight deviations)
     const normalized = {
       trend: rawObj.trend,
       signal: rawObj.signal,
@@ -54,7 +46,9 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       riskDecision: rawObj.riskDecision || rawObj.risk_decision || "UNSURE",
       reasoning: rawObj.reasoning || rawObj.reason || "No reasoning provided",
       dataConfidence: rawObj.dataConfidence || rawObj.data_confidence || rawObj.confidence || 0,
+      riskReward: rawObj.riskReward ?? rawObj.risk_reward,
       marketState: rawObj.marketState || rawObj.market_state,
+      unifiedMarketData: rawObj.unifiedMarketData || rawObj.unified_market_data,
       changesFromPrevious: rawObj.changesFromPrevious || rawObj.changes_from_previous,
       momentum: rawObj.momentum,
       candlestickBehavior: rawObj.candlestickBehavior || rawObj.candlestick_behavior,
@@ -74,8 +68,6 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
   } catch (error) {
     console.error("[AI Normalization/Validation Error]", error);
 
-    // Safe NO_TRADE fallback. Keep all AI evidence fields explicit so the
-    // returned object always satisfies UniversalAIResponse at compile time.
     return {
       trend: "Sideways",
       signal: "NO_TRADE",
@@ -110,6 +102,8 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       evidenceScore: 0,
       signalQuality: "AVOID",
       confirmationStatus: "UNCLEAR",
+      unifiedMarketData: undefined,
+      riskReward: undefined,
     };
   }
 }
