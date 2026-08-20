@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateFastSignal } from "@/lib/engines/FastSignalEngine";
 import { POST as legacyAnalyzePOST } from "./legacyRoute";
+import { POST as progressiveAnalyzePOST } from "../progressive-analyze/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,18 +62,91 @@ function buildFastResponse(body: any, result: ReturnType<typeof generateFastSign
   };
 }
 
+async function makeEphemeralPartialBatch(body: any, completed: any[]): Promise<any | null> {
+  if (body?.partialBatch) return body.partialBatch;
+  const screenshots = Array.isArray(body?.screenshots) ? body.screenshots : [];
+  if (!screenshots.length) return null;
+
+  // The dashboard's final request can contain a time-decayed selection of frames.
+  // The newest frames are the current observation window; only those are sent to
+  // Progressive API. Fast Signal itself never sees images and never calls a model.
+  const currentFrames = screenshots.slice(-Math.min(5, screenshots.length));
+  const progressiveBody = {
+    symbol: body.symbol,
+    timeframe: body.timeframe,
+    platform: body.platform,
+    tradeDuration: body.tradeDuration,
+    provider: body.provider,
+    model: body.model,
+    marketDataMode: body.marketDataMode || "visual_only",
+    visibleIndicators: body.visibleIndicators || [],
+    selectedStrategies: body.selectedStrategies || [],
+    activeConnectionId: body.activeConnectionId || null,
+    isProgressive: true,
+    progressiveState: completed,
+    primaryTimeframe: {
+      timeframe: body.timeframe,
+      screenshots: currentFrames,
+    },
+  };
+
+  const request = new NextRequest(body.__progressiveUrl || "http://localhost/api/progressive-analyze", {
+    method: "POST",
+    headers: body.__headers || { "Content-Type": "application/json" },
+    body: JSON.stringify(progressiveBody),
+  });
+  const response = await progressiveAnalyzePOST(request);
+  if (!response.ok) return null;
+  const data: any = await response.json();
+  if (!data?.marketState && !data?.unifiedMarketData) return null;
+
+  return {
+    analysisId: data.analysisId || crypto.randomUUID(),
+    batchId: completed.length + 1,
+    status: "PARTIAL",
+    frameStart: null,
+    frameEnd: null,
+    frameCount: currentFrames.length,
+    timestamp: new Date().toISOString(),
+    trend: data.trend || "Unknown",
+    momentum: data.momentum || "Unknown",
+    marketState: data.marketState || "Unknown",
+    candlestickBehavior: data.candlestickBehavior || "Unknown",
+    indicatorState: data.indicatorState || {},
+    strategyConsensus: data.strategyConsensus || "Unknown",
+    strategyConflicts: data.strategyConflicts || [],
+    changesFromPrevious: data.changesFromPrevious || "None",
+    confidence: data.confidence || 0,
+    unifiedMarketData: data.unifiedMarketData,
+    source: "partial_progressive",
+  };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  // Dual OFF: no screenshots, no provider call. Progressive JSON is the sole input.
+  // Dual OFF: Progressive Vision may create the ephemeral current partial batch;
+  // the final decision itself is always local deterministic reasoning.
   if (!body?.useDualModel) {
     if (!body?.symbol || !body?.timeframe) {
       return NextResponse.json({ error: "symbol and timeframe are required" }, { status: 400 });
     }
     const completed = getBatches(body.progressive);
-    const partialBatch = body.partialBatch || null;
-    const context = partialBatch ? [...completed, partialBatch] : completed;
+    let partialBatch = body.partialBatch || null;
 
+    if (!partialBatch && Array.isArray(body.screenshots) && body.screenshots.length) {
+      try {
+        partialBatch = await makeEphemeralPartialBatch({
+          ...body,
+          __progressiveUrl: new URL("../progressive-analyze", req.url).toString(),
+          __headers: req.headers,
+        }, completed);
+      } catch (error) {
+        console.warn("[Fast flow] Current partial Progressive extraction failed:", error);
+      }
+    }
+
+    const context = partialBatch ? [...completed, partialBatch] : completed;
     if (!context.length && !body.market) {
       return NextResponse.json({ error: "No progressive JSON evidence available. Run Progressive Analysis first.", signal: "WAIT", confidence: 0 }, { status: 400 });
     }
@@ -90,10 +164,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(buildFastResponse(body, result, completed.length, partialBatch));
   }
 
-  // Dual ON: the final reasoning model receives structured JSON only. The legacy
-  // route is retained for all existing market-data/risk/persistence behavior.
-  // Inject the ephemeral partial batch into progressiveState so it cannot be lost
-  // even though the legacy route predates the explicit partialBatch field.
+  // Dual ON: final reasoning receives structured JSON only. The legacy route is
+  // retained for existing market-data/risk/persistence behavior; the ephemeral
+  // partial batch is injected into progressiveState and images are stripped.
   const completed = getBatches(body.progressiveState);
   const partialBatch = body.partialBatch || null;
   const mergedProgressiveState = partialBatch ? [...completed, partialBatch] : completed;
