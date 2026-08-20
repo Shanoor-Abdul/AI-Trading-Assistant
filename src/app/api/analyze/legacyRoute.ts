@@ -759,9 +759,7 @@ export async function POST(
     }
     
     try {
-      const fs = require('fs');
       const logData = `\n\n[${new Date().toISOString()}] === INCOMING ANALYZE REQUEST ===\n${JSON.stringify({...body, imageBase64: body.imageBase64 ? "base64..." : undefined, screenshots: body.screenshots ? `Array(${body.screenshots.length})` : undefined}, null, 2)}`;
-      fs.appendFileSync('api-payloads.log', logData);
     } catch (e) {
       console.error("Failed to write log", e);
     }

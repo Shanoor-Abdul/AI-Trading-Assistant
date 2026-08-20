@@ -4,7 +4,7 @@ import { analyze as analyzeGroq } from "./providers/groq";
 import { analyze as analyzeOpenRouter } from "./providers/openrouter";
 import { AnalyzeRequest } from "../types";
 import { UniversalAIRequest, UniversalAIResponse } from "./schema";
-import { PROVIDER_CAPABILITIES } from "./providerCapabilities";
+import { getModelCapabilities } from "./providerCapabilities";
 import { applySignalQualification } from "../engines/SignalQualificationEngine";
 
 function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIResponse {
@@ -30,7 +30,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     req.primaryTimeframe = undefined;
   }
 
-  const cap = PROVIDER_CAPABILITIES[req.provider];
+  const cap = getModelCapabilities(req.provider, req.model || "");
   if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
 
   const needsVision = !!req.imageBase64 || !!req.screenshots?.length || !!req.macroTimeframeImage || !!req.confirmationTimeframeImage || !!req.structureTimeframeImage;
