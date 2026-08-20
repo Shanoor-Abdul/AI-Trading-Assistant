@@ -1,0 +1,146 @@
+name: Apply main-enhance architecture
+
+on:
+  push:
+    branches:
+      - feature/main-enhance
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-build:
+    if: ${{ !contains(github.event.head_commit.message, 'feat: apply strict progressive fast-signal architecture wiring') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: feature/main-enhance
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Patch strict dual/fast flow
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          page_path = Path('src/app/page.tsx')
+          page = page_path.read_text()
+
+          old_condition = 'if (storeState.isLiveObservationEnabled && storeState.useDualModel && unanalyzedCount > 0 && unanalyzedCount < 20) {'
+          new_condition = 'if (storeState.isLiveObservationEnabled && unanalyzedCount > 0 && unanalyzedCount < 20) {'
+          if old_condition not in page:
+              raise SystemExit('Expected partial-batch condition not found')
+          page = page.replace(old_condition, new_condition, 1)
+
+          marker = '    const reqBody: any = {'
+          req_start = page.index(marker, page.index('const handleAnalyzeSnapshot'))
+          visual_start = page.index('      if (useTradingStore.getState().marketDataMode === "visual_only") {', req_start)
+          fetch_start = page.index('      const res = await fetch("/api/analyze"', visual_start)
+
+          replacement = '''      const finalStore = useTradingStore.getState();
+
+          // FINAL REQUESTS NEVER CARRY SCREENSHOTS.
+          // Dual ON -> text/JSON reasoning model.
+          // Dual OFF -> local FastSignalEngine over progressive JSON.
+          const endpoint = finalStore.useDualModel ? "/api/analyze" : "/api/fast-signal";
+          const finalPayload = finalStore.useDualModel
+            ? reqBody
+            : {
+                symbol: finalStore.symbol,
+                timeframe: finalStore.timeframe,
+                platform: finalStore.platform,
+                tradeDuration: finalStore.tradeDuration,
+                marketDataMode: finalStore.marketDataMode,
+                selectedStrategies: finalStore.selectedStrategies,
+                visibleIndicators: finalStore.visibleIndicators,
+                progressive: finalStore.progressiveAnalyses,
+                partialBatch: partialBatchData,
+              };
+
+          if (unanalyzedCount > 0 && unanalyzedCount < 20 && !partialBatchData) {
+            toast.error("Current frames could not be converted to a partial progressive batch. Final signal was blocked.");
+            setIsFetchingAnalysis(false);
+            return;
+          }
+
+'''
+          page = page[:visual_start] + replacement + page[fetch_start:]
+          page = page.replace('const res = await fetch("/api/analyze"', 'const res = await fetch(endpoint', 1)
+          page = page.replace('body: JSON.stringify(reqBody),', 'body: JSON.stringify(finalPayload),', 1)
+
+          old_reset = '''        // Reset the visual frames back to 0 so the next cycle starts fresh,
+        // but KEEP the progressive state (the AI's previous thoughts).
+        if (useTradingStore.getState().marketDataMode === "visual_only") {
+          useTradingStore.getState().resetFramesButKeepSession();
+        }
+'''
+          new_reset = '''        // Partial manual analysis is non-destructive: keep the observation loop
+        // and frame count intact. A later 20-frame boundary will still create the
+        // next completed progressive batch.
+        // Only reset after a completed 20-frame cycle has already been consumed.
+        if (useTradingStore.getState().marketDataMode === "visual_only" && unanalyzedCount >= 20) {
+          useTradingStore.getState().resetFramesButKeepSession();
+        }
+'''
+          if old_reset in page:
+              page = page.replace(old_reset, new_reset, 1)
+
+          page_path.write_text(page)
+
+          route_path = Path('src/app/api/analyze/route.ts')
+          route = route_path.read_text()
+          old = '      progressiveState: body.progressiveState,\n'
+          new = '      progressiveState: body.progressiveState,\n      partialBatch: (body as any).partialBatch,\n      marketHistorySummary: body.marketHistorySummary,\n'
+          if old not in route:
+              raise SystemExit('Expected analyze progressiveState mapping not found')
+          route = route.replace(old, new, 1)
+          route_path.write_text(route)
+
+          fast_path = Path('src/app/api/fast-signal/route.ts')
+          fast = fast_path.read_text()
+          start = fast.index('    let analysisContext = [...completedBatches];')
+          end = fast.index('    const result = generateFastSignal({', start)
+          fast_replacement = '''    // Fast Signal is strictly text/JSON only. Image -> JSON conversion must
+    // already have happened in Progressive API. The current partial batch is
+    // supplied by the caller and is never converted here.
+    const partialBatch = body.partialBatch || null;
+    const analysisContext = partialBatch
+      ? [...completedBatches, partialBatch]
+      : completedBatches;
+
+'''
+          fast = fast[:start] + fast_replacement + fast[end:]
+          fast = fast.replace('      progressive: analysisContext,\n      performance: body.performance,', '      progressive: analysisContext,\n      market: body.market,\n      performance: body.performance,', 1)
+          fast = fast.replace('      partialBatch,\n      reasoningMetrics:', '      partialBatch,\n      currentFrameCount: result.currentFrameCount,\n      transition: result.transition,\n      reasoningMetrics:', 1)
+          fast = fast.replace('      latencyMode: partialBatch ? "PROGRESSIVE_PARTIAL_THEN_LOCAL_TEXT" : result.latencyMode,', '      latencyMode: result.latencyMode,', 1)
+          fast_path.write_text(fast)
+
+      - name: Build and typecheck
+        run: npm run build
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/page.tsx src/app/api/analyze/route.ts src/app/api/fast-signal/route.ts
+          git commit -m "feat: apply strict progressive fast-signal architecture wiring"
+          git push origin feature/main-enhance
+
+      - name: Remove one-shot workflow
+        if: success()
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-main-enhance.yml
+          git commit -m "chore: remove one-shot architecture patch workflow"
+          git push origin feature/main-enhance
