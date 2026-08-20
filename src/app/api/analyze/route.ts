@@ -219,6 +219,7 @@ async function fetchMarketData(
     const [
       ohlcvResult,
       tickerResult,
+      orderBookResult,
       ohlcvConfResult,
       ohlcvTrendResult,
     ] = await Promise.allSettled([
@@ -229,6 +230,10 @@ async function fetchMarketData(
       ),
 
       provider.fetchTicker(symbol),
+
+      provider.fetchOrderBook 
+        ? provider.fetchOrderBook(symbol, 20) 
+        : Promise.resolve({ bids: [], asks: [] }),
 
       confirmationTimeframe &&
       confirmationTimeframe !== primaryTimeframe
@@ -286,9 +291,15 @@ async function fetchMarketData(
     const indData =
       IndicatorEngine.calculate(ohlcv);
 
+    const orderBook = 
+      orderBookResult.status === "fulfilled" 
+        ? orderBookResult.value 
+        : { bids: [], asks: [] };
+
     marketData = {
       lastPrice: ticker.last,
       recentCandles: ohlcv.slice(-5),
+      orderBook,
       multiTimeframe: {} as Record<string, any>,
     };
 

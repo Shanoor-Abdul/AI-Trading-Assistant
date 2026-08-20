@@ -1,0 +1,19 @@
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.keystore
+*.jks
+.env
+.env.*
+!.env.example
+
+# Custom ignores
+TempRN/
+android/app/.cxx/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+android/startup-log.txt
+package-lock.json

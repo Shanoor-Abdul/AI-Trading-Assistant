@@ -17,9 +17,14 @@ export interface Ticker {
   volume?: number;
 }
 
+export interface OrderBook {
+  bids: [number, number][]; // [price, volume]
+  asks: [number, number][];
+}
+
 export interface MarketProvider {
   name: string;
   fetchOHLCV(symbol: string, timeframe: string, limit?: number): Promise<OHLCV[]>;
   fetchTicker(symbol: string): Promise<Ticker>;
-  fetchOrderBook?(symbol: string): Promise<any>;
+  fetchOrderBook?(symbol: string, limit?: number): Promise<OrderBook>;
 }

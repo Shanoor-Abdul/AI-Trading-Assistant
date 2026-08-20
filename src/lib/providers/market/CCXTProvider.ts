@@ -87,4 +87,21 @@ export class CCXTProvider implements MarketProvider {
       throw error;
     }
   }
+
+  async fetchOrderBook(symbol: string, limit: number = 20): Promise<any> {
+    try {
+      const normalizedSymbol = symbol.includes('/') ? symbol : symbol.replace(/([A-Z]+)(USDT|USD|BTC|ETH)$/, '$1/$2');
+      
+      const orderBook = await this.exchange.fetchOrderBook(normalizedSymbol, limit);
+      
+      return {
+        bids: orderBook.bids,
+        asks: orderBook.asks
+      };
+    } catch (error: any) {
+      console.error(`CCXT fetchOrderBook Error [${this.name}]:`, error.message);
+      // Return empty order book instead of throwing to prevent crashing the whole pipeline
+      return { bids: [], asks: [] };
+    }
+  }
 }
