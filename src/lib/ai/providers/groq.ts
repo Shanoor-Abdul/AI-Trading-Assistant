@@ -15,7 +15,8 @@ const FAST_TEXT_MODEL = "llama-3.1-8b-instant";
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
   const currentModel = req.model || FAST_TEXT_MODEL;
-  const isFastText = currentModel === FAST_TEXT_MODEL;
+  // If there are no images attached, this is a fast text-to-text reasoning pass
+  const isFastText = !req.screenshot && (!req.screenshots || req.screenshots.length === 0);
   const prompt = isFastText
     ? buildFastTextSignalPrompt(req)
     : buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
