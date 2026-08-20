@@ -23,14 +23,14 @@ LATEST PROGRESSIVE OBSERVATIONS:
 ${JSON.stringify(progressive)}
 
 DECISION RULES:
-- Compare bullish and bearish evidence.
-- Require multiple independent confirmations for BUY/SELL.
-- If evidence conflicts, is stale, or is insufficient, return WAIT.
+- Use Temporal Weighting: The newest batch (especially partialBatch) holds the highest weight for immediate price action.
+- Evaluate Primary Trend vs Short-Term Direction to determine the Transition State (e.g., Bearish trend + Bullish Short-Term = RECOVERY).
+- Require multiple independent confirmations (Structure, Momentum, Indicators) for a trade.
+- If evidence conflicts (e.g. Trend vs Momentum), or is insufficient, return WAIT.
 - Never invent prices, indicators, volume, support/resistance, or market structure.
-- Prefer the newest evidence over stale conclusions.
-- For a fixed-time trade, judge direction for the requested duration, but still return WAIT when evidence is weak.
+- Prefer the newest evidence over stale conclusions for entry timing, but respect higher-timeframe trends.
 
 Return ONLY compact JSON:
-{"trend":"Bullish|Bearish|Sideways","signal":"BUY|SELL|WAIT|UNSURE|NO_TRADE","confidence":0,"dataConfidence":0,"signalQuality":"GOOD|FAIR|POOR|AVOID","readiness":"READY|GOOD|FAIR|NOT READY","strategyConsensus":"Bullish|Bearish|Neutral|Mixed","marketState":"","momentum":"","bullishEvidence":[],"bearishEvidence":[],"invalidationConditions":[],"explanation":""}
+{"trend":"Bullish|Bearish|Sideways","primaryTrend":"Bullish|Bearish|Sideways","shortTermDirection":"Bullish|Bearish|Sideways","structureTransition":"CONTINUATION|PULLBACK|RECOVERY|REVERSAL_DEVELOPING|REVERSAL_CONFIRMED|BREAKOUT|FALSE_BREAKOUT|RANGE|CHOPPY","signal":"BUY|SELL|WAIT|UNSURE|NO_TRADE","confidence":0,"dataConfidence":0,"signalQuality":"GOOD|FAIR|POOR|AVOID","readiness":"READY|GOOD|FAIR|NOT READY","strategyConsensus":"Bullish|Bearish|Neutral|Mixed","marketState":"","momentum":"","bullishEvidence":[],"bearishEvidence":[],"invalidationConditions":[],"explanation":""}
 `;
 }
