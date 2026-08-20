@@ -1351,7 +1351,12 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4">
                   <span>4H:</span>
                   {useTradingStore.getState().macroTimeframeImage ? (
-                    <span className="text-green-400">✓ Captured</span>
+                    <div className="flex items-center">
+                      <span className="text-green-400">✔ Captured</span>
+                      {useTradingStore.getState().macroTimeframeCapturedAt && (
+                        <MTFCountdown capturedAt={useTradingStore.getState().macroTimeframeCapturedAt!} timeframe="4h" onReset={() => useTradingStore.getState().setMacroTimeframeImage(null)} />
+                      )}
+                    </div>
                   ) : (
                     <button onClick={() => handleCaptureMTF("4h")} className="text-amber-500 hover:text-amber-400 underline">Capture 4H</button>
                   )}
@@ -1359,7 +1364,12 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4">
                   <span>1H:</span>
                   {useTradingStore.getState().confirmationTimeframeImage ? (
-                    <span className="text-green-400">✓ Captured</span>
+                    <div className="flex items-center">
+                      <span className="text-green-400">✔ Captured</span>
+                      {useTradingStore.getState().confirmationTimeframeCapturedAt && (
+                        <MTFCountdown capturedAt={useTradingStore.getState().confirmationTimeframeCapturedAt!} timeframe="1h" onReset={() => useTradingStore.getState().setConfirmationTimeframeImage(null)} />
+                      )}
+                    </div>
                   ) : (
                     <button onClick={() => handleCaptureMTF("1h")} className="text-amber-500 hover:text-amber-400 underline">Capture 1H</button>
                   )}
@@ -1367,7 +1377,12 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4">
                   <span>15M:</span>
                   {useTradingStore.getState().structureTimeframeImage ? (
-                    <span className="text-green-400">✓ Captured</span>
+                    <div className="flex items-center">
+                      <span className="text-green-400">✔ Captured</span>
+                      {useTradingStore.getState().structureTimeframeCapturedAt && (
+                        <MTFCountdown capturedAt={useTradingStore.getState().structureTimeframeCapturedAt!} timeframe="15m" onReset={() => useTradingStore.getState().setStructureTimeframeImage(null)} />
+                      )}
+                    </div>
                   ) : (
                     <button onClick={() => handleCaptureMTF("15m")} className="text-amber-500 hover:text-amber-400 underline">Capture 15M</button>
                   )}

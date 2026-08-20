@@ -6,6 +6,7 @@ import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
 export interface TradingState {
   isAnalyzing: boolean; setIsAnalyzing: (val: boolean) => void;
   isLiveObservationEnabled: boolean; setIsLiveObservationEnabled: (val: boolean) => void;
+  isLiveObservationPaused: boolean; setIsLiveObservationPaused: (val: boolean) => void;
   symbol: string; setSymbol: (val: string) => void;
   timeframe: string; setTimeframe: (val: string) => void;
   stream: MediaStream | null; setStream: (stream: MediaStream | null) => void;
@@ -59,8 +60,10 @@ const clearAnalysisState: ClearAnalysisState = { trend: null, signal: null, conf
 const resetObservationSessionState = () => ({ ...resetObservationState(), ...clearAnalysisState });
 
 export const useTradingStore = create<TradingState>((set, get) => ({
-  isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }), isLiveObservationEnabled: false, setIsLiveObservationEnabled: (val) => set({ isLiveObservationEnabled: val }),
-  symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }), timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
+  isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
+  isLiveObservationEnabled: false, setIsLiveObservationEnabled: (val) => set({ isLiveObservationEnabled: val }),
+  isLiveObservationPaused: false, setIsLiveObservationPaused: (val) => set({ isLiveObservationPaused: val }),
+  symbol: "BTCUSDT", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }), timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }), lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }), isFetchingAnalysis: false, setIsFetchingAnalysis: (val) => set((state) => val ? { ...state, isFetchingAnalysis: true, ...clearAnalysisState } : { isFetchingAnalysis: false }),
   trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null, recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
   capital: 1000, setCapital: (val) => set({ capital: val }), riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }), selectedProvider: "gemini", selectedModel: "gemini-2.0-flash", setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model }),
