@@ -72,6 +72,32 @@ import { SettingsDialog } from "@/components/SettingsDialog";
 import { calculateExpectedFrames } from "@/lib/observation/calculation";
 import { createObservationSessionKey } from "@/lib/observation/session";
 
+
+function MTFCountdown({ capturedAt, timeframe, onReset }: { capturedAt: number; timeframe: string; onReset: () => void }) {
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - capturedAt;
+      const total = timeframe === "4h" ? 4 * 60 * 60 * 1000 : timeframe === "1h" ? 60 * 60 * 1000 : 15 * 60 * 1000;
+      const remaining = Math.max(0, total - elapsed);
+      if (remaining === 0) {
+        setTimeLeft("Ready");
+      } else {
+        const m = Math.floor(remaining / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        setTimeLeft(`${m}:${s.toString().padStart(2, '0')}`);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [capturedAt, timeframe]);
+
+  if (timeLeft === "Ready") {
+    return <button onClick={onReset} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>;
+  }
+  return <span className="text-[9px] text-zinc-500 ml-2">({timeLeft})</span>;
+}
+
 export default function Dashboard() {
   const {
     isAnalyzing,
