@@ -27,6 +27,9 @@ export interface MobileState {
   pendingUnsureRequest: boolean;
   requestedTimeframe: string | null;
   previousAnalysisData: any | null;
+  visualHistory: MobileVisualObservation[];
+  addVisualObservation: (obs: MobileVisualObservation) => void;
+  clearVisualHistory: () => void;
   setField: (field: keyof MobileState, value: any) => void;
   clearAnalysis: () => void;
   resetAll: () => void;
@@ -53,6 +56,13 @@ export const useMobileStore = create<MobileState>((set) => ({
   pendingUnsureRequest: false,
   requestedTimeframe: null,
   previousAnalysisData: null,
+  visualHistory: [],
+
+  addVisualObservation: (obs) => set((state) => ({
+    visualHistory: appendMobileObservation(state.visualHistory, obs)
+  })),
+
+  clearVisualHistory: () => set({ visualHistory: [] }),
 
   setField: (field, value) =>
     set((state) => {

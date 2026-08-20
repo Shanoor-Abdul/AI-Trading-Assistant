@@ -248,9 +248,7 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
 
   return {
     trend,
-    primaryTrend: primaryTrend === "bull" ? "Bullish" : primaryTrend === "bear" ? "Bearish" : "Sideways",
-    shortTermDirection: shortTermDirection === "bull" ? "Bullish" : shortTermDirection === "bear" ? "Bearish" : "Sideways",
-    structureTransition,
+    
     signal,
     confidence,
     dataConfidence: 85,
@@ -270,7 +268,7 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     latencyMode: "LOCAL_TEXT",
     generatedAt: started,
     evidenceScore,
-    marketRegime: ["CONTINUATION", "RECOVERY"].includes(structureTransition) ? "TRENDING_UP" : ["CONTINUATION", "PULLBACK"].includes(structureTransition) ? "TRENDING_DOWN" : "RANGING",
+    marketRegime: ["CONTINUATION", "RECOVERY"].includes(temporal.transition) ? "TRENDING_UP" : ["CONTINUATION", "PULLBACK"].includes(temporal.transition) ? "TRENDING_DOWN" : "RANGING",
     selectedStrategy: "Temporal Validation Engine",
     riskReward,
     transition: temporal.transition,

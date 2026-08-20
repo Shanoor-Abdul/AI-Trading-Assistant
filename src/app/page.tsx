@@ -100,6 +100,8 @@ function MTFCountdown({ capturedAt, timeframe, onReset }: { capturedAt: number; 
 }
 
 export default function Dashboard() {
+  const previousRawFrameRef = useRef<ImageData | null>(null);
+  const pendingLiveObservationRef = useRef<boolean>(false);
   const {
     isAnalyzing,
     setIsAnalyzing,
@@ -321,68 +323,54 @@ export default function Dashboard() {
     isLiveObservationPaused,
     setIsLiveObservationPaused, observationFrequency]);
 
-  // Background Screen Capture: sample the shared screen every heartbeat.
-  // The browser watches every second, but AI is called only when the raw chart
-  // image changes meaningfully. The watermark is added after change detection.
+  // Background Screen Capture
   useEffect(() => {
     if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
-
-    // We intentionally do not stop capturing to maintain a continuous observation circle.
 
     const captureObservation = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (video.videoWidth === 0) return;
-
-      // Ensure we maintain a continuous circle
+      if (!video || !canvas || video.videoWidth === 0) return;
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // Compare the clean screen, before the timestamp watermark is added.
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Add reference watermark for AI validation
       const state = useTradingStore.getState();
-      if (changed) {
-        state.incrementVisualChangeCount();
-      }
-
+      
       const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
       const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
 
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
       ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
 
-      ctx.fillStyle = "#4ade80"; // green-400
+      ctx.fillStyle = "#4ade80"; 
       ctx.font = "bold 18px Arial";
       ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
 
-      ctx.fillStyle = "#e4e4e7"; // zinc-200
+      ctx.fillStyle = "#e4e4e7"; 
       ctx.font = "16px Arial";
       ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
 
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
       state.addObservation(imageBase64);
-
-      if (changed) {
-        void observeLatestFrame(imageBase64);
-      }
+      state.incrementVisualChangeCount();
     };
 
-    const initialTimer = setTimeout(captureObservation, 2000); // 2s after start
+    const initialTimer = setTimeout(captureObservation, 2000); 
     const intervalTimer = setInterval(
       captureObservation,
-      observationFrequency * 1000,
+      observationFrequency * 1000
     );
 
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(intervalTimer);
       previousRawFrameRef.current = null;
-      pendingLiveObservationRef.current = null;
+      pendingLiveObservationRef.current = false;
     };
   }, [
     stream,

@@ -65,6 +65,7 @@ const resetObservationSessionState = () => ({ ...resetObservationState(), ...cle
 export const useTradingStore = create<TradingState>((set, get) => ({
   isAnalyzing: false, setIsAnalyzing: (val) => set({ isAnalyzing: val }),
   isLiveObservationEnabled: false, setIsLiveObservationEnabled: (val) => set({ isLiveObservationEnabled: val }),
+  isLiveObservationPaused: false, setIsLiveObservationPaused: (val) => set({ isLiveObservationPaused: val }),
   symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }),
   timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
@@ -169,6 +170,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
           exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
           riskDecision: (data as any).riskDecision, reasoning: (data as any).reasoning, dataConfidence: (data as any).dataConfidence,
+          readiness: (data as any).readiness || "NOT READY",
         };
         newState.tradeHistory = [historyEntry, ...state.tradeHistory];
         newState.tradeHistoryLoaded = true;
