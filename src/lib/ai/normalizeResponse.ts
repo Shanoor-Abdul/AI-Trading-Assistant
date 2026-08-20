@@ -5,21 +5,35 @@ export function extractJSON(text: string): any {
     throw new Error(`The selected AI model's safety filter blocked the analysis or failed to output JSON. Raw: ${text}`);
   }
 
+  // 1. Try strict JSON parse first
+  try {
+    return JSON.parse(text);
+  } catch { /* continue */ }
+
+  // 2. Try Markdown fenced JSON
   const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
   if (markdownMatch && markdownMatch[1]) {
     try { return JSON.parse(markdownMatch[1]); } catch { /* continue */ }
   }
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  // 3. Try to locate first { and last } (more robust than greedy matching)
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
     throw new Error(`No JSON payload found in AI response. Raw output: ${text.substring(0, 200)}...`);
   }
 
-  const cleanJson = jsonMatch[0]
+  const jsonSubset = text.substring(firstBrace, lastBrace + 1);
+  const cleanJson = jsonSubset
     .replace(/\"\.\s*\"/g, '", "')
     .replace(/\\n/g, "\\\\n");
 
-  return JSON.parse(cleanJson);
+  try {
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    throw new Error(`JSON extracted but failed to parse: ${err instanceof Error ? err.message : "Unknown error"}. Raw: ${jsonSubset.substring(0, 200)}...`);
+  }
 }
 
 export function normalizeResponse(rawText: string, defaultOverrides?: Partial<UniversalAIResponse>): UniversalAIResponse {

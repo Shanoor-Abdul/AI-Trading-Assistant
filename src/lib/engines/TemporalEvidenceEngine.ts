@@ -181,7 +181,7 @@ export function analyzeTemporalEvidence(progressive: any): TemporalState {
   const previousTrend = direction(latestBatch?.trend);
   const currentRegimeText = text(currentObservation?.marketRegime ?? currentObservation?.regime ?? latestBatch?.marketRegime);
 
-  let transition: TemporalState["transition"] = "NONE";
+  let transition = "NONE" as TemporalState["transition"];
   if (currentDirection !== "neutral" && previousDirection !== "neutral" && currentDirection === previousDirection) {
     transition = "CONTINUATION";
   } else if (previousTrend !== "neutral" && currentDirection !== "neutral" && previousTrend !== currentDirection) {

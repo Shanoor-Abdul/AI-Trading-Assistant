@@ -19,7 +19,6 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   try {
     try {
       const logData = `\n\n[${new Date().toISOString()}] === OPENROUTER OUTGOING ===\n${JSON.stringify({...req, screenshot: req.screenshot ? 'base64...' : undefined, screenshots: req.screenshots ? req.screenshots.length + ' images' : undefined}, null, 2)}`;
-      fs.appendFileSync('api-payloads.log', logData);
     } catch (e) {}
 
     const messagesContent: any[] = [{ type: "text", text: prompt }];

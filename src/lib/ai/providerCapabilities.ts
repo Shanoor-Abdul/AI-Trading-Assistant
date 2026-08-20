@@ -1,3 +1,5 @@
+
+
 export interface AIProviderCapability {
   vision: boolean;
   structuredOutput: boolean;
@@ -5,29 +7,35 @@ export interface AIProviderCapability {
   maxOutputTokens: number;
 }
 
-export const PROVIDER_CAPABILITIES: Record<string, AIProviderCapability> = {
-  "gemini": {
-    vision: true,
-    structuredOutput: true,
-    maxImageCount: 20,
-    maxOutputTokens: 8192
-  },
-  "openai": {
-    vision: true,
-    structuredOutput: true,
-    maxImageCount: 1, // Let's restrict to 1 for cost/simplicity
-    maxOutputTokens: 4096
-  },
-  "groq": {
-    vision: true,
-    structuredOutput: true,
-    maxImageCount: 1,
-    maxOutputTokens: 4096
-  },
-  "openrouter": {
-    vision: true, // depends on model, but we assume true for the vision models we list
-    structuredOutput: false, // OpenRouter doesn't uniformly support strict JSON schema
-    maxImageCount: 1,
-    maxOutputTokens: 4096
+export function getModelCapabilities(provider: string, model: string): AIProviderCapability {
+  const p = provider.toLowerCase();
+  const m = (model || "").toLowerCase();
+
+  if (p === "gemini") {
+    return { vision: true, structuredOutput: true, maxImageCount: 20, maxOutputTokens: 8192 };
   }
-};
+  
+  if (p === "openai") {
+    const isVision = m.includes("vision") || m.includes("gpt-4o");
+    return { vision: isVision, structuredOutput: true, maxImageCount: 1, maxOutputTokens: 4096 };
+  }
+  
+  if (p === "groq") {
+    const isVision = m.includes("vision");
+    return { vision: isVision, structuredOutput: true, maxImageCount: 1, maxOutputTokens: 4096 };
+  }
+  
+  if (p === "openrouter") {
+    // OpenRouter models with vision capabilities
+    const isVision = m.includes("vision") || m.includes("claude-3") || m.includes("gpt-4o") || m.includes("llava") || m.includes("pixtral") || m.includes("qwen-vl");
+    return { 
+      vision: isVision, 
+      structuredOutput: false, 
+      maxImageCount: 1, 
+      maxOutputTokens: 4096 
+    };
+  }
+
+  // Safe fallback
+  return { vision: false, structuredOutput: false, maxImageCount: 0, maxOutputTokens: 2048 };
+}
