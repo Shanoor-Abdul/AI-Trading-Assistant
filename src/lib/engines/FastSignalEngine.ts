@@ -1,4 +1,5 @@
 import type { Signal, Trend, UnifiedMarketContext } from "@/lib/types";
+import { analyzeTemporalEvidence, collectFrameObservations } from "./TemporalEvidenceEngine";
 
 export interface FastSignalInput {
   symbol: string;
@@ -30,220 +31,220 @@ export interface FastSignalResult {
   latencyMode: "LOCAL_TEXT";
   generatedAt: number;
   evidenceScore: number;
-  marketRegime: "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "BREAKOUT" | "UNCLEAR" | "RECOVERY" | "PULLBACK" | "CHOPPY";
+  marketRegime: "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "BREAKOUT" | "REVERSAL" | "UNCLEAR";
   selectedStrategy: string;
   riskReward: number | null;
+  transition: string;
+  currentFrameCount: number;
 }
 
 function text(value: any): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(text).join(" ");
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return "";
-}
-
-function direction(str: string): "bull" | "bear" | "neutral" {
-  const s = str.toLowerCase();
-  if (s.includes("bull") || s.includes("up") || s.includes("buy") || s.includes("long") || s.includes("recovery")) return "bull";
-  if (s.includes("bear") || s.includes("down") || s.includes("sell") || s.includes("short")) return "bear";
-  return "neutral";
+  const raw = value && typeof value === "object" && "value" in value ? value.value : value;
+  return String(raw ?? "").trim();
 }
 
 function numeric(value: any): number | null {
-  if (typeof value === "number" && !Number.isNaN(value)) return value;
-  if (typeof value === "string") {
-    const num = parseFloat(value.replace(/[^0-9.-]/g, ""));
-    if (!Number.isNaN(num)) return num;
-  }
-  return null;
+  const raw = value && typeof value === "object" && "value" in value ? value.value : value;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
-function asArray(value: any): any[] {
-  if (Array.isArray(value)) return value;
-  if (value === undefined || value === null) return [];
-  return [value];
+function direction(value: any): "bull" | "bear" | "neutral" {
+  const v = text(value).toLowerCase();
+  if (/(bull|upward|rising|positive|buy|higher high|higher low|green|above support|bounce|recovery|improving)/.test(v)) return "bull";
+  if (/(bear|downward|falling|negative|sell|lower high|lower low|red|below resistance|rejection|weakening)/.test(v)) return "bear";
+  return "neutral";
 }
 
-function collectBatches(progressive: any): any[] {
-  if (!progressive) return [];
-  if (Array.isArray(progressive)) return progressive;
-  if (typeof progressive === "object" && progressive.progressiveState) {
-    return Array.isArray(progressive.progressiveState) ? progressive.progressiveState : [];
+function strategyForRegime(regime: FastSignalResult["marketRegime"]): string {
+  switch (regime) {
+    case "TRENDING_UP":
+    case "TRENDING_DOWN": return "Trend Following / Momentum";
+    case "BREAKOUT": return "Breakout / Support-Resistance";
+    case "REVERSAL": return "Reversal / Price Action";
+    case "RANGING": return "Mean Reversion / Support-Resistance";
+    default: return "Confirmation / No-Trade";
   }
-  return [];
 }
 
-function numberFromObject(obj: any, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = numeric(obj?.[key]);
-    if (value !== null) return value;
-  }
-  return null;
+function nearestBelow(price: number | null, levels: any): number | null {
+  if (price === null) return null;
+  const values = Array.isArray(levels) ? levels.map(numeric).filter((n): n is number => n !== null && n < price) : [];
+  return values.length ? Math.max(...values) : null;
+}
+
+function nearestAbove(price: number | null, levels: any): number | null {
+  if (price === null) return null;
+  const values = Array.isArray(levels) ? levels.map(numeric).filter((n): n is number => n !== null && n > price) : [];
+  return values.length ? Math.min(...values) : null;
+}
+
+function buildPseudoProgressive(market: any, progressive: any): any {
+  const existing = Array.isArray(progressive) ? progressive : [];
+  if (existing.length || !market) return existing;
+  const unified = market.unifiedMarketData || market;
+  return [{
+    batchId: 0,
+    status: "PARTIAL",
+    confidence: numeric(unified?.dataConfidence) ?? 75,
+    trend: text(unified?.trend),
+    momentum: text(unified?.momentum),
+    marketState: text(unified?.marketStructure),
+    unifiedMarketData: {
+      ...unified,
+      frameObservations: [{
+        isPartial: true,
+        price: unified?.currentPrice,
+        currentDirection: unified?.trend,
+        shortTermDirection: unified?.trend,
+        structure: unified?.marketStructure,
+        momentum: unified?.momentum,
+        indicators: unified?.indicators || {},
+        levels: {
+          supportLevels: unified?.supportLevels,
+          resistanceLevels: unified?.resistanceLevels,
+        },
+      }],
+    },
+  }];
 }
 
 /**
- * V3 Hierarchical Reasoning Engine
- * Applies Temporal Weighting and Transition State logic.
+ * Local, deterministic signal gate. It never receives screenshots and never
+ * calls a model. Progressive Vision is responsible for producing the evidence.
+ * The engine reasons over temporal observations, giving the newest/current
+ * state more authority than stale batches and distinguishing reversals from
+ * simple trend labels.
  */
 export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const started = Date.now();
-  const market = input.market || {};
-  const batches = collectBatches(input.progressive);
-  const previous = batches[batches.length - 1] || {};
-  const unified = (market.unifiedMarketData || previous.unifiedMarketData || {}) as any;
+  const progressive = buildPseudoProgressive(input.market, input.progressive);
+  const temporal = analyzeTemporalEvidence(progressive);
+  const frames = collectFrameObservations(progressive);
+  const latest = temporal.currentObservation || {};
 
-  let bullPrimaryScore = 0;
-  let bearPrimaryScore = 0;
-  let bullShortTermScore = 0;
-  let bearShortTermScore = 0;
-  let structureVote = "neutral";
-  let momentumVote = "neutral";
-  let indicatorVote = "neutral";
+  const bullish = temporal.bullishScore;
+  const bearish = temporal.bearishScore;
+  const dominant = Math.max(bullish, bearish);
+  const gap = Math.abs(bullish - bearish);
+  const bullishLead = bullish > bearish;
+  const bearishLead = bearish > bullish;
+  const currentDir = temporal.currentDirection;
+  const currentSupportsBull = currentDir === "bull" || direction(latest?.momentum) === "bull";
+  const currentSupportsBear = currentDir === "bear" || direction(latest?.momentum) === "bear";
 
-  // Temporal Weighting
-  batches.forEach((batch, index) => {
-    // Is this a partial batch or the absolute latest?
-    const isLatest = index === batches.length - 1;
-    const isPartial = batch.status === "PARTIAL" || batch.source === "partial_progressive";
-    
-    let weight = 0.2; // default for old batches
-    if (isPartial) {
-      weight = 1.0;
-    } else if (isLatest) {
-      weight = 0.8;
-    } else if (index === batches.length - 2) {
-      weight = 0.5;
-    }
+  const selectedStrategy = strategyForRegime(temporal.marketRegime);
+  const bullishGroups = temporal.bullishGroups;
+  const bearishGroups = temporal.bearishGroups;
 
-    const dTrend = direction(text(batch.primaryTrend || batch.trend));
-    if (dTrend === "bull") bullPrimaryScore += weight;
-    if (dTrend === "bear") bearPrimaryScore += weight;
-
-    const dShort = direction(text(batch.shortTermDirection || batch.momentum || batch.candlestickBehavior));
-    if (dShort === "bull") bullShortTermScore += weight;
-    if (dShort === "bear") bearShortTermScore += weight;
-
-    if (isLatest || isPartial) {
-      structureVote = direction(text(batch.structureTransition || batch.marketStructure || batch.marketState));
-      momentumVote = direction(text(batch.momentum));
-      const indStr = Object.values(batch.indicatorState || {}).map(text).join(" ");
-      indicatorVote = direction(indStr);
-    }
+  const bullishEvidence = bullishGroups.slice(0, 7).map((group) => {
+    const names: Record<string, string> = {
+      structure: "Recent market structure supports upside.",
+      candle: "Recent candle behavior supports upside.",
+      momentum: "Recent momentum supports upside.",
+      support: "Price is holding or bouncing from support.",
+      batchTrend: "Recent progressive trend context supports upside.",
+      batchMomentum: "Recent progressive momentum supports upside.",
+      batchStructure: "Recent progressive structure supports upside.",
+    };
+    return names[group] || `${group.replace(/^indicator:/, "")} provides bullish evidence.`;
+  });
+  const bearishEvidence = bearishGroups.slice(0, 7).map((group) => {
+    const names: Record<string, string> = {
+      structure: "Recent market structure supports downside.",
+      candle: "Recent candle behavior supports downside.",
+      momentum: "Recent momentum supports downside.",
+      resistance: "Price is being rejected at resistance.",
+      batchTrend: "Recent progressive trend context supports downside.",
+      batchMomentum: "Recent progressive momentum supports downside.",
+      batchStructure: "Recent progressive structure supports downside.",
+    };
+    return names[group] || `${group.replace(/^indicator:/, "")} provides bearish evidence.`;
   });
 
-  const primaryTrend = bullPrimaryScore > bearPrimaryScore + 0.5 ? "bull" 
-                     : bearPrimaryScore > bullPrimaryScore + 0.5 ? "bear" : "neutral";
-
-  const shortTermDirection = bullShortTermScore > bearShortTermScore + 0.3 ? "bull"
-                           : bearShortTermScore > bullShortTermScore + 0.3 ? "bear" : "neutral";
-
-  // State Transition Machine
-  let structureTransition = "UNCLEAR";
-  if (primaryTrend === "bear" && shortTermDirection === "bull") structureTransition = "RECOVERY";
-  else if (primaryTrend === "bull" && shortTermDirection === "bear") structureTransition = "PULLBACK";
-  else if (primaryTrend === "bear" && shortTermDirection === "bear") structureTransition = "CONTINUATION";
-  else if (primaryTrend === "bull" && shortTermDirection === "bull") structureTransition = "CONTINUATION";
-  else if (primaryTrend === "neutral" && shortTermDirection !== "neutral") structureTransition = "BREAKOUT";
-  else if (primaryTrend === "neutral" && shortTermDirection === "neutral") structureTransition = "CHOPPY";
-  
-  if (structureVote !== "neutral" && structureVote !== "unclear") {
-     const extracted = text(previous.structureTransition).toUpperCase();
-     if (["CONTINUATION", "PULLBACK", "RECOVERY", "REVERSAL_DEVELOPING", "REVERSAL_CONFIRMED", "BREAKOUT", "FALSE_BREAKOUT", "RANGE", "CHOPPY"].includes(extracted)) {
-         structureTransition = extracted;
-     }
-  }
-
-  const bullishEvidence: string[] = [];
-  const bearishEvidence: string[] = [];
-
-  if (primaryTrend === "bull") bullishEvidence.push("Primary trend is heavily bullish.");
-  if (primaryTrend === "bear") bearishEvidence.push("Primary trend is heavily bearish.");
-  if (shortTermDirection === "bull") bullishEvidence.push("Short-term price action and momentum is bullish.");
-  if (shortTermDirection === "bear") bearishEvidence.push("Short-term price action and momentum is bearish.");
-  if (structureTransition === "RECOVERY") bullishEvidence.push("Market is showing a bullish recovery against a bearish primary trend.");
-  if (structureTransition === "PULLBACK") bearishEvidence.push("Market is showing a bearish pullback against a bullish primary trend.");
-
-  if (momentumVote === "bull") bullishEvidence.push("Momentum indicators support upside.");
-  if (momentumVote === "bear") bearishEvidence.push("Momentum indicators support downside.");
-  if (indicatorVote === "bull") bullishEvidence.push("Technical indicators confirm bullish direction.");
-  if (indicatorVote === "bear") bearishEvidence.push("Technical indicators confirm bearish direction.");
-
-  const price = numberFromObject(unified, ["currentPrice", "price", "close"])
-    ?? numberFromObject(market, ["currentPrice", "price", "close"]);
-  const supports = asArray(unified.supportLevels?.value || market.supportLevels?.value || market.supportLevels).map(Number).filter(Number.isFinite);
-  const resistances = asArray(unified.resistanceLevels?.value || market.resistanceLevels?.value || market.resistanceLevels).map(Number).filter(Number.isFinite);
-  const supportBelow = price !== null && supports.some((level) => level < price);
-  const resistanceAbove = price !== null && resistances.some((level) => level > price);
-  if (supportBelow) bullishEvidence.push("Price is holding above a visible support level.");
-  if (resistanceAbove) bearishEvidence.push("Price is below a visible resistance level.");
-
-  const isBull = shortTermDirection === "bull" || structureTransition === "RECOVERY" || structureTransition === "REVERSAL_CONFIRMED";
-  const isBear = shortTermDirection === "bear" || structureTransition === "PULLBACK" || structureTransition === "REVERSAL_CONFIRMED";
+  // A reversal is not a BUY/SELL merely because the latest candle changed color.
+  // It needs current evidence from at least three independent groups and a
+  // clear lead over the opposing thesis.
+  const currentEvidenceGroups = currentDir === "bull" ? temporal.independentBullish : temporal.independentBearish;
+  const currentConfirmation = currentEvidenceGroups >= 3 && temporal.temporalAgreement >= 0.62;
+  const unresolvedTransition = temporal.transition === "REVERSAL_DEVELOPING" || temporal.transition === "PULLBACK" || temporal.transition === "RECOVERY";
 
   let signal: Signal = "WAIT";
-  
-  // Independent Evidence Gate
-  const structureConfirm = structureTransition === "CONTINUATION" || structureTransition === "REVERSAL_CONFIRMED" || structureTransition === "BREAKOUT";
-  const momentumConfirm = isBull ? momentumVote === "bull" : isBear ? momentumVote === "bear" : false;
-  const indicatorConfirm = isBull ? indicatorVote === "bull" : isBear ? indicatorVote === "bear" : false;
-
-  const independentGates = [structureConfirm, momentumConfirm, indicatorConfirm].filter(Boolean).length;
-
-  if (structureTransition === "RECOVERY" || structureTransition === "PULLBACK" || structureTransition === "REVERSAL_DEVELOPING") {
-      signal = "WAIT"; // Needs confirmation
-  } else if (structureTransition === "CHOPPY" || structureTransition === "RANGE" || structureTransition === "FALSE_BREAKOUT" || structureTransition === "UNCLEAR") {
-      signal = "WAIT"; // No edge
-  } else if (independentGates >= 2) {
-      if (isBull && bullShortTermScore > bearShortTermScore) signal = "BUY";
-      if (isBear && bearShortTermScore > bullShortTermScore) signal = "SELL";
+  if (
+    bullishLead &&
+    currentSupportsBull &&
+    currentConfirmation &&
+    !unresolvedTransition &&
+    gap >= 3
+  ) signal = "BUY";
+  else if (
+    bearishLead &&
+    currentSupportsBear &&
+    currentConfirmation &&
+    !unresolvedTransition &&
+    gap >= 3
+  ) signal = "SELL";
+  else if (temporal.transition === "REVERSAL_CONFIRMED" && currentEvidenceGroups >= 3 && gap >= 4) {
+    signal = bullishLead ? "BUY" : bearishLead ? "SELL" : "WAIT";
   }
 
-  let trend: Trend = "Sideways";
-  if (primaryTrend === "bull") trend = "Bullish";
-  else if (primaryTrend === "bear") trend = "Bearish";
-
-  const entry = numberFromObject(unified, ["entryPrice", "currentPrice", "price"])
-    ?? numberFromObject(market, ["entryPrice", "currentPrice", "price"]);
-  const stop = numberFromObject(unified, ["stopLoss", "sl"])
-    ?? numberFromObject(market, ["stopLoss", "sl"]);
-  const target = numberFromObject(unified, ["takeProfit", "tp"])
-    ?? numberFromObject(market, ["takeProfit", "tp"]);
-  const risk = entry !== null && stop !== null ? Math.abs(entry - stop) : null;
-  const reward = entry !== null && target !== null ? Math.abs(target - entry) : null;
-  const riskReward = risk && reward !== null && risk > 0 ? reward / risk : null;
-  if (signal !== "WAIT" && riskReward !== null && riskReward < 1) {
+  // Strong signals require more than a directional vote. This prevents an old
+  // bearish batch from overriding a current bullish recovery and also prevents
+  // one bullish candle from becoming an instant BUY.
+  if (signal !== "WAIT" && (currentEvidenceGroups < 3 || temporal.temporalAgreement < 0.55)) {
     signal = "WAIT";
   }
 
+  let trend: Trend = "Sideways";
+  if (currentDir === "bull" || (bullishLead && !bearishLead)) trend = "Bullish";
+  else if (currentDir === "bear" || bearishLead) trend = "Bearish";
+
+  const unified = (input.market?.unifiedMarketData || latest || {}) as any;
+  const price = numeric(unified?.currentPrice ?? latest?.price ?? latest?.currentPrice);
+  const supportLevels = unified?.supportLevels?.value ?? unified?.supportLevels ?? latest?.levels?.supportLevels?.value ?? latest?.levels?.supportLevels;
+  const resistanceLevels = unified?.resistanceLevels?.value ?? unified?.resistanceLevels ?? latest?.levels?.resistanceLevels?.value ?? latest?.levels?.resistanceLevels;
+  const support = nearestBelow(price, supportLevels);
+  const resistance = nearestAbove(price, resistanceLevels);
+  const entryPrice = signal === "BUY" || signal === "SELL" ? price : null;
+  const stopLoss = signal === "BUY" ? support : signal === "SELL" ? resistance : null;
+  const takeProfit = signal === "BUY" ? resistance : signal === "SELL" ? support : null;
+  const risk = entryPrice !== null && stopLoss !== null ? Math.abs(entryPrice - stopLoss) : null;
+  const reward = entryPrice !== null && takeProfit !== null ? Math.abs(takeProfit - entryPrice) : null;
+  const riskReward = risk && reward !== null && risk > 0 ? reward / risk : null;
+
   const evidenceScore = Math.min(100, Math.round(
-    Math.max(bullShortTermScore, bearShortTermScore) * 15
-    + independentGates * 10
-    + (riskReward !== null && riskReward >= 1.5 ? 10 : 0)
+    Math.min(45, dominant * 2.7) +
+    Math.min(20, gap * 2.2) +
+    Math.min(20, currentEvidenceGroups * 5) +
+    (temporal.temporalAgreement >= 0.8 ? 10 : temporal.temporalAgreement >= 0.67 ? 6 : temporal.temporalAgreement >= 0.55 ? 3 : 0) +
+    (riskReward !== null && riskReward >= 1.5 ? 5 : 0),
   ));
 
-  const confidence = signal === "WAIT" 
-      ? Math.min(65, 40 + independentGates * 5)
-      : Math.min(95, 65 + independentGates * 10);
+  const dataConfidence = Math.min(95, Math.max(0, temporal.dataConfidence));
+  const confidenceBase = signal === "WAIT"
+    ? 45 + Math.min(18, gap * 2) + Math.min(12, currentEvidenceGroups * 3)
+    : 58 + Math.min(18, gap * 2.4) + Math.min(12, currentEvidenceGroups * 3) + (temporal.temporalAgreement >= 0.8 ? 7 : 0);
+  const confidence = Math.round(Math.min(dataConfidence, Math.min(94, confidenceBase), Math.max(35, evidenceScore)));
 
-  const quality = signal === "WAIT"
-    ? (confidence >= 55 ? "FAIR" : "POOR")
-    : confidence >= 80 && independentGates >= 2 ? "GOOD" : "FAIR";
-  const readiness = signal === "WAIT" ? "NOT READY" : confidence >= 80 && independentGates >= 2 ? "READY" : "GOOD";
+  const quality: FastSignalResult["signalQuality"] = signal === "WAIT"
+    ? (confidence >= 60 ? "FAIR" : "POOR")
+    : confidence >= 82 && currentEvidenceGroups >= 4 ? "GOOD" : "FAIR";
+  const readiness: FastSignalResult["readiness"] = signal === "WAIT"
+    ? "NOT READY"
+    : confidence >= 82 && currentEvidenceGroups >= 4 ? "READY" : "GOOD";
 
-  const invalidationConditions = signal === "BUY"
-    ? ["Short-term bullish direction fails.", "Price breaks below support."]
-    : signal === "SELL"
-      ? ["Short-term bearish direction fails.", "Price reclaims resistance."]
-      : ["Wait for transition state to confirm before entry.", "Avoid trades during developing reversals or choppiness."];
+  const regime = temporal.marketRegime;
+  const marketState = text(
+    latest?.marketState ||
+    latest?.regimeDescription ||
+    input.market?.marketState ||
+    input.market?.unifiedMarketData?.marketStructure,
+  ) || `${regime.replace(/_/g, " ").toLowerCase()} market state`;
+  const momentum = text(latest?.momentum || input.market?.momentum || input.market?.unifiedMarketData?.momentum) || "Unknown";
 
-  const batchLabel = batches.length ? `${batches.length} progressive batch${batches.length > 1 ? "es" : ""}` : "latest progressive state";
-  
-  let explanation = "";
-  if (signal === "WAIT") {
-      explanation = `Fast gate evaluated ${batchLabel}. Market is in a ${structureTransition.replace("_", " ")} state. Waiting for independent confirmation.`;
-  } else {
-      explanation = `Fast ${signal} signal from ${batchLabel}. Temporal structure shows ${structureTransition.replace("_", " ")} with momentum alignment.`;
-  }
+  const explanation = signal === "WAIT"
+    ? `Current evidence is not sufficiently confirmed for entry. Latest state is ${temporal.transition.replace(/_/g, " ").toLowerCase()} with ${currentEvidenceGroups} independent current evidence groups.`
+    : `Current ${signal} direction is supported by ${currentEvidenceGroups} independent evidence groups after weighting the newest observations above stale history.`;
 
   return {
     trend,
@@ -255,12 +256,16 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     dataConfidence: 85,
     signalQuality: quality,
     readiness,
-    marketState: text(market.marketRegime || previous.marketState || unified.marketStructure) || structureTransition,
-    momentum: momentumVote === "bull" ? "Bullish" : momentumVote === "bear" ? "Bearish" : "Neutral",
-    strategyConsensus: signal === "BUY" ? "Bullish" : signal === "SELL" ? "Bearish" : "Mixed",
+    marketState,
+    momentum,
+    strategyConsensus: signal === "BUY" ? "Bullish" : signal === "SELL" ? "Bearish" : bullishLead ? "Bullish but unconfirmed" : bearishLead ? "Bearish but unconfirmed" : "Mixed",
     bullishEvidence,
     bearishEvidence,
-    invalidationConditions,
+    invalidationConditions: signal === "BUY"
+      ? ["Current bullish structure or momentum fails.", "Price loses the latest supporting structure."]
+      : signal === "SELL"
+        ? ["Current bearish structure or momentum fails.", "Price reclaims the latest opposing structure."]
+        : ["Wait for at least three independent current evidence groups to align.", "Do not enter while a reversal or recovery remains unconfirmed."],
     explanation,
     latencyMode: "LOCAL_TEXT",
     generatedAt: started,
@@ -268,5 +273,7 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     marketRegime: ["CONTINUATION", "RECOVERY"].includes(structureTransition) ? "TRENDING_UP" : ["CONTINUATION", "PULLBACK"].includes(structureTransition) ? "TRENDING_DOWN" : "RANGING",
     selectedStrategy: "Temporal Validation Engine",
     riskReward,
+    transition: temporal.transition,
+    currentFrameCount: frames.length,
   };
 }
