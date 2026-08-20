@@ -143,6 +143,8 @@ export default function Dashboard() {
     visibleIndicators,
     setVisibleIndicators,
     isLiveObservationEnabled,
+    isLiveObservationPaused,
+    setIsLiveObservationPaused,
     setIsLiveObservationEnabled,
     stopLiveObservationSession,
   } = useTradingStore();
@@ -298,7 +300,7 @@ export default function Dashboard() {
 
   // UI Timer for Next Observation Countdown
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
 
     const uiTimer = setInterval(() => {
       const lastTs = useTradingStore.getState().lastObservationTimestamp;
@@ -314,11 +316,13 @@ export default function Dashboard() {
     }, 100);
 
     return () => clearInterval(uiTimer);
-  }, [stream, marketDataMode, isLiveObservationEnabled, observationFrequency]);
+  }, [stream, marketDataMode, isLiveObservationEnabled,
+    isLiveObservationPaused,
+    setIsLiveObservationPaused, observationFrequency]);
 
   // Background Screen Capture for Live Observation
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
 
     // We intentionally do not stop capturing to maintain a continuous observation circle.
 
@@ -369,6 +373,8 @@ export default function Dashboard() {
     stream,
     marketDataMode,
     isLiveObservationEnabled,
+    isLiveObservationPaused,
+    setIsLiveObservationPaused,
     observationFrequency,
     expectedFrames,
   ]);
@@ -421,11 +427,11 @@ export default function Dashboard() {
   // One coordinator owns the queue. It processes complete 20-frame batches
   // sequentially and never relies on a stale observation index after cache eviction.
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled) return;
+    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
 
     const runProgressiveAnalysis = async () => {
       const initial = useTradingStore.getState();
-      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis || !initial.isLiveObservationEnabled) return;
+      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis || !initial.isLiveObservationEnabled || initial.isLiveObservationPaused) return;
 
       initial.setIsProgressiveAnalyzing(true);
 
@@ -437,7 +443,7 @@ export default function Dashboard() {
             !current.stream ||
             current.marketDataMode !== "visual_only" ||
             current.isFetchingAnalysis ||
-            !current.isLiveObservationEnabled
+            !current.isLiveObservationEnabled || current.isLiveObservationPaused
           ) {
             break;
           }
@@ -579,7 +585,7 @@ export default function Dashboard() {
     };
 
     void runProgressiveAnalysis();
-  }, [observations.length, stream, marketDataMode, isLiveObservationEnabled]);
+  }, [observations.length, stream, marketDataMode, isLiveObservationEnabled, isLiveObservationPaused]);
 
   const handleCaptureMTF = (timeframe: '4h' | '1h' | '15m') => {
     if (!validateRequiredFields()) return;
@@ -623,6 +629,83 @@ export default function Dashboard() {
     if (!videoRef.current || !canvasRef.current || !stream) return;
 
     if (useTradingStore.getState().isFetchingAnalysis) return;
+
+    const storeState = useTradingStore.getState();
+    const unanalyzedCount = storeState.observations.length - (storeState.lastAnalyzedObservationIndex === -1 ? 0 : storeState.lastAnalyzedObservationIndex + 1);
+    
+    // Check if there are partial frames (e.g. 5/20) and we are using Dual Model with progressive API
+    if (storeState.isLiveObservationEnabled && storeState.useDualModel && unanalyzedCount > 0 && unanalyzedCount < 20) {
+      toast.loading("Analyzing partial batch before final signal...", { id: "partial_batch" });
+      const startIndex = storeState.lastAnalyzedObservationIndex === -1 ? 0 : storeState.lastAnalyzedObservationIndex + 1;
+      const partialFrames = storeState.observations.slice(startIndex, startIndex + unanalyzedCount);
+      const batchId = storeState.currentBatchId;
+      
+      try {
+        const progressiveResponse = await fetch("/api/progressive-analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: storeState.symbol,
+            timeframe: storeState.timeframe,
+            platform: storeState.platform,
+            tradeDuration: storeState.tradeDuration,
+            provider: storeState.selectedProvider, // Use vision model
+            model: storeState.selectedModel,
+            marketDataMode: storeState.marketDataMode,
+            visibleIndicators: storeState.visibleIndicators,
+            selectedStrategies: storeState.selectedStrategies,
+            activeConnectionId: storeState.activeConnectionId,
+            isProgressive: true,
+            progressiveState: storeState.progressiveAnalyses,
+            macroTimeframeImage: storeState.macroTimeframeImage ? { timeframe: "4h", image: storeState.macroTimeframeImage } : undefined,
+            confirmationTimeframeImage: storeState.confirmationTimeframeImage ? { timeframe: "1h", image: storeState.confirmationTimeframeImage } : undefined,
+            structureTimeframeImage: storeState.structureTimeframeImage ? { timeframe: "15m", image: storeState.structureTimeframeImage } : undefined,
+            primaryTimeframe: {
+              timeframe: "5m",
+              screenshots: partialFrames.map((obs) => ({
+                timestamp: new Date(obs.timestamp).toISOString(),
+                mimeType: "image/jpeg",
+                base64: obs.imageBase64,
+                platform: storeState.platform,
+                symbol: storeState.symbol,
+              })),
+            },
+          }),
+        });
+
+        if (progressiveResponse.ok) {
+          const progData = await progressiveResponse.json();
+          if (progData.marketState) {
+            useTradingStore.getState().addProgressiveAnalysis({
+              analysisId: progData.analysisId || crypto.randomUUID(),
+              batchId,
+              timestamp: new Date().toISOString(),
+              frameStart: startIndex + 1,
+              frameEnd: startIndex + unanalyzedCount,
+              trend: progData.trend || "Unknown",
+              momentum: progData.momentum || "Unknown",
+              marketState: progData.marketState,
+              candlestickBehavior: progData.candlestickBehavior || "Unknown",
+              indicatorState: progData.indicatorState || {},
+              strategyConsensus: progData.strategyConsensus || "Unknown",
+              strategyConflicts: progData.strategyConflicts || [],
+              changesFromPrevious: progData.changesFromPrevious || "None",
+              confidence: progData.confidence || 0,
+            });
+            useTradingStore.getState().setLastAnalyzedObservationIndex(startIndex + unanalyzedCount - 1);
+            useTradingStore.getState().incrementBatchId();
+            toast.success("Partial batch analyzed!", { id: "partial_batch" });
+          } else {
+            toast.dismiss("partial_batch");
+          }
+        } else {
+          toast.dismiss("partial_batch");
+        }
+      } catch (err) {
+        console.error("Partial batch failed:", err);
+        toast.dismiss("partial_batch");
+      }
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
