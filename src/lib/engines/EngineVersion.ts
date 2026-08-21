@@ -1,5 +1,5 @@
-export const CURRENT_ENGINE_VERSION = "FastSignal_v3.0.0_Strict_HardGate";
-export const CURRENT_PROMPT_VERSION = "UniversalVision_v2.5.0_NoHallucinations";
+export const CURRENT_ENGINE_VERSION = "FastSignal_v3.1.0_VisualEvidenceHardGate";
+export const CURRENT_PROMPT_VERSION = "UniversalVision_v3.0.0_StructuredEvidence";
 
 export function getEngineConfigMetrics() {
   return {
@@ -13,4 +13,3 @@ export function getEngineConfigMetrics() {
     validationMode: "FORWARD_PAPER_TRADING",
   };
 }
-

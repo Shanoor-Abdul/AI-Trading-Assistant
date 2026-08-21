@@ -1,4 +1,7 @@
 import { TradingAnalysis } from "@/lib/types";
+import type { UniversalAIResponse } from "@/lib/ai/schema";
+
+type RiskCompatibleAnalysis = TradingAnalysis | UniversalAIResponse;
 
 export interface RiskConfig {
   minimumRiskReward: number;
@@ -19,21 +22,26 @@ export class RiskEngine {
   /**
    * Authoritatively validates a trade signal against risk parameters and account state.
    *
-   * Generic return type is intentional: AI responses can contain additional fields
-   * (such as readiness / estimatedConfidence). The risk engine mutates only the
-   * TradingAnalysis-compatible fields and preserves those additional fields.
+   * Supports both the normalized TradingAnalysis contract and the stricter
+   * UniversalAIResponse contract used by the AI layer. The validator only
+   * mutates fields that are shared by both contracts and preserves the
+   * concrete input type for callers.
    */
-  static validate<T extends TradingAnalysis>(
+  static validate<T extends RiskCompatibleAnalysis>(
     analysis: T,
     config: RiskConfig,
     account: AccountState,
     platform?: string
   ): T {
+    const dataAge = (analysis as RiskCompatibleAnalysis & { dataAge?: number }).dataAge;
+    const marketDataMode = (analysis as RiskCompatibleAnalysis & { marketDataMode?: string }).marketDataMode;
+    const tradeDuration = (analysis as RiskCompatibleAnalysis & { tradeDuration?: string }).tradeDuration;
+
     // 1. Data Freshness Check
-    if (analysis.dataAge !== undefined && analysis.dataAge > config.staleDataThresholdSeconds) {
+    if (dataAge !== undefined && dataAge > config.staleDataThresholdSeconds) {
       analysis.signal = "NO_TRADE";
       analysis.riskDecision = "STALE_DATA";
-      analysis.explanation = `[RISK ENGINE REJECTED] Market data is ${analysis.dataAge}s old (Threshold: ${config.staleDataThresholdSeconds}s). Stale data.`;
+      analysis.explanation = `[RISK ENGINE REJECTED] Market data is ${dataAge}s old (Threshold: ${config.staleDataThresholdSeconds}s). Stale data.`;
       return analysis;
     }
 
@@ -67,12 +75,12 @@ export class RiskEngine {
     if (account.consecutiveLosses >= config.maxConsecutiveLosses) {
       analysis.signal = "NO_TRADE";
       analysis.riskDecision = "MAX_CONSECUTIVE_LOSSES";
-      analysis.explanation = `[RISK ENGINE REJECTED] Maximum consecutive losses reached (${config.maxConsecutiveLosses}).`;
+      analysis.explanation = `[RISK ENGINE REJECTED] Maximum consecutive losses reached.`;
       return analysis;
     }
 
     // 3. Trade Setup Validation (Prices & RR)
-    if (platform === "olymptrade" || (analysis.marketDataMode === "visual_only" && !!analysis.tradeDuration)) {
+    if (platform === "olymptrade" || (marketDataMode === "visual_only" && !!tradeDuration)) {
       // Fixed-time binary options or visual-only directional trades: SL/TP/RR don't apply.
       analysis.riskDecision = "APPROVED";
       return analysis;
@@ -113,7 +121,7 @@ export class RiskEngine {
       return analysis;
     }
 
-    // (SELL should have TP < Entry < SL)
+    // SELL should have TP < Entry < SL
     if (analysis.signal === "SELL" && (analysis.takeProfit >= analysis.entryPrice || analysis.stopLoss <= analysis.entryPrice)) {
       analysis.signal = "NO_TRADE";
       analysis.riskDecision = "INVALID_SELL_PRICES";
@@ -131,9 +139,9 @@ export class RiskEngine {
   static calculatePositionSize(accountBalance: number, riskPercentage: number, entry: number, stopLoss: number): number {
     const riskAmount = accountBalance * (riskPercentage / 100);
     const riskPerShare = Math.abs(entry - stopLoss);
-    
+
     if (riskPerShare === 0) return 0;
-    
+
     return riskAmount / riskPerShare;
   }
 }
