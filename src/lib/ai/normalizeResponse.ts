@@ -1,13 +1,51 @@
 import { UniversalAIResponseSchema, UniversalAIResponse } from "./schema";
 
+function normalizeIndicatorSet(indicators: any): any {
+  const input = indicators && typeof indicators === "object" ? indicators : {};
+  const get = (...keys: string[]) => keys.map((key) => input[key]).find((value) => value !== undefined);
+
+  const rsi = get("RSI", "rsi");
+  const macd = get("MACD", "macd");
+  const bb = get("Bollinger Bands", "BollingerBands", "bollingerBands", "BOLLINGER_BANDS", "bollinger");
+  const atr = get("ATR", "atr");
+
+  const normalized: Record<string, any> = { ...input };
+  if (rsi !== undefined) normalized.RSI = rsi;
+  if (macd !== undefined) normalized.MACD = macd;
+  if (bb !== undefined) normalized["Bollinger Bands"] = bb;
+  if (atr !== undefined) normalized.ATR = atr;
+  return normalized;
+}
+
+function normalizeUnifiedMarketData(unified: any): any {
+  if (!unified || typeof unified !== "object") return undefined;
+
+  const normalized = {
+    ...unified,
+    currentPrice: unified.currentPrice || unified.current_price || { value: null, source: "visual", confidence: 0 },
+    supportLevels: unified.supportLevels || unified.support_levels || { value: [], source: "visual", confidence: 0 },
+    resistanceLevels: unified.resistanceLevels || unified.resistance_levels || { value: [], source: "visual", confidence: 0 },
+    marketStructure: unified.marketStructure || unified.market_structure || { value: null, source: "visual", confidence: 0 },
+    frameObservations: unified.frameObservations || unified.frame_observations || [],
+    temporalState: unified.temporalState || unified.temporal_state || {},
+    evidenceGroups: unified.evidenceGroups || unified.evidence_groups || {},
+    indicators: normalizeIndicatorSet(unified.indicators),
+  };
+
+  normalized.frameObservations = normalized.frameObservations.map((frame: any) => ({
+    ...frame,
+    indicators: normalizeIndicatorSet(frame?.indicators),
+  }));
+
+  return normalized;
+}
+
 export function extractJSON(text: string): any {
   if (text.includes("User Safety:")) {
     throw new Error(`The selected AI model's safety filter blocked the analysis or failed to output JSON. Raw: ${text}`);
   }
 
-  try {
-    return JSON.parse(text);
-  } catch { /* continue */ }
+  try { return JSON.parse(text); } catch { /* continue */ }
 
   const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
   if (markdownMatch?.[1]) {
@@ -25,17 +63,15 @@ export function extractJSON(text: string): any {
     .replace(/\"\.\s*\"/g, '", "')
     .replace(/\\n/g, "\\\\n");
 
-  try {
-    return JSON.parse(cleanJson);
-  } catch (err) {
-    throw new Error(`JSON extracted but failed to parse: ${err instanceof Error ? err.message : "Unknown error"}. Raw: ${jsonSubset.substring(0, 200)}...`);
-  }
+  try { return JSON.parse(cleanJson); }
+  catch (err) { throw new Error(`JSON extracted but failed to parse: ${err instanceof Error ? err.message : "Unknown error"}. Raw: ${jsonSubset.substring(0, 200)}...`); }
 }
 
 export function normalizeResponse(rawText: string, defaultOverrides?: Partial<UniversalAIResponse>): UniversalAIResponse {
   try {
     const rawObj = extractJSON(rawText);
     const unified = rawObj.unifiedMarketData || rawObj.unified_market_data;
+    const normalizedUnified = normalizeUnifiedMarketData(unified);
 
     const normalized = {
       ...rawObj,
@@ -59,22 +95,11 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
       dataConfidence: rawObj.dataConfidence ?? rawObj.data_confidence ?? rawObj.confidence ?? 0,
       riskReward: rawObj.riskReward ?? rawObj.risk_reward ?? null,
       marketState: rawObj.marketState || rawObj.market_state,
-      unifiedMarketData: unified
-        ? {
-            ...unified,
-            currentPrice: unified.currentPrice || unified.current_price || { value: null, source: "visual", confidence: 0 },
-            supportLevels: unified.supportLevels || unified.support_levels || { value: [], source: "visual", confidence: 0 },
-            resistanceLevels: unified.resistanceLevels || unified.resistance_levels || { value: [], source: "visual", confidence: 0 },
-            marketStructure: unified.marketStructure || unified.market_structure || { value: null, source: "visual", confidence: 0 },
-            frameObservations: unified.frameObservations || unified.frame_observations || [],
-            temporalState: unified.temporalState || unified.temporal_state || {},
-            evidenceGroups: unified.evidenceGroups || unified.evidence_groups || {},
-          }
-        : undefined,
+      unifiedMarketData: normalizedUnified,
       changesFromPrevious: rawObj.changesFromPrevious || rawObj.changes_from_previous,
       momentum: rawObj.momentum,
       candlestickBehavior: rawObj.candlestickBehavior || rawObj.candlestick_behavior,
-      indicatorState: rawObj.indicatorState || rawObj.indicator_state,
+      indicatorState: normalizeIndicatorSet(rawObj.indicatorState || rawObj.indicator_state),
       strategyConsensus: rawObj.strategyConsensus || rawObj.strategy_consensus,
       strategyConflicts: rawObj.strategyConflicts || rawObj.strategy_conflicts,
       analysisId: rawObj.analysisId || rawObj.analysis_id,
@@ -94,44 +119,11 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
     console.error("[AI Normalization/Validation Error]", error);
 
     return {
-      trend: "Sideways",
-      signal: "NO_TRADE",
-      confidence: 0,
-      readiness: "NOT READY",
-      estimatedConfidence: "LOW",
-      recommendedTimeframe: "",
-      entryPrice: null,
-      stopLoss: null,
-      takeProfit: null,
+      trend: "Sideways", signal: "NO_TRADE", confidence: 0, readiness: "NOT READY", estimatedConfidence: "LOW", recommendedTimeframe: "", entryPrice: null, stopLoss: null, takeProfit: null,
       explanation: `[AI_ANALYSIS_INVALID] The AI produced an invalid or improperly formatted response. Reason: ${error instanceof Error ? error.message : "Unknown Zod Error"}`,
-      requestedIndicators: [],
-      requiredTimeframe: null,
-      detectedSymbol: null,
-      detectedTimeframe: null,
-      exchange: null,
-      marketProvider: defaultOverrides?.marketProvider || "unknown",
-      riskDecision: "REJECTED",
-      reasoning: "Invalid JSON format or schema failure.",
-      dataConfidence: 0,
-      analysisId: undefined,
-      marketState: "Analysis Failed: Invalid JSON or Schema",
-      changesFromPrevious: "None",
-      momentum: "Unknown",
-      candlestickBehavior: "Unknown",
-      indicatorState: {},
-      strategyConsensus: "Unknown",
-      strategyConflicts: [],
-      bullishEvidence: [],
-      bearishEvidence: [],
-      invalidationConditions: [],
-      evidenceScore: 0,
-      signalQuality: "AVOID",
-      confirmationStatus: "UNCLEAR",
-      unifiedMarketData: undefined,
-      riskReward: null,
-      primaryTrend: undefined,
-      shortTermDirection: undefined,
-      structureTransition: undefined,
+      requestedIndicators: [], requiredTimeframe: null, detectedSymbol: null, detectedTimeframe: null, exchange: null,
+      marketProvider: defaultOverrides?.marketProvider || "unknown", riskDecision: "REJECTED", reasoning: "Invalid JSON format or schema failure.", dataConfidence: 0,
+      analysisId: undefined, marketState: "Analysis Failed: Invalid JSON or Schema", changesFromPrevious: "None", momentum: "Unknown", candlestickBehavior: "Unknown", indicatorState: {}, strategyConsensus: "Unknown", strategyConflicts: [], bullishEvidence: [], bearishEvidence: [], invalidationConditions: [], evidenceScore: 0, signalQuality: "AVOID", confirmationStatus: "UNCLEAR", unifiedMarketData: undefined, riskReward: null, primaryTrend: undefined, shortTermDirection: undefined, structureTransition: undefined,
     };
   }
 }
