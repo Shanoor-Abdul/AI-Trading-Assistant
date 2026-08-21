@@ -74,28 +74,47 @@ import { calculateExpectedFrames } from "@/lib/observation/calculation";
 import { createObservationSessionKey } from "@/lib/observation/session";
 import { hasSignificantVisualChange } from "@/lib/observation/visualChange";
 
-
-function MTFCountdown({ capturedAt, timeframe, onReset }: { capturedAt: number; timeframe: string; onReset: () => void }) {
+function MTFCountdown({
+  capturedAt,
+  timeframe,
+  onReset,
+}: {
+  capturedAt: number;
+  timeframe: string;
+  onReset: () => void;
+}) {
   const [timeLeft, setTimeLeft] = useState("");
 
   useEffect(() => {
     const interval = setInterval(() => {
       const elapsed = Date.now() - capturedAt;
-      const total = timeframe === "4h" ? 4 * 60 * 60 * 1000 : timeframe === "1h" ? 60 * 60 * 1000 : 15 * 60 * 1000;
+      const total =
+        timeframe === "4h"
+          ? 4 * 60 * 60 * 1000
+          : timeframe === "1h"
+            ? 60 * 60 * 1000
+            : 15 * 60 * 1000;
       const remaining = Math.max(0, total - elapsed);
       if (remaining === 0) {
         setTimeLeft("Ready");
       } else {
         const m = Math.floor(remaining / 60000);
         const s = Math.floor((remaining % 60000) / 1000);
-        setTimeLeft(`${m}:${s.toString().padStart(2, '0')}`);
+        setTimeLeft(`${m}:${s.toString().padStart(2, "0")}`);
       }
     }, 1000);
     return () => clearInterval(interval);
   }, [capturedAt, timeframe]);
 
   if (timeLeft === "Ready") {
-    return <button onClick={onReset} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>;
+    return (
+      <button
+        onClick={onReset}
+        className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2"
+      >
+        Recapture
+      </button>
+    );
   }
   return <span className="text-[9px] text-zinc-500 ml-2">({timeLeft})</span>;
 }
@@ -162,7 +181,8 @@ export default function Dashboard() {
   const [timeSinceLastFrame, setTimeSinceLastFrame] = useState<number>(0);
   const [timeUntilNextFrame, setTimeUntilNextFrame] =
     useState<number>(observationFrequency);
-  const [showStopObservationModal, setShowStopObservationModal] = useState(false);
+  const [showStopObservationModal, setShowStopObservationModal] =
+    useState(false);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
@@ -179,7 +199,12 @@ export default function Dashboard() {
     const isTimeframeInvalid = isFieldInvalid(timeframe);
     const isDurationInvalid = isFieldInvalid(tradeDuration);
 
-    if (isSymbolInvalid || isPlatformInvalid || isTimeframeInvalid || isDurationInvalid) {
+    if (
+      isSymbolInvalid ||
+      isPlatformInvalid ||
+      isTimeframeInvalid ||
+      isDurationInvalid
+    ) {
       setShowValidationErrors(true);
       toast.error("Please complete all required fields before continuing.");
       return false;
@@ -304,7 +329,13 @@ export default function Dashboard() {
 
   // UI Timer for Next Observation Countdown
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
+    if (
+      !stream ||
+      marketDataMode !== "visual_only" ||
+      !isLiveObservationEnabled ||
+      isLiveObservationPaused
+    )
+      return;
 
     const uiTimer = setInterval(() => {
       const lastTs = useTradingStore.getState().lastObservationTimestamp;
@@ -320,13 +351,24 @@ export default function Dashboard() {
     }, 100);
 
     return () => clearInterval(uiTimer);
-  }, [stream, marketDataMode, isLiveObservationEnabled,
+  }, [
+    stream,
+    marketDataMode,
+    isLiveObservationEnabled,
     isLiveObservationPaused,
-    setIsLiveObservationPaused, observationFrequency]);
+    setIsLiveObservationPaused,
+    observationFrequency,
+  ]);
 
   // Background Screen Capture
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
+    if (
+      !stream ||
+      marketDataMode !== "visual_only" ||
+      !isLiveObservationEnabled ||
+      isLiveObservationPaused
+    )
+      return;
 
     const captureObservation = async () => {
       const video = videoRef.current;
@@ -341,18 +383,18 @@ export default function Dashboard() {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const state = useTradingStore.getState();
-      
+
       const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
       const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
 
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
       ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
 
-      ctx.fillStyle = "#4ade80"; 
+      ctx.fillStyle = "#4ade80";
       ctx.font = "bold 18px Arial";
       ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
 
-      ctx.fillStyle = "#e4e4e7"; 
+      ctx.fillStyle = "#e4e4e7";
       ctx.font = "16px Arial";
       ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
 
@@ -363,10 +405,10 @@ export default function Dashboard() {
       state.incrementVisualChangeCount();
     };
 
-    const initialTimer = setTimeout(captureObservation, 2000); 
+    const initialTimer = setTimeout(captureObservation, 2000);
     const intervalTimer = setInterval(
       captureObservation,
-      observationFrequency * 1000
+      observationFrequency * 1000,
     );
 
     return () => {
@@ -433,11 +475,23 @@ export default function Dashboard() {
   // One coordinator owns the queue. It processes complete 20-frame batches
   // sequentially and never relies on a stale observation index after cache eviction.
   useEffect(() => {
-    if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
+    if (
+      !stream ||
+      marketDataMode !== "visual_only" ||
+      !isLiveObservationEnabled ||
+      isLiveObservationPaused
+    )
+      return;
 
     const runProgressiveAnalysis = async () => {
       const initial = useTradingStore.getState();
-      if (initial.isProgressiveAnalyzing || initial.isFetchingAnalysis || !initial.isLiveObservationEnabled || initial.isLiveObservationPaused) return;
+      if (
+        initial.isProgressiveAnalyzing ||
+        initial.isFetchingAnalysis ||
+        !initial.isLiveObservationEnabled ||
+        initial.isLiveObservationPaused
+      )
+        return;
 
       initial.setIsProgressiveAnalyzing(true);
 
@@ -449,7 +503,8 @@ export default function Dashboard() {
             !current.stream ||
             current.marketDataMode !== "visual_only" ||
             current.isFetchingAnalysis ||
-            !current.isLiveObservationEnabled || current.isLiveObservationPaused
+            !current.isLiveObservationEnabled ||
+            current.isLiveObservationPaused
           ) {
             break;
           }
@@ -459,7 +514,7 @@ export default function Dashboard() {
               ? current.lastAnalyzedObservationIndex + 1
               : 0;
           const pending = current.observations.length - analyzedCount;
-          
+
           const pendingMultiples = Math.floor(pending / 20);
           if (pendingMultiples === 0) break;
 
@@ -499,18 +554,32 @@ export default function Dashboard() {
                 activeConnectionId: current.activeConnectionId,
                 isProgressive: true,
                 progressiveState: current.progressiveAnalyses,
-                macroTimeframeImage: current.macroTimeframeImage ? { timeframe: "4h", image: current.macroTimeframeImage } : undefined,
-                confirmationTimeframeImage: current.confirmationTimeframeImage ? { timeframe: "1h", image: current.confirmationTimeframeImage } : undefined,
-                structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
+                macroTimeframeImage: current.macroTimeframeImage
+                  ? { timeframe: "4h", image: current.macroTimeframeImage }
+                  : undefined,
+                confirmationTimeframeImage: current.confirmationTimeframeImage
+                  ? {
+                      timeframe: "1h",
+                      image: current.confirmationTimeframeImage,
+                    }
+                  : undefined,
+                structureTimeframeImage: current.structureTimeframeImage
+                  ? { timeframe: "15m", image: current.structureTimeframeImage }
+                  : undefined,
                 primaryTimeframe: {
                   timeframe: "5m",
-                  screenshots: await Promise.all(framesToAnalyze.map(async (obs) => ({
-                    timestamp: new Date(obs.timestamp).toISOString(),
-                    mimeType: "image/jpeg",
-                    base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
-                    platform: current.platform,
-                    symbol: current.symbol,
-                  }))),
+                  screenshots: await Promise.all(
+                    framesToAnalyze.map(async (obs) => ({
+                      timestamp: new Date(obs.timestamp).toISOString(),
+                      mimeType: "image/jpeg",
+                      // base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
+                      base64: obs.imageId
+                        ? await ImageStore.getImage(obs.imageId)
+                        : "",
+                      platform: current.platform,
+                      symbol: current.symbol,
+                    })),
+                  ),
                 },
               }),
             });
@@ -540,9 +609,15 @@ export default function Dashboard() {
             );
 
             // Phase 2: Adaptive Frame Sampling
-            if (data?.marketState?.includes("SETUP_FORMING") && latest.observationFrequency > 30) {
+            if (
+              data?.marketState?.includes("SETUP_FORMING") &&
+              latest.observationFrequency > 30
+            ) {
               latest.setObservationFrequency(30);
-              toast.success("SETUP_FORMING detected. Accelerating analysis to 30s intervals.", { icon: "⚡" });
+              toast.success(
+                "SETUP_FORMING detected. Accelerating analysis to 30s intervals.",
+                { icon: "⚡" },
+              );
             }
 
             latest.addProgressiveAnalysis({
@@ -578,13 +653,15 @@ export default function Dashboard() {
             // Success! Reset retry states.
             latest.setRetryProgressiveAnalysis(false);
             latest.setLastFailedPendingCount(0);
-            
+
             // Consume the frames only on success
             latest.setLastAnalyzedObservationIndex(lastBatchIndex);
             latest.incrementBatchId();
           } catch (error) {
             console.warn("Progressive analysis failed:", error);
-            toast.error("Live Observation batch failed. Please retry when ready.");
+            toast.error(
+              "Live Observation batch failed. Please retry when ready.",
+            );
             const store = useTradingStore.getState();
             store.setRetryProgressiveAnalysis(true);
             store.setLastFailedPendingCount(framesToAnalyzeCount);
@@ -597,9 +674,15 @@ export default function Dashboard() {
     };
 
     void runProgressiveAnalysis();
-  }, [observations.length, stream, marketDataMode, isLiveObservationEnabled, isLiveObservationPaused]);
+  }, [
+    observations.length,
+    stream,
+    marketDataMode,
+    isLiveObservationEnabled,
+    isLiveObservationPaused,
+  ]);
 
-  const handleCaptureMTF = (timeframe: '4h' | '1h' | '15m') => {
+  const handleCaptureMTF = (timeframe: "4h" | "1h" | "15m") => {
     if (!validateRequiredFields()) return;
     if (!videoRef.current || !canvasRef.current || !stream) return;
     const video = videoRef.current;
@@ -626,14 +709,23 @@ export default function Dashboard() {
     ctx.fillStyle = "#e4e4e7"; // zinc-200
     ctx.font = "16px Arial";
     ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
-    
+
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
-    
-    if (timeframe === '4h') { store.setMacroTimeframeImage(imageBase64); store.setMacroTimeframeCapturedAt(Date.now()); }
-    else if (timeframe === '1h') { store.setConfirmationTimeframeImage(imageBase64); store.setConfirmationTimeframeCapturedAt(Date.now()); }
-    else if (timeframe === '15m') { store.setStructureTimeframeImage(imageBase64); store.setStructureTimeframeCapturedAt(Date.now()); }
-    
-    toast.success(`${timeframe.toUpperCase()} Context Captured!`, { icon: '📸' });
+
+    if (timeframe === "4h") {
+      store.setMacroTimeframeImage(imageBase64);
+      store.setMacroTimeframeCapturedAt(Date.now());
+    } else if (timeframe === "1h") {
+      store.setConfirmationTimeframeImage(imageBase64);
+      store.setConfirmationTimeframeCapturedAt(Date.now());
+    } else if (timeframe === "15m") {
+      store.setStructureTimeframeImage(imageBase64);
+      store.setStructureTimeframeCapturedAt(Date.now());
+    }
+
+    toast.success(`${timeframe.toUpperCase()} Context Captured!`, {
+      icon: "📸",
+    });
   };
 
   const handleAnalyzeSnapshot = async () => {
@@ -643,17 +735,34 @@ export default function Dashboard() {
     if (useTradingStore.getState().isFetchingAnalysis) return;
 
     const storeState = useTradingStore.getState();
-    const unanalyzedCount = storeState.observations.length - (storeState.lastAnalyzedObservationIndex === -1 ? 0 : storeState.lastAnalyzedObservationIndex + 1);
-    
+    const unanalyzedCount =
+      storeState.observations.length -
+      (storeState.lastAnalyzedObservationIndex === -1
+        ? 0
+        : storeState.lastAnalyzedObservationIndex + 1);
+
     let partialBatchData: any = null;
 
     // Check if there are partial frames (e.g. 5/20) and we are using Dual Model with progressive API
-    if (storeState.isLiveObservationEnabled && storeState.useDualModel && unanalyzedCount > 0 && unanalyzedCount < 20) {
-      toast.loading("Analyzing partial batch before final signal...", { id: "partial_batch" });
-      const startIndex = storeState.lastAnalyzedObservationIndex === -1 ? 0 : storeState.lastAnalyzedObservationIndex + 1;
-      const partialFrames = storeState.observations.slice(startIndex, startIndex + unanalyzedCount);
+    if (
+      storeState.isLiveObservationEnabled &&
+      storeState.useDualModel &&
+      unanalyzedCount > 0 &&
+      unanalyzedCount < 20
+    ) {
+      toast.loading("Analyzing partial batch before final signal...", {
+        id: "partial_batch",
+      });
+      const startIndex =
+        storeState.lastAnalyzedObservationIndex === -1
+          ? 0
+          : storeState.lastAnalyzedObservationIndex + 1;
+      const partialFrames = storeState.observations.slice(
+        startIndex,
+        startIndex + unanalyzedCount,
+      );
       const batchId = storeState.currentBatchId;
-      
+
       try {
         const progressiveResponse = await fetch("/api/progressive-analyze", {
           method: "POST",
@@ -671,18 +780,31 @@ export default function Dashboard() {
             activeConnectionId: storeState.activeConnectionId,
             isProgressive: true,
             progressiveState: storeState.progressiveAnalyses,
-            macroTimeframeImage: storeState.macroTimeframeImage ? { timeframe: "4h", image: storeState.macroTimeframeImage } : undefined,
-            confirmationTimeframeImage: storeState.confirmationTimeframeImage ? { timeframe: "1h", image: storeState.confirmationTimeframeImage } : undefined,
-            structureTimeframeImage: storeState.structureTimeframeImage ? { timeframe: "15m", image: storeState.structureTimeframeImage } : undefined,
+            macroTimeframeImage: storeState.macroTimeframeImage
+              ? { timeframe: "4h", image: storeState.macroTimeframeImage }
+              : undefined,
+            confirmationTimeframeImage: storeState.confirmationTimeframeImage
+              ? {
+                  timeframe: "1h",
+                  image: storeState.confirmationTimeframeImage,
+                }
+              : undefined,
+            structureTimeframeImage: storeState.structureTimeframeImage
+              ? { timeframe: "15m", image: storeState.structureTimeframeImage }
+              : undefined,
             primaryTimeframe: {
               timeframe: "5m",
-              screenshots: partialFrames.map((obs) => ({
-                timestamp: new Date(obs.timestamp).toISOString(),
-                mimeType: "image/jpeg",
-                base64: obs.imageBase64,
-                platform: storeState.platform,
-                symbol: storeState.symbol,
-              })),
+              screenshots: await Promise.all(
+                partialFrames.map(async (obs) => ({
+                  timestamp: new Date(obs.timestamp).toISOString(),
+                  mimeType: "image/jpeg",
+                  base64: obs.imageId
+                    ? await ImageStore.getImage(obs.imageId)
+                    : "",
+                  platform: storeState.platform,
+                  symbol: storeState.symbol,
+                })),
+              ),
             },
           }),
         });
@@ -707,7 +829,7 @@ export default function Dashboard() {
               strategyConflicts: progData.strategyConflicts || [],
               changesFromPrevious: progData.changesFromPrevious || "None",
               confidence: progData.confidence || 0,
-              source: "partial_progressive"
+              source: "partial_progressive",
             };
             toast.success("Partial batch analyzed!", { id: "partial_batch" });
           } else {
@@ -769,9 +891,26 @@ export default function Dashboard() {
         reasoningModel: useTradingStore.getState().selectedReasoningModel,
         progressiveState: useTradingStore.getState().progressiveAnalyses,
         partialBatch: partialBatchData,
-        macroTimeframeImage: useTradingStore.getState().macroTimeframeImage ? { timeframe: "4h", image: useTradingStore.getState().macroTimeframeImage } : undefined,
-        confirmationTimeframeImage: useTradingStore.getState().confirmationTimeframeImage ? { timeframe: "1h", image: useTradingStore.getState().confirmationTimeframeImage } : undefined,
-        structureTimeframeImage: useTradingStore.getState().structureTimeframeImage ? { timeframe: "15m", image: useTradingStore.getState().structureTimeframeImage } : undefined,
+        macroTimeframeImage: useTradingStore.getState().macroTimeframeImage
+          ? {
+              timeframe: "4h",
+              image: useTradingStore.getState().macroTimeframeImage,
+            }
+          : undefined,
+        confirmationTimeframeImage: useTradingStore.getState()
+          .confirmationTimeframeImage
+          ? {
+              timeframe: "1h",
+              image: useTradingStore.getState().confirmationTimeframeImage,
+            }
+          : undefined,
+        structureTimeframeImage: useTradingStore.getState()
+          .structureTimeframeImage
+          ? {
+              timeframe: "15m",
+              image: useTradingStore.getState().structureTimeframeImage,
+            }
+          : undefined,
       };
 
       if (useTradingStore.getState().marketDataMode === "visual_only") {
@@ -819,13 +958,17 @@ export default function Dashboard() {
             );
           }
 
-          reqBody.screenshots = await Promise.all(selected.map(async (o) => ({
-            timestamp: new Date(o.timestamp).toISOString(),
-            mimeType: "image/jpeg",
-            base64: o.imageBase64 || (o.imageId ? await ImageStore.getImage(o.imageId) : ""),
-            platform: platform,
-            symbol: symbol,
-          })));
+          reqBody.screenshots = await Promise.all(
+            selected.map(async (o) => ({
+              timestamp: new Date(o.timestamp).toISOString(),
+              mimeType: "image/jpeg",
+              base64:
+                o.imageBase64 ||
+                (o.imageId ? await ImageStore.getImage(o.imageId) : ""),
+              platform: platform,
+              symbol: symbol,
+            })),
+          );
         } else {
           reqBody.imageBase64 = currentImageBase64;
         }
@@ -932,18 +1075,29 @@ export default function Dashboard() {
           activeConnectionId: current.activeConnectionId,
           isProgressive: true,
           progressiveState: current.progressiveAnalyses,
-          macroTimeframeImage: current.macroTimeframeImage ? { timeframe: "4h", image: current.macroTimeframeImage } : undefined,
-          confirmationTimeframeImage: current.confirmationTimeframeImage ? { timeframe: "1h", image: current.confirmationTimeframeImage } : undefined,
-          structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
+          macroTimeframeImage: current.macroTimeframeImage
+            ? { timeframe: "4h", image: current.macroTimeframeImage }
+            : undefined,
+          confirmationTimeframeImage: current.confirmationTimeframeImage
+            ? { timeframe: "1h", image: current.confirmationTimeframeImage }
+            : undefined,
+          structureTimeframeImage: current.structureTimeframeImage
+            ? { timeframe: "15m", image: current.structureTimeframeImage }
+            : undefined,
           primaryTimeframe: {
             timeframe: "5m",
-            screenshots: await Promise.all(framesToAnalyze.map(async (obs) => ({
-              timestamp: new Date(obs.timestamp).toISOString(),
-              mimeType: "image/jpeg",
-              base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
-              platform: current.platform,
-              symbol: current.symbol,
-            }))),
+            screenshots: await Promise.all(
+              framesToAnalyze.map(async (obs) => ({
+                timestamp: new Date(obs.timestamp).toISOString(),
+                mimeType: "image/jpeg",
+                // base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
+                base64: obs.imageId
+                  ? await ImageStore.getImage(obs.imageId)
+                  : "",
+                platform: current.platform,
+                symbol: current.symbol,
+              })),
+            ),
           },
         }),
       });
@@ -1048,7 +1202,7 @@ export default function Dashboard() {
                 Live AI chart analysis and probability-based signals
               </p>
             </div>
-            
+
             <Button
               variant="outline"
               onClick={() => setIsConfigOpen(!isConfigOpen)}
@@ -1056,26 +1210,31 @@ export default function Dashboard() {
             >
               <Settings2 className="w-4 h-4 text-amber-500" />
               Configuration
-              <ChevronDown className={`w-4 h-4 transition-transform ${isConfigOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${isConfigOpen ? "rotate-180" : ""}`}
+              />
             </Button>
           </div>
 
           {isConfigOpen && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-zinc-950 border border-zinc-800/50 rounded-xl p-5 animate-in slide-in-from-top-2 fade-in duration-200 shadow-xl w-full">
-              
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-zinc-800/50">
                   <div className="w-6 h-6 rounded-md bg-purple-500/10 flex items-center justify-center">
                     <Activity className="w-3.5 h-3.5 text-purple-400" />
                   </div>
-                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">1. AI Engine</h3>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    1. AI Engine
+                  </h3>
                 </div>
-                
+
                 <TooltipProvider>
                   <div className="flex flex-col space-y-1.5">
                     <div className="flex items-center gap-1">
                       <Label className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">
-                        {useTradingStore.getState().useDualModel ? "Progressive Analysis Model (Vision)" : "AI Model"}
+                        {useTradingStore.getState().useDualModel
+                          ? "Progressive Analysis Model (Vision)"
+                          : "AI Model"}
                       </Label>
                       <Tooltip>
                         <TooltipTrigger>
@@ -1083,8 +1242,8 @@ export default function Dashboard() {
                         </TooltipTrigger>
                         <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
                           <p>
-                            {useTradingStore.getState().useDualModel 
-                              ? "This model is used ONLY by: /api/progressive-analyze" 
+                            {useTradingStore.getState().useDualModel
+                              ? "This model is used ONLY by: /api/progressive-analyze"
                               : "Select which AI provider and model will analyze your chart."}
                           </p>
                         </TooltipContent>
@@ -1159,14 +1318,19 @@ export default function Dashboard() {
                           <Info className="w-3 h-3 text-zinc-600 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                          <p>Enable Dual Model mode to save tokens. Vision model extracts data, Text model analyzes it.</p>
+                          <p>
+                            Enable Dual Model mode to save tokens. Vision model
+                            extracts data, Text model analyzes it.
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </div>
                     <div className="flex items-center gap-2 h-8">
                       <Switch
                         checked={useTradingStore.getState().useDualModel}
-                        onCheckedChange={(val) => useTradingStore.getState().setUseDualModel(val)}
+                        onCheckedChange={(val) =>
+                          useTradingStore.getState().setUseDualModel(val)
+                        }
                         className="data-[state=checked]:bg-amber-500"
                       />
                     </div>
@@ -1194,7 +1358,9 @@ export default function Dashboard() {
                           const idx = val.indexOf(":");
                           const provider = val.substring(0, idx) as any;
                           const model = val.substring(idx + 1);
-                          useTradingStore.getState().setSelectedReasoningModel(provider, model);
+                          useTradingStore
+                            .getState()
+                            .setSelectedReasoningModel(provider, model);
                         }}
                       >
                         <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
@@ -1203,15 +1369,22 @@ export default function Dashboard() {
                         </SelectTrigger>
                         <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500">OpenRouter (Text Only)</SelectLabel>
+                            <SelectLabel className="text-zinc-500">
+                              OpenRouter (Text Only)
+                            </SelectLabel>
                             {getModelsByProvider("openrouter").map((m) => (
-                              <SelectItem key={m.id} value={`openrouter:${m.id}`}>
+                              <SelectItem
+                                key={m.id}
+                                value={`openrouter:${m.id}`}
+                              >
                                 {m.name}
                               </SelectItem>
                             ))}
                           </SelectGroup>
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500 mt-2">Groq (Text Only)</SelectLabel>
+                            <SelectLabel className="text-zinc-500 mt-2">
+                              Groq (Text Only)
+                            </SelectLabel>
                             {getModelsByProvider("groq").map((m) => (
                               <SelectItem key={m.id} value={`groq:${m.id}`}>
                                 {m.name}
@@ -1230,7 +1403,9 @@ export default function Dashboard() {
                   <div className="w-6 h-6 rounded-md bg-amber-500/10 flex items-center justify-center">
                     <Target className="w-3.5 h-3.5 text-amber-400" />
                   </div>
-                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">2. Trading Rules</h3>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    2. Trading Rules
+                  </h3>
                 </div>
 
                 <div className="flex flex-col space-y-1.5">
@@ -1240,14 +1415,23 @@ export default function Dashboard() {
                     </Label>
                   </div>
                   <Select
-                    value={useTradingStore.getState().selectedStrategies.join(",")}
+                    value={useTradingStore
+                      .getState()
+                      .selectedStrategies.join(",")}
                     onValueChange={(val: string | null) => {
                       if (!val) return;
-                      const current = useTradingStore.getState().selectedStrategies;
+                      const current =
+                        useTradingStore.getState().selectedStrategies;
                       if (current.includes(val)) {
-                        useTradingStore.getState().setSelectedStrategies(current.filter((s) => s !== val));
+                        useTradingStore
+                          .getState()
+                          .setSelectedStrategies(
+                            current.filter((s) => s !== val),
+                          );
                       } else {
-                        useTradingStore.getState().setSelectedStrategies([...current, val]);
+                        useTradingStore
+                          .getState()
+                          .setSelectedStrategies([...current, val]);
                       }
                     }}
                   >
@@ -1271,7 +1455,9 @@ export default function Dashboard() {
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              checked={useTradingStore.getState().selectedStrategies.includes(strat)}
+                              checked={useTradingStore
+                                .getState()
+                                .selectedStrategies.includes(strat)}
                               readOnly
                               className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
                             />
@@ -1291,7 +1477,9 @@ export default function Dashboard() {
                   </div>
                   <Select
                     value={useTradingStore.getState().tradingMode}
-                    onValueChange={(val: any) => useTradingStore.getState().setTradingMode(val)}
+                    onValueChange={(val: any) =>
+                      useTradingStore.getState().setTradingMode(val)
+                    }
                   >
                     <SelectTrigger className="w-full h-9 text-xs bg-zinc-900 border-zinc-800 text-zinc-200 focus:ring-0 focus:ring-offset-0">
                       <SelectValue placeholder="Exec" />
@@ -1330,7 +1518,9 @@ export default function Dashboard() {
                   <div className="w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center">
                     <Layers className="w-3.5 h-3.5 text-blue-400" />
                   </div>
-                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">3. Context & Filters</h3>
+                  <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    3. Context & Filters
+                  </h3>
                 </div>
 
                 {marketDataMode === "visual_only" && (
@@ -1341,14 +1531,23 @@ export default function Dashboard() {
                       </Label>
                     </div>
                     <Select
-                      value={useTradingStore.getState().visibleIndicators.join(",")}
+                      value={useTradingStore
+                        .getState()
+                        .visibleIndicators.join(",")}
                       onValueChange={(val: string | null) => {
                         if (!val) return;
-                        const current = useTradingStore.getState().visibleIndicators;
+                        const current =
+                          useTradingStore.getState().visibleIndicators;
                         if (current.includes(val)) {
-                          useTradingStore.getState().setVisibleIndicators(current.filter((i) => i !== val));
+                          useTradingStore
+                            .getState()
+                            .setVisibleIndicators(
+                              current.filter((i) => i !== val),
+                            );
                         } else {
-                          useTradingStore.getState().setVisibleIndicators([...current, val]);
+                          useTradingStore
+                            .getState()
+                            .setVisibleIndicators([...current, val]);
                         }
                       }}
                     >
@@ -1358,13 +1557,24 @@ export default function Dashboard() {
                       </SelectTrigger>
                       <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
                         {[
-                          "RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR",
+                          "RSI",
+                          "MACD",
+                          "Bollinger Bands",
+                          "EMA 20",
+                          "EMA 50",
+                          "EMA 200",
+                          "Volume",
+                          "Stochastic",
+                          "VWAP",
+                          "ATR",
                         ].map((ind) => (
                           <SelectItem key={ind} value={ind}>
                             <div className="flex items-center gap-2">
                               <input
                                 type="checkbox"
-                                checked={useTradingStore.getState().visibleIndicators.includes(ind)}
+                                checked={useTradingStore
+                                  .getState()
+                                  .visibleIndicators.includes(ind)}
                                 readOnly
                                 className="w-3 h-3 bg-zinc-800 border-zinc-700 rounded-sm"
                               />
@@ -1473,7 +1683,6 @@ export default function Dashboard() {
 
           {stream && marketDataMode === "visual_only" && (
             <div className="flex-1 flex flex-col md:flex-row items-start md:items-center gap-4 lg:border-l lg:border-zinc-800 lg:pl-4 justify-end">
-              
               <div className="flex flex-col text-[10px] text-zinc-400 min-w-[140px] space-y-1 md:border-r md:border-zinc-800 md:pr-4 mr-2">
                 <div className="font-semibold text-amber-500/90 mb-1 tracking-wide">
                   MTF CONTEXT
@@ -1484,13 +1693,43 @@ export default function Dashboard() {
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
                       {useTradingStore.getState().macroTimeframeCapturedAt ? (
-                        <MTFCountdown capturedAt={useTradingStore.getState().macroTimeframeCapturedAt!} timeframe="4h" onReset={() => { useTradingStore.getState().setMacroTimeframeImage(null); useTradingStore.getState().setMacroTimeframeCapturedAt(null); }} />
+                        <MTFCountdown
+                          capturedAt={
+                            useTradingStore.getState().macroTimeframeCapturedAt!
+                          }
+                          timeframe="4h"
+                          onReset={() => {
+                            useTradingStore
+                              .getState()
+                              .setMacroTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setMacroTimeframeCapturedAt(null);
+                          }}
+                        />
                       ) : (
-                        <button onClick={() => { useTradingStore.getState().setMacroTimeframeImage(null); useTradingStore.getState().setMacroTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
+                        <button
+                          onClick={() => {
+                            useTradingStore
+                              .getState()
+                              .setMacroTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setMacroTimeframeCapturedAt(null);
+                          }}
+                          className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2"
+                        >
+                          Recapture
+                        </button>
                       )}
                     </div>
                   ) : (
-                    <button onClick={() => handleCaptureMTF("4h")} className="text-amber-500 hover:text-amber-400 underline">Capture 4H</button>
+                    <button
+                      onClick={() => handleCaptureMTF("4h")}
+                      className="text-amber-500 hover:text-amber-400 underline"
+                    >
+                      Capture 4H
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-4">
@@ -1498,14 +1737,46 @@ export default function Dashboard() {
                   {useTradingStore.getState().confirmationTimeframeImage ? (
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
-                      {useTradingStore.getState().confirmationTimeframeCapturedAt ? (
-                        <MTFCountdown capturedAt={useTradingStore.getState().confirmationTimeframeCapturedAt!} timeframe="1h" onReset={() => { useTradingStore.getState().setConfirmationTimeframeImage(null); useTradingStore.getState().setConfirmationTimeframeCapturedAt(null); }} />
+                      {useTradingStore.getState()
+                        .confirmationTimeframeCapturedAt ? (
+                        <MTFCountdown
+                          capturedAt={
+                            useTradingStore.getState()
+                              .confirmationTimeframeCapturedAt!
+                          }
+                          timeframe="1h"
+                          onReset={() => {
+                            useTradingStore
+                              .getState()
+                              .setConfirmationTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setConfirmationTimeframeCapturedAt(null);
+                          }}
+                        />
                       ) : (
-                        <button onClick={() => { useTradingStore.getState().setConfirmationTimeframeImage(null); useTradingStore.getState().setConfirmationTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
+                        <button
+                          onClick={() => {
+                            useTradingStore
+                              .getState()
+                              .setConfirmationTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setConfirmationTimeframeCapturedAt(null);
+                          }}
+                          className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2"
+                        >
+                          Recapture
+                        </button>
                       )}
                     </div>
                   ) : (
-                    <button onClick={() => handleCaptureMTF("1h")} className="text-amber-500 hover:text-amber-400 underline">Capture 1H</button>
+                    <button
+                      onClick={() => handleCaptureMTF("1h")}
+                      className="text-amber-500 hover:text-amber-400 underline"
+                    >
+                      Capture 1H
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-4">
@@ -1513,14 +1784,46 @@ export default function Dashboard() {
                   {useTradingStore.getState().structureTimeframeImage ? (
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
-                      {useTradingStore.getState().structureTimeframeCapturedAt ? (
-                        <MTFCountdown capturedAt={useTradingStore.getState().structureTimeframeCapturedAt!} timeframe="15m" onReset={() => { useTradingStore.getState().setStructureTimeframeImage(null); useTradingStore.getState().setStructureTimeframeCapturedAt(null); }} />
+                      {useTradingStore.getState()
+                        .structureTimeframeCapturedAt ? (
+                        <MTFCountdown
+                          capturedAt={
+                            useTradingStore.getState()
+                              .structureTimeframeCapturedAt!
+                          }
+                          timeframe="15m"
+                          onReset={() => {
+                            useTradingStore
+                              .getState()
+                              .setStructureTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setStructureTimeframeCapturedAt(null);
+                          }}
+                        />
                       ) : (
-                        <button onClick={() => { useTradingStore.getState().setStructureTimeframeImage(null); useTradingStore.getState().setStructureTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
+                        <button
+                          onClick={() => {
+                            useTradingStore
+                              .getState()
+                              .setStructureTimeframeImage(null);
+                            useTradingStore
+                              .getState()
+                              .setStructureTimeframeCapturedAt(null);
+                          }}
+                          className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2"
+                        >
+                          Recapture
+                        </button>
                       )}
                     </div>
                   ) : (
-                    <button onClick={() => handleCaptureMTF("15m")} className="text-amber-500 hover:text-amber-400 underline">Capture 15M</button>
+                    <button
+                      onClick={() => handleCaptureMTF("15m")}
+                      className="text-amber-500 hover:text-amber-400 underline"
+                    >
+                      Capture 15M
+                    </button>
                   )}
                 </div>
               </div>
@@ -1531,7 +1834,7 @@ export default function Dashboard() {
                 </div>
 
                 {!isLiveObservationEnabled ? (
-                  <Button 
+                  <Button
                     onClick={() => {
                       if (!stream) {
                         toast.error("Please connect the trading chart first.");
@@ -1540,8 +1843,8 @@ export default function Dashboard() {
                       if (!validateRequiredFields()) return;
                       setIsLiveObservationEnabled(true);
                       setIsLiveObservationPaused(false);
-                    }} 
-                    variant="outline" 
+                    }}
+                    variant="outline"
                     className="h-7 text-[10px] w-full mt-1 border-zinc-700 hover:bg-zinc-800"
                   >
                     <div className="w-1.5 h-1.5 rounded-full border border-zinc-500 mr-2" />
@@ -1549,9 +1852,11 @@ export default function Dashboard() {
                   </Button>
                 ) : (
                   <div className="flex items-center gap-2 mt-1">
-                    <Button 
-                      onClick={() => setIsLiveObservationPaused(!isLiveObservationPaused)} 
-                      variant="outline" 
+                    <Button
+                      onClick={() =>
+                        setIsLiveObservationPaused(!isLiveObservationPaused)
+                      }
+                      variant="outline"
                       className={`h-7 text-[10px] flex-1 border-zinc-700 hover:bg-zinc-800 ${isLiveObservationPaused ? "text-amber-400" : "text-green-400"}`}
                     >
                       {isLiveObservationPaused ? (
@@ -1566,9 +1871,9 @@ export default function Dashboard() {
                         </>
                       )}
                     </Button>
-                    <Button 
-                      onClick={() => setShowStopObservationModal(true)} 
-                      variant="outline" 
+                    <Button
+                      onClick={() => setShowStopObservationModal(true)}
+                      variant="outline"
                       className="h-7 w-7 p-0 border-zinc-700 hover:bg-zinc-800 hover:text-red-400 text-zinc-400 shrink-0"
                       title="Stop Live Observation"
                     >
@@ -1614,7 +1919,9 @@ export default function Dashboard() {
               <div className="flex flex-col text-[10px] text-zinc-400 md:border-l md:border-zinc-800 md:pl-4 min-w-[140px] space-y-1">
                 <div className="flex items-center justify-between gap-4 mb-2">
                   <span>Next Frame:</span>
-                  <span className="text-zinc-200">{Math.ceil(timeUntilNextFrame).toString().padStart(2, '0')}s</span>
+                  <span className="text-zinc-200">
+                    {Math.ceil(timeUntilNextFrame).toString().padStart(2, "0")}s
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between gap-4">
@@ -1672,17 +1979,21 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-          {useTradingStore.getState().retryProgressiveAnalysis && marketDataMode === "visual_only" && stream && (
-            <div className="flex justify-end px-4 pb-4">
-              <button
-                onClick={handleRetryProgressiveAnalysis}
-                disabled={useTradingStore.getState().retryLoading}
-                className="text-[10px] px-3 py-1.5 rounded-md bg-red-950/40 text-red-400 border border-red-900/50 hover:bg-red-900/40 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {useTradingStore.getState().retryLoading ? "Retrying..." : "Retry Progressive Analysis"}
-              </button>
-            </div>
-          )}
+          {useTradingStore.getState().retryProgressiveAnalysis &&
+            marketDataMode === "visual_only" &&
+            stream && (
+              <div className="flex justify-end px-4 pb-4">
+                <button
+                  onClick={handleRetryProgressiveAnalysis}
+                  disabled={useTradingStore.getState().retryLoading}
+                  className="text-[10px] px-3 py-1.5 rounded-md bg-red-950/40 text-red-400 border border-red-900/50 hover:bg-red-900/40 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {useTradingStore.getState().retryLoading
+                    ? "Retrying..."
+                    : "Retry Progressive Analysis"}
+                </button>
+              </div>
+            )}
         </div>
       </header>
 
@@ -1729,7 +2040,11 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: showValidationErrors && isFieldInvalid(useTradingStore.getState().platform) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
+                      border:
+                        showValidationErrors &&
+                        isFieldInvalid(useTradingStore.getState().platform)
+                          ? "1px solid #ef4444"
+                          : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-24 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1739,9 +2054,12 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. Binomo"
                   />
-                  {showValidationErrors && isFieldInvalid(useTradingStore.getState().platform) && (
-                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
-                  )}
+                  {showValidationErrors &&
+                    isFieldInvalid(useTradingStore.getState().platform) && (
+                      <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">
+                        Required
+                      </span>
+                    )}
                 </div>
                 <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">
@@ -1751,7 +2069,10 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: showValidationErrors && isFieldInvalid(symbol) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
+                      border:
+                        showValidationErrors && isFieldInvalid(symbol)
+                          ? "1px solid #ef4444"
+                          : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-28 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1764,7 +2085,9 @@ export default function Dashboard() {
                     placeholder="e.g. EUR/USD"
                   />
                   {showValidationErrors && isFieldInvalid(symbol) && (
-                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">
+                      Required
+                    </span>
                   )}
                 </div>
                 <div className="flex flex-col gap-1 relative">
@@ -1775,7 +2098,10 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: showValidationErrors && isFieldInvalid(timeframe) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
+                      border:
+                        showValidationErrors && isFieldInvalid(timeframe)
+                          ? "1px solid #ef4444"
+                          : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1786,7 +2112,9 @@ export default function Dashboard() {
                     placeholder="e.g. 5m"
                   />
                   {showValidationErrors && isFieldInvalid(timeframe) && (
-                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
+                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">
+                      Required
+                    </span>
                   )}
                 </div>
                 <div className="flex flex-col gap-1 relative">
@@ -1797,7 +2125,11 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: "rgba(24, 24, 27, 0.95)",
                       color: "#ffffff",
-                      border: showValidationErrors && isFieldInvalid(useTradingStore.getState().tradeDuration) ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.1)",
+                      border:
+                        showValidationErrors &&
+                        isFieldInvalid(useTradingStore.getState().tradeDuration)
+                          ? "1px solid #ef4444"
+                          : "1px solid rgba(255,255,255,0.1)",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
                     }}
                     className="w-20 h-8 text-xs font-medium text-center focus-visible:ring-1 focus-visible:ring-white/20 rounded-md transition-colors"
@@ -1809,9 +2141,14 @@ export default function Dashboard() {
                     }
                     placeholder="e.g. 5m"
                   />
-                  {showValidationErrors && isFieldInvalid(useTradingStore.getState().tradeDuration) && (
-                    <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">Required</span>
-                  )}
+                  {showValidationErrors &&
+                    isFieldInvalid(
+                      useTradingStore.getState().tradeDuration,
+                    ) && (
+                      <span className="text-[9px] text-red-500 absolute -bottom-4 left-1 font-bold">
+                        Required
+                      </span>
+                    )}
                 </div>
               </div>
             )}
@@ -2233,20 +2570,28 @@ export default function Dashboard() {
         </div>
       )}
 
-      <Dialog open={showStopObservationModal} onOpenChange={setShowStopObservationModal}>
+      <Dialog
+        open={showStopObservationModal}
+        onOpenChange={setShowStopObservationModal}
+      >
         <DialogContent className="sm:max-w-[425px] bg-zinc-900 border-zinc-800 text-zinc-100">
           <DialogHeader>
             <DialogTitle>Stop Live Observation?</DialogTitle>
             <DialogDescription className="text-zinc-400">
-              Stopping Live Observation will clear the current live observation data.
+              Stopping Live Observation will clear the current live observation
+              data.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-zinc-300">
-              Current captured frames: <strong className="text-white">{useTradingStore.getState().totalFramesCaptured}</strong>
+              Current captured frames:{" "}
+              <strong className="text-white">
+                {useTradingStore.getState().totalFramesCaptured}
+              </strong>
             </p>
             <p className="text-sm text-zinc-400 mt-2">
-              Pending progressive analysis data will also be cleared. This data cannot be recovered.
+              Pending progressive analysis data will also be cleared. This data
+              cannot be recovered.
             </p>
           </div>
           <DialogFooter className="sm:justify-between">
