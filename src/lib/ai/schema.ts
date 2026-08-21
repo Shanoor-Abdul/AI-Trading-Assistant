@@ -61,6 +61,8 @@ const LevelsDefault = {
   resistanceLevels: [] as z.infer<typeof PriceLevelSchema>[],
   supportInteraction: "",
   resistanceInteraction: "",
+  breakoutLevel: null,
+  invalidationLevel: null,
 };
 
 const CandleSchema = z.object({
