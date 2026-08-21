@@ -1,5 +1,111 @@
 import { z } from "zod";
 
+const NumericObservationSchema = z.object({
+  value: z.number().finite().nullable().default(null),
+  source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+});
+
+const PriceLevelSchema = z.object({
+  value: z.number().finite().nullable().default(null),
+  price: z.number().finite().nullable().default(null),
+  type: z.string().optional(),
+  strength: z.coerce.number().min(0).max(100).default(0),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+  interaction: z.string().optional(),
+});
+
+const FrameObservationSchema = z.object({
+  frameIndex: z.coerce.number().int().nonnegative(),
+  timestamp: z.union([z.string(), z.number()]).nullable().default(null),
+  timeframe: z.string().default(""),
+  isPartial: z.boolean().default(false),
+  price: z.number().finite().nullable().default(null),
+  completedCandle: z.any().nullable().default(null),
+  currentIncompleteCandle: z.any().nullable().default(null),
+  trend: z.string().default("Unknown"),
+  shortTermDirection: z.string().default("Unknown"),
+  structure: z.string().default(""),
+  momentum: z.string().default(""),
+  candleBehavior: z.string().default(""),
+  indicators: z.record(z.string(), z.any()).default({}),
+  levels: z.object({
+    supportLevels: z.array(PriceLevelSchema).default([]),
+    resistanceLevels: z.array(PriceLevelSchema).default([]),
+    supportInteraction: z.string().default(""),
+    resistanceInteraction: z.string().default(""),
+  }).default({}),
+  marketRegime: z.string().default("UNCLEAR"),
+  bullishEvidenceGroups: z.array(z.string()).default([]),
+  bearishEvidenceGroups: z.array(z.string()).default([]),
+  invalidation: z.array(z.string()).default([]),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+});
+
+const UnifiedMarketDataSchema = z.object({
+  symbol: z.string().default(""),
+  timeframe: z.string().default(""),
+  currentPrice: NumericObservationSchema.default({}),
+  completedCandle: NumericObservationSchema.default({}),
+  currentIncompleteCandle: NumericObservationSchema.default({}),
+  volume: NumericObservationSchema.default({}),
+  bidAskSpread: NumericObservationSchema.default({}),
+  supportLevels: z.object({
+    value: z.array(z.any()).default([]),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  resistanceLevels: z.object({
+    value: z.array(z.any()).default([]),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  indicators: z.record(z.string(), z.any()).default({}),
+  marketStructure: z.object({
+    value: z.any().nullable().default(null),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  trend: z.object({
+    value: z.any().nullable().default(null),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  momentum: z.object({
+    value: z.any().nullable().default(null),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  tradingSession: z.object({
+    value: z.any().nullable().default(null),
+    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+    confidence: z.coerce.number().min(0).max(100).default(0),
+  }).default({}),
+  dataConflict: z.boolean().default(false),
+  conflictDetails: z.string().default(""),
+  frameObservations: z.array(FrameObservationSchema).default([]),
+  temporalState: z.object({
+    previousTrend: z.string().default(""),
+    currentDirection: z.string().default(""),
+    transition: z.string().default("NONE"),
+    regime: z.string().default("UNCLEAR"),
+    staleEvidence: z.array(z.string()).default([]),
+    currentEvidence: z.array(z.string()).default([]),
+    conflicts: z.array(z.string()).default([]),
+    confirmationStatus: z.string().default("UNCLEAR"),
+  }).default({}),
+  evidenceGroups: z.object({
+    structure: z.array(z.string()).default([]),
+    candle: z.array(z.string()).default([]),
+    momentum: z.array(z.string()).default([]),
+    indicators: z.array(z.string()).default([]),
+    supportResistance: z.array(z.string()).default([]),
+    volatility: z.array(z.string()).default([]),
+    volume: z.array(z.string()).default([]),
+    mtf: z.array(z.string()).default([]),
+  }).default({}),
+}).passthrough();
+
 export const UniversalAIRequestSchema = z.object({
   mode: z.enum(["visual_only", "api_data"]),
   provider: z.string(),
@@ -24,22 +130,9 @@ export const UniversalAIRequestSchema = z.object({
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
     base64: z.string(),
   })).optional(),
-  macroTimeframe: z.object({
-    timeframe: z.string(),
-    image: z.string(),
-  }).optional(),
-  confirmationTimeframeImage: z.object({
-    timeframe: z.string(),
-    image: z.string(),
-  }).optional(),
-  structureTimeframe: z.object({
-    timeframe: z.string(),
-    image: z.string(),
-  }).optional(),
-  primaryTimeframePayload: z.object({
-    timeframe: z.string(),
-    screenshots: z.array(z.any()),
-  }).optional(),
+  macroTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
+  confirmationTimeframeImage: z.object({ timeframe: z.string(), image: z.string() }).optional(),
+  structureTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
   marketData: z.any().optional(),
   previousAnalysis: z.any().optional(),
   marketHistorySummary: z.any().optional(),
@@ -52,14 +145,14 @@ export type UniversalAIRequest = z.infer<typeof UniversalAIRequestSchema>;
 export const UniversalAIResponseSchema = z.object({
   trend: z.enum(["Bullish", "Bearish", "Sideways"]).default("Sideways"),
   signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).default("NO_TRADE"),
-  confidence: z.coerce.number().min(0).max(100),
+  confidence: z.coerce.number().min(0).max(100).default(0),
   readiness: z.enum(["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"]).default("NOT READY"),
   estimatedConfidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),
-  recommendedTimeframe: z.string(),
+  recommendedTimeframe: z.string().default(""),
   entryPrice: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
   stopLoss: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
   takeProfit: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
-  explanation: z.string(),
+  explanation: z.string().default(""),
   requestedIndicators: z.array(z.string()).default([]),
   requiredTimeframe: z.string().nullable().default(null),
   detectedSymbol: z.string().nullable().default(null),
@@ -69,9 +162,9 @@ export const UniversalAIResponseSchema = z.object({
   riskDecision: z.string().default("UNSURE"),
   reasoning: z.string().default("No reasoning provided"),
   dataConfidence: z.coerce.number().min(0).max(100).default(0),
-  riskReward: z.number().optional(),
+  riskReward: z.coerce.number().nullable().optional(),
   marketState: z.string().optional(),
-  unifiedMarketData: z.any().optional(),
+  unifiedMarketData: UnifiedMarketDataSchema.optional(),
   changesFromPrevious: z.string().optional(),
   momentum: z.string().optional(),
   candlestickBehavior: z.string().optional(),
@@ -87,7 +180,7 @@ export const UniversalAIResponseSchema = z.object({
   confirmationStatus: z.enum(["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"]).optional(),
   primaryTrend: z.string().optional(),
   shortTermDirection: z.string().optional(),
-  structureTransition: z.enum(["CONTINUATION", "PULLBACK", "RECOVERY", "REVERSAL_DEVELOPING", "REVERSAL_CONFIRMED", "BREAKOUT", "FALSE_BREAKOUT", "RANGE", "CHOPPY"]).optional(),
-});
+  structureTransition: z.string().optional(),
+}).passthrough();
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;
