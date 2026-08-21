@@ -1,7 +1,10 @@
 export type AIProvider = "gemini" | "groq" | "openai" | "openrouter";
 
 export const AI_REQUEST_CONFIG = {
-  maxOutputTokens: 1200,
+  // Progressive vision responses contain structured market evidence and can
+  // exceed the old 1200-token ceiling, which caused truncated JSON and an
+  // "Analysis Failed: Invalid JSON or Schema" fallback.
+  maxOutputTokens: 6000,
 };
 
 export interface AIModel {
