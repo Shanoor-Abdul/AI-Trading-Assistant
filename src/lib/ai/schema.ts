@@ -6,6 +6,12 @@ const NumericObservationSchema = z.object({
   confidence: z.coerce.number().min(0).max(100).default(0),
 });
 
+const NumericObservationDefault = {
+  value: null,
+  source: "visual" as const,
+  confidence: 0,
+};
+
 const PriceLevelSchema = z.object({
   value: z.number().finite().nullable().default(null),
   price: z.number().finite().nullable().default(null),
@@ -14,6 +20,13 @@ const PriceLevelSchema = z.object({
   confidence: z.coerce.number().min(0).max(100).default(0),
   interaction: z.string().optional(),
 });
+
+const LevelsDefault = {
+  supportLevels: [] as z.infer<typeof PriceLevelSchema>[],
+  resistanceLevels: [] as z.infer<typeof PriceLevelSchema>[],
+  supportInteraction: "",
+  resistanceInteraction: "",
+};
 
 const FrameObservationSchema = z.object({
   frameIndex: z.coerce.number().int().nonnegative(),
@@ -34,7 +47,7 @@ const FrameObservationSchema = z.object({
     resistanceLevels: z.array(PriceLevelSchema).default([]),
     supportInteraction: z.string().default(""),
     resistanceInteraction: z.string().default(""),
-  }).default({}),
+  }).default(LevelsDefault),
   marketRegime: z.string().default("UNCLEAR"),
   bullishEvidenceGroups: z.array(z.string()).default([]),
   bearishEvidenceGroups: z.array(z.string()).default([]),
@@ -45,42 +58,42 @@ const FrameObservationSchema = z.object({
 const UnifiedMarketDataSchema = z.object({
   symbol: z.string().default(""),
   timeframe: z.string().default(""),
-  currentPrice: NumericObservationSchema.default({}),
-  completedCandle: NumericObservationSchema.default({}),
-  currentIncompleteCandle: NumericObservationSchema.default({}),
-  volume: NumericObservationSchema.default({}),
-  bidAskSpread: NumericObservationSchema.default({}),
+  currentPrice: NumericObservationSchema.default(NumericObservationDefault),
+  completedCandle: NumericObservationSchema.default(NumericObservationDefault),
+  currentIncompleteCandle: NumericObservationSchema.default(NumericObservationDefault),
+  volume: NumericObservationSchema.default(NumericObservationDefault),
+  bidAskSpread: NumericObservationSchema.default(NumericObservationDefault),
   supportLevels: z.object({
     value: z.array(z.any()).default([]),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default({ value: [], source: "visual", confidence: 0 }),
   resistanceLevels: z.object({
     value: z.array(z.any()).default([]),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default({ value: [], source: "visual", confidence: 0 }),
   indicators: z.record(z.string(), z.any()).default({}),
   marketStructure: z.object({
     value: z.any().nullable().default(null),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default(NumericObservationDefault),
   trend: z.object({
     value: z.any().nullable().default(null),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default(NumericObservationDefault),
   momentum: z.object({
     value: z.any().nullable().default(null),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default(NumericObservationDefault),
   tradingSession: z.object({
     value: z.any().nullable().default(null),
     source: z.enum(["visual", "api", "hybrid"]).default("visual"),
     confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({}),
+  }).default(NumericObservationDefault),
   dataConflict: z.boolean().default(false),
   conflictDetails: z.string().default(""),
   frameObservations: z.array(FrameObservationSchema).default([]),
@@ -93,7 +106,16 @@ const UnifiedMarketDataSchema = z.object({
     currentEvidence: z.array(z.string()).default([]),
     conflicts: z.array(z.string()).default([]),
     confirmationStatus: z.string().default("UNCLEAR"),
-  }).default({}),
+  }).default({
+    previousTrend: "",
+    currentDirection: "",
+    transition: "NONE",
+    regime: "UNCLEAR",
+    staleEvidence: [],
+    currentEvidence: [],
+    conflicts: [],
+    confirmationStatus: "UNCLEAR",
+  }),
   evidenceGroups: z.object({
     structure: z.array(z.string()).default([]),
     candle: z.array(z.string()).default([]),
@@ -103,7 +125,16 @@ const UnifiedMarketDataSchema = z.object({
     volatility: z.array(z.string()).default([]),
     volume: z.array(z.string()).default([]),
     mtf: z.array(z.string()).default([]),
-  }).default({}),
+  }).default({
+    structure: [],
+    candle: [],
+    momentum: [],
+    indicators: [],
+    supportResistance: [],
+    volatility: [],
+    volume: [],
+    mtf: [],
+  }),
 }).passthrough();
 
 export const UniversalAIRequestSchema = z.object({
@@ -130,6 +161,14 @@ export const UniversalAIRequestSchema = z.object({
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
     base64: z.string(),
   })).optional(),
+  primaryTimeframePayload: z.object({
+    timeframe: z.string().optional(),
+    screenshots: z.array(z.object({
+      timestamp: z.union([z.string(), z.number()]).optional(),
+      mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      base64: z.string(),
+    })).default([]),
+  }).optional(),
   macroTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
   confirmationTimeframeImage: z.object({ timeframe: z.string(), image: z.string() }).optional(),
   structureTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
