@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import * as fs from "fs";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
@@ -13,40 +12,38 @@ const openai = new OpenAI({
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
   const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
-
   const currentModel = req.model || "qwen/qwen-2-vl-7b-instruct:free";
 
   try {
-    try {
-      const logData = `\n\n[${new Date().toISOString()}] === OPENROUTER OUTGOING ===\n${JSON.stringify({...req, screenshot: req.screenshot ? 'base64...' : undefined, screenshots: req.screenshots ? req.screenshots.length + ' images' : undefined}, null, 2)}`;
-    } catch (e) {}
-
     const messagesContent: any[] = [{ type: "text", text: prompt }];
-
     const isTextOnlyModel = currentModel.includes("gemma") || currentModel === "openrouter/free";
 
     if (!isTextOnlyModel) {
-      if (req.screenshots && req.screenshots.length > 0) {
+      if (req.screenshots?.length) {
         for (const shot of req.screenshots) {
+          if (!shot?.base64) continue;
           messagesContent.push({
             type: "image_url",
             image_url: { url: `data:${shot.mimeType};base64,${shot.base64}` },
           });
         }
-      } else if (req.screenshot) {
+      } else if (req.screenshot?.base64) {
         messagesContent.push({
           type: "image_url",
           image_url: { url: `data:${req.screenshot.mimeType};base64,${req.screenshot.base64}` },
         });
       }
     } else {
-      console.log(`[OpenRouter] Silently stripping images for text-only model: ${currentModel} to prevent API 400 errors`);
+      console.log(`[OpenRouter] Silently stripping images for text-only model: ${currentModel}`);
     }
 
     const response = await openai.chat.completions.create({
       model: currentModel,
       messages: [{ role: "user", content: messagesContent }],
       max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
+      // Keep the existing prompt/schema validation as the source of truth,
+      // while asking compatible OpenAI-compatible endpoints for JSON output.
+      response_format: { type: "json_object" },
     });
 
     if (!response?.choices?.length) {
@@ -54,7 +51,9 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     }
 
     const text = response.choices[0]?.message?.content ?? "";
-    return normalizeResponse(text, { marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown" });
+    return normalizeResponse(text, {
+      marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
+    });
   } catch (error: any) {
     console.warn(`OpenRouter model failed: ${currentModel} - ${error.message}`);
     throw error;
