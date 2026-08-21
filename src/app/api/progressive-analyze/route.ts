@@ -63,6 +63,25 @@ export async function POST(req: NextRequest) {
       marketData: undefined,
     } as any);
 
+    const marketState = typeof result.marketState === "string" ? result.marketState.trim() : "";
+    const reasoning = typeof result.reasoning === "string" ? result.reasoning.trim() : "";
+    const bullishEvidence = Array.isArray(result.bullishEvidence) ? result.bullishEvidence : [];
+    const bearishEvidence = Array.isArray(result.bearishEvidence) ? result.bearishEvidence : [];
+    const invalidResult = result.marketState === "Analysis Failed: Invalid JSON or Schema" ||
+      result.explanation?.startsWith("[AI_ANALYSIS_INVALID]") === true ||
+      (!marketState && !reasoning && bullishEvidence.length === 0 && bearishEvidence.length === 0);
+
+    if (invalidResult) {
+      return NextResponse.json(
+        {
+          error: "Progressive AI returned an empty or invalid analysis.",
+          analysisType: "progressive",
+          extractionOnly: true,
+        },
+        { status: 502 },
+      );
+    }
+
     return NextResponse.json({
       ...result,
       analysisType: "progressive",
