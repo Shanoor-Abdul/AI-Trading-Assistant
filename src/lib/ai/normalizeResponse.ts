@@ -15,6 +15,18 @@ function normalizeIndicatorSet(indicators: any): any {
   return normalized;
 }
 
+function normalizeTrend(value: unknown): "Bullish" | "Bearish" | "Sideways" {
+  if (typeof value !== "string") return "Sideways";
+  const trend = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+  if (["bullish", "trending_up", "uptrend", "up"].includes(trend)) return "Bullish";
+  if (["bearish", "trending_down", "downtrend", "down"].includes(trend)) return "Bearish";
+
+  // Unknown/unclear/neutral/ranging values cannot safely establish direction.
+  // Normalize them to the schema-safe neutral market direction.
+  return "Sideways";
+}
+
 function normalizeUnifiedMarketData(unified: any): any {
   if (!unified || typeof unified !== "object") return undefined;
   const normalized = {
@@ -138,7 +150,7 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
 
     const normalized = {
       ...rawObj,
-      trend: rawObj.trend,
+      trend: normalizeTrend(rawObj.trend),
       signal: rawObj.signal,
       confidence: rawObj.confidence,
       readiness: rawObj.readiness,
