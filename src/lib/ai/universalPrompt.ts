@@ -1,297 +1,291 @@
 import { UniversalAIRequest } from "./schema";
 
-const SIGNALS =
-  "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL";
-
-const REGIMES =
-  "TRENDING_UP | TRENDING_DOWN | RANGING | BREAKOUT | REVERSAL | UNCLEAR";
-
-const TRANSITIONS =
-  "NONE | CONTINUATION | PULLBACK | RECOVERY | " +
-  "REVERSAL_DEVELOPING | REVERSAL_CONFIRMED | BREAKOUT | " +
-  "FALSE_BREAKOUT | RANGE | CHOPPY";
-
-const CONFIRMATION =
-  "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR";
+const SIGNALS = "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL";
+const REGIMES = "TRENDING_UP | TRENDING_DOWN | RANGING | BREAKOUT | REVERSAL | UNCLEAR";
 
 function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value ?? null, null, 2);
-  } catch {
-    return "null";
-  }
+  try { return JSON.stringify(value ?? null, null, 2); } catch { return "null"; }
 }
 
 function buildHistory(req: UniversalAIRequest): string {
-  const history = req.partialBatch
-    ? [...(req.progressiveState || []), req.partialBatch]
-    : req.progressiveState || [];
-
-  if (!history.length) {
-    return "No previous progressive history available.";
-  }
-
-  /*
-   * Important:
-   * The model receives chronological evidence, but it must NOT
-   * blindly count old observations as votes.
-   *
-   * Recent evidence has greater decision relevance.
-   */
-  return safeJson(history);
+  const history = req.partialBatch ? [...(req.progressiveState || []), req.partialBatch] : req.progressiveState || [];
+  return history.length ? safeJson(history) : "No previous progressive history available.";
 }
 
 function buildBasePrompt(req: UniversalAIRequest): string {
-  const strategies = req.selectedStrategies?.length
-    ? req.selectedStrategies.join(", ")
-    : "Auto";
-
-  const indicators = req.visibleIndicators?.length
-    ? req.visibleIndicators.join(", ")
-    : "Only indicators actually visible in the chart";
+  const strategies = req.selectedStrategies?.length ? req.selectedStrategies.join(", ") : "Auto";
+  const indicators = req.visibleIndicators?.length ? req.visibleIndicators.join(", ") : "Only indicators actually visible in the supplied chart";
 
   return `
-You are the VISUAL MARKET OBSERVATION ENGINE of an AI Trading Assistant.
+You are the VISUAL MARKET EVIDENCE ENGINE for an AI Trading Assistant.
 
-Your job is NOT to guarantee trades.
+Your primary job is to convert supplied trading-chart images into accurate, structured, chronological evidence for a deterministic TypeScript trading engine.
 
-Your job is to inspect chart images and convert visible market information into STRICT, STRUCTURED, CHRONOLOGICAL JSON evidence.
-
-The downstream TypeScript engine will make the final trading decision.
-
-You are the EYES.
-The deterministic local engine is the BRAIN.
+You are the EYES. The local engine is the BRAIN.
 
 ==================================================
-ABSOLUTE RULES
+NON-NEGOTIABLE ACCURACY RULES
 ==================================================
 
-1. NEVER invent information.
-
-2. NEVER guess an exact price that cannot be read.
-
-3. NEVER guess an exact OHLC value that cannot be read.
-
-4. NEVER invent RSI, MACD, EMA, ATR, volume, spread, support, resistance, or other numerical values.
-
-5. If a numerical value is unreadable:
-   return null.
-
-6. If a visual conclusion is uncertain:
-   use:
-   "UNCLEAR"
-   or
-   "UNKNOWN"
-   rather than guessing.
-
-7. Separate:
-   - completed candle
-   - current incomplete candle
-
-8. A current incomplete candle MUST NOT be treated as confirmed price action.
-
-9. Treat multiple images as a chronological TIME SERIES.
-
-10. NEVER treat 20 frames as 20 independent votes.
-
-11. Older evidence can become stale.
-
-12. Recent evidence is more relevant for current direction and entry timing.
-
-13. A single green candle does NOT automatically mean bullish reversal.
-
-14. A single red candle does NOT automatically mean bearish reversal.
-
-15. A breakout is NOT confirmed simply because price visually crossed a level.
-
-16. A wick beyond resistance/support is NOT sufficient confirmation.
-
-17. Distinguish:
-    - breakout attempt
-    - confirmed breakout
-    - false breakout
-
-18. Distinguish:
-    - pullback
-    - recovery
-    - reversal developing
-    - confirmed reversal
-
-19. Do not force BUY or SELL.
-
-20. If evidence is mixed or incomplete:
-    prefer WAIT / UNSURE / NO_TRADE.
-
-21. Confidence means VISUAL EVIDENCE QUALITY.
-    It does NOT mean probability of winning.
-
-22. Do not expose private chain-of-thought.
-
-23. Return concise structured evidence only.
+1. NEVER invent a value, level, indicator, candle, pattern, timeframe, symbol, or market fact.
+2. NEVER manufacture an exact price from visual approximation.
+3. If an exact number is clearly readable on the chart, extract it exactly.
+4. If the number is blurred, cropped, partially readable, or absent, return null.
+5. Do not convert a qualitative observation into a fabricated numerical value.
+6. A confidence score measures VISUAL EVIDENCE QUALITY, not probability of winning.
+7. Never claim 90%, 95%, or 100% probability of a profitable trade.
+8. If evidence conflicts or is insufficient, report UNCLEAR/UNKNOWN and WAIT.
+9. A current incomplete candle is context only and is never confirmed price action.
+10. Do not treat multiple frames as independent votes. They are one chronological time series.
 
 ==================================================
-SESSION
+WHAT MUST BE EXTRACTED WHEN VISIBLY AVAILABLE
 ==================================================
 
-Platform:
-${req.platform}
+For the current/newest frame, attempt to extract:
 
-Symbol:
-${req.symbol}
+A. PRICE
+- current price
+- recent swing high
+- recent swing low
 
-Primary timeframe:
-${req.primaryTimeframe}
+B. MARKET LEVELS
+- support zones
+- resistance zones
+- breakout level
+- failed-breakout level when visible
+- invalidation level when visually supported
 
-Confirmation timeframe:
-${req.confirmationTimeframe || "N/A"}
+C. MARKET STRUCTURE
+- HH / HL / LH / LL
+- BOS
+- CHoCH
+- continuation
+- pullback
+- recovery
+- reversal developing
+- reversal confirmed
+- breakout attempt
+- confirmed breakout
+- false breakout
+- retest
 
-Trend timeframe:
-${req.trendTimeframe || "N/A"}
+D. CANDLES
+- bullish/bearish
+- body size
+- upper wick
+- lower wick
+- rejection
+- engulfing
+- pin bar
+- doji
+- inside bar
+- expansion/contraction
 
-Trade duration:
-${req.tradeDuration || "N/A"}
+E. VISIBLE INDICATORS
+Only if the indicator panel is actually visible:
+- MACD state and exact line/histogram values if readable
+- Bollinger upper/middle/lower values if readable
+- RSI value if readable
+- ATR value if readable
+- EMA/SMA values if readable
+- volume if readable
 
-Selected strategies:
-${strategies}
+If an indicator is visible but its exact number cannot be read, return its qualitative state and keep its numeric value null.
 
-Visible indicators:
-${indicators}
+F. MOMENTUM
+- increasing bullish
+- decreasing bullish
+- increasing bearish
+- decreasing bearish
+- neutral
+- mixed
+- unclear
 
-Previous analysis:
-${safeJson(req.previousAnalysis)}
+G. MULTI-TIMEFRAME CONTEXT
+Do not vote between timeframes.
+Use:
+4H = macro context
+1H = primary trend
+15M = setup
+5M = entry structure
+2M = trigger
+60S = micro confirmation
+15S/30S = optional trigger refinement
 
-Previous market history summary:
-${safeJson(req.marketHistorySummary)}
+Report conflicts explicitly.
 
-Progressive history:
-${buildHistory(req)}
+==================================================
+NUMERICAL DATA POLICY
+==================================================
+
+A numeric value may be returned ONLY when it is directly readable from supplied visual evidence or explicitly supplied structured data.
+
+Examples of acceptable extraction:
+currentPrice = 3345.20 when 3345.20 is clearly readable.
+support = 3338.50 when 3338.50 is clearly readable.
+
+If unreadable:
+currentPrice = null
+support = null
+
+NEVER infer an exact value from the candle's pixel position.
+
+==================================================
+LEVEL EXTRACTION
+==================================================
+
+For support/resistance, return exact numeric levels only when readable.
+Otherwise return descriptive zones with numeric value null.
+
+Prefer multiple independently observed levels rather than inventing a single precise level.
+
+A level should have:
+- value/price
+- strength
+- confidence
+- interaction when visible
+
+==================================================
+TEMPORAL REASONING
+==================================================
+
+For every supplied image create one frame observation.
+Preserve chronological order.
+
+For the newest frame determine:
+- previous direction
+- current direction
+- what changed
+- current regime
+- current transition
+- current evidence
+- stale evidence
+- contradictions
+- confirmation status
+
+Do not use majority voting.
+Recent evidence has more relevance than stale evidence.
+
+==================================================
+BREAKOUT / REVERSAL SAFETY
+==================================================
+
+A wick through a level is NOT a confirmed breakout.
+
+A breakout requires visible evidence such as:
+- meaningful close beyond the level
+- continuation/follow-through
+- hold above/below the level
+- retest when visible
+
+If the move immediately rejects the level, classify FALSE_BREAKOUT or UNCLEAR.
+
+Bullish candles after a bearish trend are not automatically a reversal.
+Classify RECOVERY or REVERSAL_DEVELOPING until structure confirms the reversal.
+
+==================================================
+EVIDENCE INDEPENDENCE
+==================================================
+
+Use these independent evidence groups:
+structure
+candle
+momentum
+indicators
+supportResistance
+volatility
+volume
+mtf
+
+Do not duplicate the same observation across several groups.
+
+Example:
+"bullish trend", "higher highs", and "buyers strong" may be one directional thesis, not three independent confirmations.
+
+==================================================
+SIGNAL RULE
+==================================================
+
+For progressive analysis, the purpose is evidence extraction, not trade generation.
+
+For final analysis, BUY/SELL may be returned only when the supplied evidence genuinely supports it.
+Otherwise return WAIT / UNSURE / NO_TRADE.
+
+Never create entry/SL/TP merely to satisfy a schema.
+The deterministic local engine may calculate risk levels only when exact supporting data exists.
+
+==================================================
+SESSION CONTEXT
+==================================================
+Platform: ${req.platform}
+Symbol: ${req.symbol}
+Primary timeframe: ${req.primaryTimeframe}
+Confirmation timeframe: ${req.confirmationTimeframe || "N/A"}
+Trend timeframe: ${req.trendTimeframe || "N/A"}
+Trade duration: ${req.tradeDuration || "N/A"}
+Strategies: ${strategies}
+Visible indicators: ${indicators}
+Previous analysis: ${safeJson(req.previousAnalysis)}
+Previous market summary: ${safeJson(req.marketHistorySummary)}
+Progressive history: ${buildHistory(req)}
 `;
 }
 
-function responseSchema(
-  timeframe: string,
-  symbol: string,
-  platform: string,
-  mode: string,
-): string {
+function responseSchema(timeframe: string, symbol: string, platform: string, mode: string): string {
   return `
 ==================================================
-RETURN FORMAT
+OUTPUT CONTRACT
 ==================================================
 
-Return ONLY valid JSON.
+Return ONLY valid JSON. No markdown. No code fences. No prose outside JSON.
 
-Do not return Markdown.
-
-Do not return code fences.
-
-Do not return explanations outside JSON.
-
-The JSON MUST follow this structure:
+Use exactly this structure and preserve nulls when evidence is unavailable:
 
 {
   "trend": "Bullish | Bearish | Sideways",
-
   "signal": "${SIGNALS}",
-
   "confidence": 0,
-
   "readiness": "NOT READY | FAIR | GOOD | VERY GOOD | READY | READY / COMPLETE | EXCELLENT",
-
   "estimatedConfidence": "LOW | MEDIUM | HIGH",
-
   "recommendedTimeframe": "${timeframe}",
-
   "requiredTimeframe": null,
-
   "requestedIndicators": [],
-
   "entryPrice": null,
-
   "stopLoss": null,
-
   "takeProfit": null,
-
   "marketState": "",
-
   "changesFromPrevious": "",
-
   "momentum": "",
-
   "candlestickBehavior": "",
-
   "indicatorState": {},
-
   "strategyConsensus": "Bullish | Bearish | Neutral | Mixed",
-
   "strategyConflicts": [],
-
   "evidenceScore": 0,
-
   "signalQuality": "EXCELLENT | GOOD | FAIR | POOR | AVOID",
-
   "bullishEvidence": [],
-
   "bearishEvidence": [],
-
   "invalidationConditions": [],
-
-  "confirmationStatus":
-    "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR",
-
+  "confirmationStatus": "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR",
   "explanation": "",
-
   "reasoning": "",
-
   "detectedSymbol": "${symbol}",
-
   "detectedTimeframe": "${timeframe}",
-
   "exchange": "${platform}",
-
   "marketProvider": "${mode}",
-
   "riskDecision": "APPROVED | UNSURE | REJECTED",
-
   "dataConfidence": 0,
-
   "riskReward": null,
 
   "unifiedMarketData": {
-
     "symbol": "${symbol}",
-
     "timeframe": "${timeframe}",
 
-    "currentPrice": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "completedCandle": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "currentIncompleteCandle": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "volume": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "bidAskSpread": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
+    "currentPrice": { "value": null, "source": "visual", "confidence": 0 },
+    "completedCandle": { "value": null, "source": "visual", "confidence": 0 },
+    "currentIncompleteCandle": { "value": null, "source": "visual", "confidence": 0 },
+    "volume": { "value": null, "source": "visual", "confidence": 0 },
+    "bidAskSpread": { "value": null, "source": "visual", "confidence": 0 },
 
     "supportLevels": {
       "value": [],
@@ -307,35 +301,42 @@ The JSON MUST follow this structure:
 
     "indicators": {},
 
-    "marketStructure": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "trend": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "momentum": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
-
-    "tradingSession": {
-      "value": null,
-      "source": "visual",
-      "confidence": 0
-    },
+    "marketStructure": { "value": null, "source": "visual", "confidence": 0 },
+    "trend": { "value": null, "source": "visual", "confidence": 0 },
+    "momentum": { "value": null, "source": "visual", "confidence": 0 },
+    "tradingSession": { "value": null, "source": "visual", "confidence": 0 },
 
     "dataConflict": false,
-
     "conflictDetails": "",
 
-    "frameObservations": [],
+    "frameObservations": [
+      {
+        "frameIndex": 1,
+        "timestamp": null,
+        "timeframe": "${timeframe}",
+        "isPartial": false,
+        "price": null,
+        "completedCandle": null,
+        "currentIncompleteCandle": null,
+        "trend": "Unknown",
+        "shortTermDirection": "Unknown",
+        "structure": "",
+        "momentum": "",
+        "candleBehavior": "",
+        "indicators": {},
+        "levels": {
+          "supportLevels": [],
+          "resistanceLevels": [],
+          "supportInteraction": "",
+          "resistanceInteraction": ""
+        },
+        "marketRegime": "${REGIMES}",
+        "bullishEvidenceGroups": [],
+        "bearishEvidenceGroups": [],
+        "invalidation": [],
+        "confidence": 0
+      }
+    ],
 
     "temporalState": {
       "previousTrend": "",
@@ -362,499 +363,43 @@ The JSON MUST follow this structure:
 }
 
 ==================================================
-NUMERICAL VALUE RULE
+FRAME OBSERVATION REQUIREMENT
 ==================================================
 
-For every exact numerical field:
+If multiple images are supplied, the array frameObservations MUST contain exactly one object for every supplied image.
 
-If clearly readable:
-    return the observed number.
+Do not return one summary object instead of frame observations.
 
-If partially readable:
-    return null.
+For each frame, record what is actually visible. Use null/UNKNOWN for unreadable values.
 
-If not visible:
-    return null.
-
-NEVER estimate.
-
-NEVER calculate an exact number from visual approximation.
-
-Example:
-
-Correct:
-"currentPrice": {
-  "value": null,
-  "source": "visual",
-  "confidence": 0
-}
-
-Incorrect:
-"currentPrice": {
-  "value": 104523.42,
-  "source": "visual",
-  "confidence": 72
-}
-
-unless that exact value is actually readable in the supplied chart.
+The newest frame must be treated as the current state. Older frames are historical context.
 
 ==================================================
-SOURCE RULE
+INDICATOR REQUIREMENT
 ==================================================
 
-Because this analysis is visual:
-
-source = "visual"
-
-If structured API data is explicitly supplied:
-
-source = "api"
-
-If visual and API independently confirm the same information:
-
-source = "hybrid"
-
-Never claim API data when no API data was supplied.
-
-==================================================
-FRAME OBSERVATION
-==================================================
-
-When multiple images are supplied, create ONE observation for EVERY image.
-
-Never collapse multiple frames into one observation.
-
-Each observation should contain:
-
-{
-  "frameIndex": 1,
-
-  "timestamp": null,
-
-  "timeframe": "${timeframe}",
-
-  "isPartial": false,
-
-  "price": null,
-
-  "completedCandle": null,
-
-  "currentIncompleteCandle": null,
-
-  "trend": "Bullish | Bearish | Sideways | Unknown",
-
-  "shortTermDirection":
-    "Bullish | Bearish | Neutral | Unknown",
-
-  "structure": "",
-
-  "momentum": "",
-
-  "candleBehavior": "",
-
-  "indicators": {},
-
-  "levels": {
-    "supportLevels": [],
-    "resistanceLevels": [],
-    "supportInteraction": "",
-    "resistanceInteraction": ""
-  },
-
-  "marketRegime":
-    "${REGIMES}",
-
-  "bullishEvidenceGroups": [],
-
-  "bearishEvidenceGroups": [],
-
-  "invalidation": [],
-
-  "confidence": 0
-}
-
-==================================================
-CANDLE ANALYSIS
-==================================================
-
-When visible, identify:
-
-- bullish/bearish
-- body size
-- upper wick
-- lower wick
-- rejection
-- engulfing
-- pin bar
-- doji
-- inside bar
-- expansion candle
-- contraction candle
-
-Do not claim a named candlestick pattern unless the visual structure supports it.
-
-Always distinguish:
-
-COMPLETED CANDLE
-
-from
-
-INCOMPLETE CURRENT CANDLE.
-
-==================================================
-MARKET STRUCTURE
-==================================================
-
-Look for:
-
-HH = Higher High
-
-HL = Higher Low
-
-LH = Lower High
-
-LL = Lower Low
-
-BOS = Break of Structure
-
-CHoCH = Change of Character
-
-support rejection
-
-resistance rejection
-
-breakout
-
-retest
-
-continuation
-
-Do not declare BOS/CHoCH from a single ambiguous candle.
-
-==================================================
-MOMENTUM
-==================================================
-
-Describe visible momentum direction:
-
-- increasing bullish
-- decreasing bullish
-- increasing bearish
-- decreasing bearish
-- neutral
-- mixed
-- unclear
-
-If indicators are visible, describe their state.
-
-Do not invent numerical indicator values.
-
-==================================================
-SUPPORT / RESISTANCE
-==================================================
-
-Identify visually supported zones.
-
-Prefer:
-
-"near support"
-
-"rejected resistance"
-
-"approaching resistance"
-
-"support broken"
-
-rather than inventing exact prices.
-
-If an exact level is readable, provide it.
-
-==================================================
-REGIME DETECTION
-==================================================
-
-Determine the most visually supported current regime:
-
-TRENDING_UP
-TRENDING_DOWN
-RANGING
-BREAKOUT
-REVERSAL
-UNCLEAR
-
-Do not call normal sideways noise a breakout.
-
-Do not call one candle reversal a confirmed reversal.
-
-==================================================
-TEMPORAL REASONING
-==================================================
-
-After frame extraction, compare the sequence.
-
-Answer internally:
-
-1. What was the previous trend?
-
-2. What is the current direction?
-
-3. What changed?
-
-4. Is this continuation?
-
-5. Is this pullback?
-
-6. Is this recovery?
-
-7. Is this reversal developing?
-
-8. Is the reversal confirmed?
-
-9. Is this breakout attempt?
-
-10. Is the breakout confirmed?
-
-11. Could this be a false breakout?
-
-12. Which evidence is stale?
-
-13. Which evidence is current?
-
-14. What would invalidate the current thesis?
-
-==================================================
-IMPORTANT REVERSAL RULE
-==================================================
-
-Example:
-
-Previous trend:
-BEARISH
-
-Recent candles:
-BULLISH
-
-Momentum:
-improving
-
-Price:
-bouncing from support
-
-This is NOT automatically BUY.
-
-Possible state:
-
-RECOVERY
-
-or:
-
-REVERSAL_DEVELOPING
-
-Only classify:
-
-REVERSAL_CONFIRMED
-
-when independent structural evidence supports it.
-
-==================================================
-BREAKOUT RULE
-==================================================
-
-If price appears to cross resistance/support:
-
-First classify:
-
-BREAKOUT_ATTEMPT
-
-unless confirmation is clearly visible.
-
-Look for:
-
-- meaningful close beyond level
-- continuation
-- hold
-- retest
-- follow-through
-
-If price immediately rejects the level:
-
-FALSE_BREAKOUT
-
-or:
-
-UNCLEAR
-
-Do not force confirmation.
-
-==================================================
-MULTI-TIMEFRAME RULE
-==================================================
-
-When multiple timeframes are supplied:
-
-4H:
-macro context
-
-1H:
-primary trend
-
-15M:
-setup
-
-5M:
-entry structure
-
-2M:
-trigger
-
-60S:
-micro confirmation
-
-15S/30S:
-optional trigger refinement
-
-Do not simply vote between timeframes.
-
-Instead determine:
-
-HIGHER-TIMEFRAME CONTEXT
-→ SETUP
-→ TRIGGER
-→ CONFIRMATION
-
-If timeframes conflict:
-
-explicitly report the conflict.
-
-==================================================
-EVIDENCE GROUPS
-==================================================
-
-Group evidence into:
-
-structure
-
-candle
-
-momentum
-
-indicators
-
-supportResistance
-
-volatility
-
-volume
-
-mtf
-
-Do not duplicate the same evidence across multiple groups.
-
-Example:
-
-"bullish trend"
-
-"higher highs"
-
-"buyers strong"
-
-may describe one underlying directional thesis.
-
-==================================================
-SIGNAL BEHAVIOR
-==================================================
-
-For PROGRESSIVE analysis:
-
-Do NOT force a trade signal.
-
-Focus on accurate state extraction.
-
-For FINAL analysis:
-
-Only output BUY/SELL when evidence is sufficiently confirmed.
-
+Only populate numeric MACD/RSI/ATR/Bollinger/EMA/volume values when readable.
 Otherwise:
-
-WAIT
-
-UNSURE
-
-or:
-
-NO_TRADE.
+- keep numeric value null
+- provide qualitative state if visually supported
+- set confidence appropriately
 
 ==================================================
-ENTRY / STOP / TARGET
+SOURCE REQUIREMENT
 ==================================================
 
-The Vision AI should NOT invent entry, stop loss, or take profit.
+Visual-only input => source = "visual".
+Explicit structured market data => source = "api".
+Independent visual + API agreement => source = "hybrid".
 
-If exact values are not reliably visible:
-
-entryPrice = null
-
-stopLoss = null
-
-takeProfit = null
-
-The deterministic local engine will calculate risk levels when sufficient information exists.
+Never claim API data when none was supplied.
 
 ==================================================
-CONFIDENCE
+FINAL RULE
 ==================================================
 
-confidence means:
-
-quality/reliability of the observed evidence.
-
-It does NOT mean:
-
-probability of winning.
-
-Examples:
-
-95 confidence:
-
-Very clear visual evidence.
-
-Not:
-
-95% guaranteed winning trade.
-
-==================================================
-FINAL SAFETY RULE
-==================================================
-
-When uncertain:
-
-WAIT.
-
-When contradictory:
-
-WAIT.
-
-When incomplete:
-
-WAIT.
-
-When the current candle is incomplete:
-
-do not treat it as confirmed.
-
-When a breakout is unconfirmed:
-
-WAIT.
-
-When reversal is developing but not confirmed:
-
-WAIT.
-
-When evidence is visually unreadable:
-
-NULL / UNKNOWN.
-
-Accuracy is more important than producing a signal.
+If evidence is incomplete, contradictory, or unreadable, preserve the uncertainty.
+Do not fabricate a trade simply because the caller expects one.
 `;
 }
 
@@ -862,169 +407,46 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const base = buildBasePrompt(req);
 
   if (req.mode === "api_data") {
-    return `
-${base}
+    return `${base}
 
 ==================================================
 STRUCTURED DATA MODE
 ==================================================
 
-The input already contains structured market evidence.
+Use the supplied structured evidence as the source of truth.
+Do not fabricate missing numerical values.
+Do not reinterpret text as an exact price.
 
-Do NOT perform another visual interpretation unless an image is explicitly supplied.
-
-Do NOT invent missing values.
-
-Do NOT convert textual descriptions into fabricated numerical values.
-
-Use the supplied structured evidence to identify:
-
-- current market state
-- temporal transition
-- stale vs current evidence
-- conflicts
-- regime
-- setup quality
-- confirmation status
-
-The deterministic local Fast Signal engine remains responsible for
-the final hard signal decision.
-
-If this is background progressive analysis:
-preserve state and evidence.
-
-If this is final analysis:
-evaluate the complete evidence set.
-
-CURRENT MARKET DATA:
-
+CURRENT STRUCTURED DATA:
 ${safeJson(req.marketData)}
 
-Return ONLY the required JSON.
-
-${responseSchema(
-  req.primaryTimeframe,
-  req.symbol,
-  req.platform,
-  req.mode,
-)}
+${responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode)}
 `;
   }
 
-  const hasImages =
-    Boolean(req.screenshot) ||
-    Boolean(req.screenshots?.length) ||
-    Boolean(req.primaryTimeframePayload?.screenshots?.length);
+  const screenshotCount = req.screenshots?.length || req.primaryTimeframePayload?.screenshots?.length || (req.screenshot ? 1 : 0);
 
-  const multipleFrames =
-    Boolean(req.screenshots?.length && req.screenshots.length > 1) ||
-    Boolean(
-      req.primaryTimeframePayload?.screenshots?.length &&
-        req.primaryTimeframePayload.screenshots.length > 1,
-    );
-
-  return `
-${base}
+  return `${base}
 
 ==================================================
 VISUAL ANALYSIS MODE
 ==================================================
 
-Images supplied:
-${hasImages ? "YES" : "NO"}
+Images supplied: ${screenshotCount > 0 ? "YES" : "NO"}
+Image count: ${screenshotCount}
+Progressive mode: ${req.isProgressive ? "YES" : "NO"}
 
-Chronological sequence:
-${multipleFrames ? "YES" : "NO"}
+${screenshotCount > 1 ? `
+MULTI-FRAME REQUIREMENT:
+Analyze every supplied frame separately, then compare the sequence.
+Do not collapse the sequence into one generic summary.
+` : `
+SINGLE-FRAME REQUIREMENT:
+Analyze only information visible in the current chart.
+`}
 
-${
-  multipleFrames
-    ? `
-MULTIPLE FRAME REQUIREMENT
+Do not force BUY/SELL during progressive extraction.
 
-There are multiple chronological images.
-
-Create exactly ONE frame observation for each supplied frame.
-
-Preserve the original chronological order.
-
-Do NOT collapse the frames into one summary.
-
-The newest frame must receive the highest relevance for CURRENT state.
-
-Older frames remain historical context.
-
-Do not use simple majority voting.
-`
-    : `
-SINGLE FRAME REQUIREMENT
-
-Analyze only what is visibly supported by the current image.
-
-Do not invent historical information that is not visible or supplied.
-`
-}
-
-==================================================
-CURRENT FRAME PRIORITY
-==================================================
-
-The newest completed candle has high importance for current setup evaluation.
-
-The newest incomplete candle can describe current momentum/context.
-
-The newest incomplete candle MUST NOT be treated as confirmed price action.
-
-==================================================
-PROGRESSIVE MODE
-==================================================
-
-${
-  req.isProgressive
-    ? `
-This is a Progressive background observation.
-
-DO NOT manufacture BUY or SELL simply because a chart is available.
-
-Preserve:
-
-- current state
-- evidence
-- transition
-- changes
-- invalidation
-- confidence
-
-The purpose is to build a reliable chronological market story for
-the local deterministic signal engine.
-`
-    : `
-This is a user-requested final visual analysis.
-
-Use the complete supplied evidence.
-
-Remain conservative.
-
-If evidence is insufficient:
-
-WAIT / UNSURE / NO_TRADE.
-`
-}
-
-==================================================
-CURRENT IMAGE EVIDENCE
-==================================================
-
-Analyze the supplied chart images now.
-
-Extract only visually supported information.
-
-Return ONLY valid JSON.
-
-${responseSchema(
-  req.primaryTimeframe,
-  req.symbol,
-  req.platform,
-  req.mode,
-)}
+${responseSchema(req.primaryTimeframe, req.symbol, req.platform, req.mode)}
 `;
 }
