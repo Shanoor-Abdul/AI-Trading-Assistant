@@ -3,12 +3,10 @@ import { UniversalAIResponseSchema, UniversalAIResponse } from "./schema";
 function normalizeIndicatorSet(indicators: any): any {
   const input = indicators && typeof indicators === "object" ? indicators : {};
   const get = (...keys: string[]) => keys.map((key) => input[key]).find((value) => value !== undefined);
-
   const rsi = get("RSI", "rsi");
   const macd = get("MACD", "macd");
   const bb = get("Bollinger Bands", "BollingerBands", "bollingerBands", "BOLLINGER_BANDS", "bollinger");
   const atr = get("ATR", "atr");
-
   const normalized: Record<string, any> = { ...input };
   if (rsi !== undefined) normalized.RSI = rsi;
   if (macd !== undefined) normalized.MACD = macd;
@@ -19,7 +17,6 @@ function normalizeIndicatorSet(indicators: any): any {
 
 function normalizeUnifiedMarketData(unified: any): any {
   if (!unified || typeof unified !== "object") return undefined;
-
   const normalized = {
     ...unified,
     currentPrice: unified.currentPrice || unified.current_price || { value: null, source: "visual", confidence: 0 },
@@ -31,13 +28,79 @@ function normalizeUnifiedMarketData(unified: any): any {
     evidenceGroups: unified.evidenceGroups || unified.evidence_groups || {},
     indicators: normalizeIndicatorSet(unified.indicators),
   };
-
   normalized.frameObservations = normalized.frameObservations.map((frame: any) => ({
     ...frame,
     indicators: normalizeIndicatorSet(frame?.indicators),
   }));
-
   return normalized;
+}
+
+function repairJsonSyntax(input: string): string {
+  // Conservative repair only: normalize line breaks inside strings and escape
+  // quotes that are clearly inside a JSON string. We do not invent fields or values.
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      if (!inString) {
+        inString = true;
+        out += ch;
+        continue;
+      }
+
+      let j = i + 1;
+      while (j < input.length && /\s/.test(input[j])) j += 1;
+      const next = input[j];
+
+      // A quote followed by JSON structural syntax is a closing quote.
+      if (next === "," || next === "]" || next === "}" || next === ":" || j >= input.length) {
+        inString = false;
+        out += ch;
+      } else {
+        // Otherwise this is almost certainly an unescaped quote inside text.
+        out += '\\"';
+      }
+      continue;
+    }
+
+    if (inString && (ch === "\n" || ch === "\r")) {
+      out += "\\n";
+      continue;
+    }
+
+    out += ch;
+  }
+
+  // Remove trailing commas before JSON closing tokens.
+  return out.replace(/,\s*([}\]])/g, "$1");
+}
+
+function tryParse(candidate: string): any | undefined {
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    try {
+      return JSON.parse(repairJsonSyntax(candidate));
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 export function extractJSON(text: string): any {
@@ -45,11 +108,13 @@ export function extractJSON(text: string): any {
     throw new Error(`The selected AI model's safety filter blocked the analysis or failed to output JSON. Raw: ${text}`);
   }
 
-  try { return JSON.parse(text); } catch { /* continue */ }
+  const direct = tryParse(text.trim());
+  if (direct !== undefined) return direct;
 
-  const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (markdownMatch?.[1]) {
-    try { return JSON.parse(markdownMatch[1]); } catch { /* continue */ }
+  const markdownMatches = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)];
+  for (const match of markdownMatches) {
+    const parsed = tryParse(match[1]);
+    if (parsed !== undefined) return parsed;
   }
 
   const firstBrace = text.indexOf("{");
@@ -59,12 +124,10 @@ export function extractJSON(text: string): any {
   }
 
   const jsonSubset = text.substring(firstBrace, lastBrace + 1);
-  const cleanJson = jsonSubset
-    .replace(/\"\.\s*\"/g, '", "')
-    .replace(/\\n/g, "\\\\n");
+  const parsed = tryParse(jsonSubset);
+  if (parsed !== undefined) return parsed;
 
-  try { return JSON.parse(cleanJson); }
-  catch (err) { throw new Error(`JSON extracted but failed to parse: ${err instanceof Error ? err.message : "Unknown error"}. Raw: ${jsonSubset.substring(0, 200)}...`); }
+  throw new Error(`JSON extracted but failed to parse after conservative repair. Raw: ${jsonSubset.substring(0, 500)}...`);
 }
 
 export function normalizeResponse(rawText: string, defaultOverrides?: Partial<UniversalAIResponse>): UniversalAIResponse {
@@ -117,7 +180,6 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
     return UniversalAIResponseSchema.parse(normalized);
   } catch (error) {
     console.error("[AI Normalization/Validation Error]", error);
-
     return {
       trend: "Sideways", signal: "NO_TRADE", confidence: 0, readiness: "NOT READY", estimatedConfidence: "LOW", recommendedTimeframe: "", entryPrice: null, stopLoss: null, takeProfit: null,
       explanation: `[AI_ANALYSIS_INVALID] The AI produced an invalid or improperly formatted response. Reason: ${error instanceof Error ? error.message : "Unknown Zod Error"}`,
