@@ -1,9 +1,169 @@
 import { UniversalAIResponseSchema, UniversalAIResponse } from "./schema";
 
-function stripMarkdownFences(text: string): string { const match = text.match(/```(?:json|jsonc)?\s*([\s\S]*?)\s*```/i); return match?.[1]?.trim() || text.trim(); }
-function extractBalancedObject(text: string): string | null { const start=text.indexOf("{"); if(start<0)return null; let depth=0,inString=false,escaped=false; for(let i=start;i<text.length;i++){const ch=text[i]; if(inString){if(escaped)escaped=false;else if(ch==="\\")escaped=true;else if(ch==='"')inString=false;continue;} if(ch==='"'){inString=true;continue;} if(ch==="{")depth++; if(ch==="}"){depth--;if(depth===0)return text.slice(start,i+1);}} return null; }
-function conservativeRepair(json:string):string{return json.replace(/,\s*([}\]])/g,"$1").replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:/g,'$1"$2":').replace(/:\s*'([^']*)'/g,': "$1"');}
-export function extractJSON(text:string):any{if(!text?.trim())throw new Error("AI returned an empty response.");if(text.includes("User Safety:"))throw new Error(`The selected AI model's safety filter blocked the analysis. Raw: ${text}`);const cleaned=stripMarkdownFences(text);const candidates=[cleaned,extractBalancedObject(cleaned)||""].filter(Boolean);let lastError:unknown;for(const candidate of candidates){for(const value of [candidate,conservativeRepair(candidate)]){try{return JSON.parse(value);}catch(error){lastError=error;}}}throw new Error(`JSON extracted but failed to parse after conservative repair. ${lastError instanceof Error?lastError.message:"Unknown parse error"}. Raw: ${cleaned.substring(0,500)}...`);}
-function normalizeEnum(value:unknown,allowed:string[],fallback:string):string{if(typeof value!=="string")return fallback;const normalized=value.trim().toUpperCase().replace(/[\s-]+/g,"_");return allowed.find(item=>item.toUpperCase().replace(/[\s-]+/g,"_")===normalized)||fallback;}
-function numberOrNull(value:unknown):number|string|null{if(value===null||value===undefined||value==="")return null;if(typeof value==="number"&&Number.isFinite(value))return value;if(typeof value==="string"){const parsed=Number(value.replace(/,/g,"").trim());return Number.isFinite(parsed)?parsed:null;}return null;}
-export function normalizeResponse(rawText:string,defaultOverrides?:Partial<UniversalAIResponse>):UniversalAIResponse{try{const rawObj=extractJSON(rawText);const normalized:any={trend:normalizeEnum(rawObj.trend,["Bullish","Bearish","Sideways"],"Sideways"),signal:normalizeEnum(rawObj.signal,["STRONG_BUY","BUY","WAIT","UNSURE","NO_TRADE","SELL","STRONG_SELL"],"NO_TRADE"),confidence:Math.max(0,Math.min(100,Number(rawObj.confidence??0))),readiness:normalizeEnum(rawObj.readiness,["NOT READY","FAIR","GOOD","VERY GOOD","READY","READY / COMPLETE","EXCELLENT"],"NOT READY"),estimatedConfidence:normalizeEnum(rawObj.estimatedConfidence??rawObj.estimated_confidence,["LOW","MEDIUM","HIGH"],"LOW"),recommendedTimeframe:String(rawObj.recommendedTimeframe??rawObj.recommended_timeframe??""),entryPrice:numberOrNull(rawObj.entryPrice??rawObj.entry_price),stopLoss:numberOrNull(rawObj.stopLoss??rawObj.stop_loss),takeProfit:numberOrNull(rawObj.takeProfit??rawObj.take_profit),explanation:String(rawObj.explanation??""),requestedIndicators:Array.isArray(rawObj.requestedIndicators??rawObj.requested_indicators)?(rawObj.requestedIndicators??rawObj.requested_indicators):[],requiredTimeframe:rawObj.requiredTimeframe??rawObj.required_timeframe??null,detectedSymbol:rawObj.detectedSymbol??rawObj.detected_symbol??null,detectedTimeframe:rawObj.detectedTimeframe??rawObj.detected_timeframe??null,exchange:rawObj.exchange??null,marketProvider:normalizeEnum(rawObj.marketProvider??rawObj.market_provider??defaultOverrides?.marketProvider,["visual_only","ccxt","broker_api","unknown"],defaultOverrides?.marketProvider||"unknown"),riskDecision:String(rawObj.riskDecision??rawObj.risk_decision??"UNSURE"),reasoning:String(rawObj.reasoning??rawObj.reason??"No reasoning provided"),dataConfidence:Math.max(0,Math.min(100,Number(rawObj.dataConfidence??rawObj.data_confidence??rawObj.confidence??0))),riskReward:typeof rawObj.riskReward==="number"?rawObj.riskReward:undefined,marketState:rawObj.marketState??rawObj.market_state,unifiedMarketData:rawObj.unifiedMarketData??rawObj.unified_market_data,changesFromPrevious:rawObj.changesFromPrevious??rawObj.changes_from_previous,momentum:rawObj.momentum,candlestickBehavior:rawObj.candlestickBehavior??rawObj.candlestick_behavior,indicatorState:rawObj.indicatorState??rawObj.indicator_state??{},strategyConsensus:rawObj.strategyConsensus??rawObj.strategy_consensus,strategyConflicts:Array.isArray(rawObj.strategyConflicts??rawObj.strategy_conflicts)?(rawObj.strategyConflicts??rawObj.strategy_conflicts):[],analysisId:rawObj.analysisId??rawObj.analysis_id,evidenceScore:rawObj.evidenceScore??rawObj.evidence_score,signalQuality:rawObj.signalQuality??rawObj.signal_quality,bullishEvidence:Array.isArray(rawObj.bullishEvidence??rawObj.bullish_evidence)?(rawObj.bullishEvidence??rawObj.bullish_evidence):[],bearishEvidence:Array.isArray(rawObj.bearishEvidence??rawObj.bearish_evidence)?(rawObj.bearishEvidence??rawObj.bearish_evidence):[],invalidationConditions:Array.isArray(rawObj.invalidationConditions??rawObj.invalidation_conditions)?(rawObj.invalidationConditions??rawObj.invalidation_conditions):[],confirmationStatus:rawObj.confirmationStatus??rawObj.confirmation_status};return UniversalAIResponseSchema.parse(normalized);}catch(error){console.error("[AI Normalization/Validation Error]",error);return {trend:"Sideways",signal:"NO_TRADE",confidence:0,readiness:"NOT READY",estimatedConfidence:"LOW",recommendedTimeframe:"",entryPrice:null,stopLoss:null,takeProfit:null,explanation:`[AI_ANALYSIS_INVALID] The AI produced an invalid or improperly formatted response. Reason: ${error instanceof Error?error.message:"Unknown validation error"}`,requestedIndicators:[],requiredTimeframe:null,detectedSymbol:null,detectedTimeframe:null,exchange:null,marketProvider:defaultOverrides?.marketProvider||"unknown",riskDecision:"REJECTED",reasoning:"Invalid JSON format or schema failure.",dataConfidence:0,analysisId:undefined,marketState:"Analysis Failed: Invalid JSON or Schema",changesFromPrevious:"None",momentum:"Unknown",candlestickBehavior:"Unknown",indicatorState:{},strategyConsensus:"Unknown",strategyConflicts:[],bullishEvidence:[],bearishEvidence:[],invalidationConditions:[],evidenceScore:0,signalQuality:"AVOID",confirmationStatus:"UNCLEAR"};}}
+function stripMarkdownFences(text: string): string {
+  const match = text.match(/```(?:json|jsonc)?\s*([\s\S]*?)\s*```/i);
+  return match?.[1]?.trim() || text.trim();
+}
+
+function extractBalancedObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    if (ch === "}" && --depth === 0) return text.slice(start, i + 1);
+  }
+  return null;
+}
+
+function conservativeRepair(json: string): string {
+  return json
+    .replace(/,\s*([}\]])/g, "$1")
+    .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)\s*:/g, '$1"$2":')
+    .replace(/:\s*'([^']*)'/g, ': "$1"');
+}
+
+export function extractJSON(text: string): any {
+  if (!text?.trim()) throw new Error("AI returned an empty response.");
+  if (text.includes("User Safety:")) throw new Error("The selected AI model's safety filter blocked the analysis.");
+
+  const cleaned = stripMarkdownFences(text);
+  const candidates = [cleaned, extractBalancedObject(cleaned) || ""].filter(Boolean);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    for (const value of [candidate, conservativeRepair(candidate)]) {
+      try { return JSON.parse(value); }
+      catch (error) { lastError = error; }
+    }
+  }
+
+  throw new Error(`JSON parse failed: ${lastError instanceof Error ? lastError.message : "Unknown error"}`);
+}
+
+function normalizeEnum(value: unknown, allowed: string[], fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  return allowed.find(item => item.toUpperCase().replace(/[\s-]+/g, "_") === normalized) || fallback;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function percentage(value: unknown): number {
+  const n = numberOrNull(value);
+  return n === null ? 0 : Math.max(0, Math.min(100, n));
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string").map(item => item.trim()).filter(Boolean);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export function normalizeResponse(rawText: string, defaultOverrides?: Partial<UniversalAIResponse>): UniversalAIResponse {
+  const rawObj = extractJSON(rawText);
+
+  const normalized: any = {
+    trend: normalizeEnum(rawObj.trend, ["Bullish", "Bearish", "Sideways"], "Sideways"),
+    signal: normalizeEnum(rawObj.signal, ["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"], "NO_TRADE"),
+    confidence: percentage(rawObj.confidence),
+    readiness: normalizeEnum(rawObj.readiness, ["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"], "NOT READY"),
+    estimatedConfidence: normalizeEnum(rawObj.estimatedConfidence ?? rawObj.estimated_confidence, ["LOW", "MEDIUM", "HIGH"], "LOW"),
+    recommendedTimeframe: String(rawObj.recommendedTimeframe ?? rawObj.recommended_timeframe ?? ""),
+    entryPrice: numberOrNull(rawObj.entryPrice ?? rawObj.entry_price),
+    stopLoss: numberOrNull(rawObj.stopLoss ?? rawObj.stop_loss),
+    takeProfit: numberOrNull(rawObj.takeProfit ?? rawObj.take_profit),
+    explanation: typeof rawObj.explanation === "string" ? rawObj.explanation : "",
+    requestedIndicators: stringArray(rawObj.requestedIndicators ?? rawObj.requested_indicators),
+    requiredTimeframe: typeof (rawObj.requiredTimeframe ?? rawObj.required_timeframe) === "string" ? (rawObj.requiredTimeframe ?? rawObj.required_timeframe) : null,
+    detectedSymbol: typeof (rawObj.detectedSymbol ?? rawObj.detected_symbol) === "string" ? (rawObj.detectedSymbol ?? rawObj.detected_symbol) : null,
+    detectedTimeframe: typeof (rawObj.detectedTimeframe ?? rawObj.detected_timeframe) === "string" ? (rawObj.detectedTimeframe ?? rawObj.detected_timeframe) : null,
+    exchange: typeof rawObj.exchange === "string" ? rawObj.exchange : null,
+    marketProvider: normalizeEnum(rawObj.marketProvider ?? rawObj.market_provider ?? defaultOverrides?.marketProvider, ["visual_only", "ccxt", "broker_api", "unknown"], defaultOverrides?.marketProvider || "unknown"),
+    riskDecision: typeof (rawObj.riskDecision ?? rawObj.risk_decision) === "string" ? (rawObj.riskDecision ?? rawObj.risk_decision) : "UNSURE",
+    reasoning: typeof (rawObj.reasoning ?? rawObj.reason) === "string" ? (rawObj.reasoning ?? rawObj.reason) : "No reasoning provided",
+    dataConfidence: percentage(rawObj.dataConfidence ?? rawObj.data_confidence ?? rawObj.confidence),
+    riskReward: numberOrNull(rawObj.riskReward ?? rawObj.risk_reward) ?? undefined,
+    marketState: optionalString(rawObj.marketState ?? rawObj.market_state),
+    unifiedMarketData: rawObj.unifiedMarketData ?? rawObj.unified_market_data,
+    changesFromPrevious: optionalString(rawObj.changesFromPrevious ?? rawObj.changes_from_previous),
+    momentum: optionalString(rawObj.momentum),
+    candlestickBehavior: optionalString(rawObj.candlestickBehavior ?? rawObj.candlestick_behavior),
+    indicatorState: rawObj.indicatorState ?? rawObj.indicator_state ?? {},
+    strategyConsensus: optionalString(rawObj.strategyConsensus ?? rawObj.strategy_consensus),
+    strategyConflicts: stringArray(rawObj.strategyConflicts ?? rawObj.strategy_conflicts),
+    analysisId: optionalString(rawObj.analysisId ?? rawObj.analysis_id),
+    evidenceScore: percentage(rawObj.evidenceScore ?? rawObj.evidence_score),
+    signalQuality: normalizeEnum(rawObj.signalQuality ?? rawObj.signal_quality, ["EXCELLENT", "GOOD", "FAIR", "POOR", "AVOID"], "AVOID"),
+    bullishEvidence: stringArray(rawObj.bullishEvidence ?? rawObj.bullish_evidence),
+    bearishEvidence: stringArray(rawObj.bearishEvidence ?? rawObj.bearish_evidence),
+    invalidationConditions: stringArray(rawObj.invalidationConditions ?? rawObj.invalidation_conditions),
+    confirmationStatus: normalizeEnum(rawObj.confirmationStatus ?? rawObj.confirmation_status, ["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"], "UNCLEAR"),
+  };
+
+  // The AI's core signal is useful even when the optional nested market-data
+  // object is malformed. Do not discard the entire analysis because of it.
+  const parsed = UniversalAIResponseSchema.safeParse(normalized);
+  if (parsed.success) return parsed.data;
+
+  console.warn("[AI Normalization] Nested market data failed validation; returning core analysis.", parsed.error.issues);
+  delete normalized.unifiedMarketData;
+
+  const core = UniversalAIResponseSchema.safeParse(normalized);
+  if (core.success) return core.data;
+
+  // Last-resort valid response: preserve the model's readable reasoning/evidence.
+  return {
+    trend: normalized.trend,
+    signal: normalized.signal,
+    confidence: normalized.confidence,
+    readiness: normalized.readiness,
+    estimatedConfidence: normalized.estimatedConfidence,
+    recommendedTimeframe: normalized.recommendedTimeframe,
+    entryPrice: normalized.entryPrice,
+    stopLoss: normalized.stopLoss,
+    takeProfit: normalized.takeProfit,
+    explanation: normalized.explanation,
+    requestedIndicators: normalized.requestedIndicators,
+    requiredTimeframe: normalized.requiredTimeframe,
+    detectedSymbol: normalized.detectedSymbol,
+    detectedTimeframe: normalized.detectedTimeframe,
+    exchange: normalized.exchange,
+    marketProvider: normalized.marketProvider,
+    riskDecision: normalized.riskDecision,
+    reasoning: normalized.reasoning,
+    dataConfidence: normalized.dataConfidence,
+    riskReward: normalized.riskReward,
+    marketState: normalized.marketState,
+    changesFromPrevious: normalized.changesFromPrevious,
+    momentum: normalized.momentum,
+    candlestickBehavior: normalized.candlestickBehavior,
+    indicatorState: normalized.indicatorState,
+    strategyConsensus: normalized.strategyConsensus,
+    strategyConflicts: normalized.strategyConflicts,
+    analysisId: normalized.analysisId,
+    evidenceScore: normalized.evidenceScore,
+    signalQuality: normalized.signalQuality,
+    bullishEvidence: normalized.bullishEvidence,
+    bearishEvidence: normalized.bearishEvidence,
+    invalidationConditions: normalized.invalidationConditions,
+    confirmationStatus: normalized.confirmationStatus,
+  } as UniversalAIResponse;
+}
