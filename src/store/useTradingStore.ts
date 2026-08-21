@@ -25,7 +25,7 @@ export interface TradingState {
   useDualModel: boolean; setUseDualModel: (val: boolean) => void;
   selectedReasoningProvider: string; selectedReasoningModel: string; setSelectedReasoningModel: (provider: string, model: string) => void;
   selectedStrategies: string[]; setSelectedStrategies: (val: string[]) => void;
-  observations: Observation[]; addObservation: (imageId: string) => void; clearObservations: () => void;
+  observations: Observation[]; addObservation: (imageId: string, _imageBase64?: string) => void; clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE"; setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
   marketDataMode: "api" | "visual_only"; setMarketDataMode: (val: "api" | "visual_only") => void;
   platform: string; setPlatform: (val: string) => void; tradeDuration: string; setTradeDuration: (val: string) => void;
@@ -83,10 +83,10 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   selectedStrategies: ["Auto (AI Selection)"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
-  addObservation: (imageId) => set((state) => {
+  addObservation: (imageId, _imageBase64) => set((state) => {
     // IMPORTANT: observation pixels live in IndexedDB, not Zustand/React memory.
-    // Keep only lightweight metadata here so a long live-observation session
-    // does not retain every JPEG Base64 string in RAM.
+    // _imageBase64 is intentionally ignored for backwards compatibility with
+    // existing callers. This prevents JPEG Base64 from being retained in RAM.
     const newObservation: Observation = { timestamp: Date.now(), imageId: imageId || undefined };
     let observations = [...state.observations, newObservation];
     let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
