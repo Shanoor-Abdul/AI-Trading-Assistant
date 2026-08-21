@@ -5,27 +5,30 @@ import { analyze } from "@/lib/ai";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isUsableProgressiveBatch(batch: any): boolean {
+  if (!batch || batch.status === "INVALID" || batch.analysisType === "invalid") return false;
+  if (typeof batch.explanation === "string" && batch.explanation.startsWith("[AI_ANALYSIS_INVALID]")) return false;
+  if (batch.marketState === "Analysis Failed: Invalid JSON or Schema" || batch.marketState === "Analysis Failed: Invalid JSON or Filtered") return false;
+  return true;
+}
+
 export async function POST(req: NextRequest) {
   const started = Date.now();
-
   try {
     const body = await req.json();
-
     if (!body?.symbol || !body?.timeframe) {
       return NextResponse.json({ error: "symbol and timeframe are required" }, { status: 400 });
     }
 
-    const completedBatches = Array.isArray(body.progressive)
+    const rawBatches = Array.isArray(body.progressive)
       ? body.progressive
       : Array.isArray(body.progressive?.analyses)
         ? body.progressive.analyses
         : [];
-
-    let analysisContext = [...completedBatches];
+    const completedBatches = rawBatches.filter(isUsableProgressiveBatch);
+    const analysisContext = [...completedBatches];
     let partialBatch: any = null;
 
-    // Current frames are not a completed batch. They are converted to a partial
-    // structured observation first, then evaluated together with all completed batches.
     const currentFrames = Array.isArray(body.currentFrames) ? body.currentFrames : [];
     if (currentFrames.length > 0) {
       const progressiveRequest: any = {
@@ -44,34 +47,34 @@ export async function POST(req: NextRequest) {
         macroTimeframeImage: body.macroTimeframeImage,
         confirmationTimeframeImage: body.confirmationTimeframeImage,
         structureTimeframeImage: body.structureTimeframeImage,
-        primaryTimeframe: {
-          timeframe: body.timeframe,
-          screenshots: currentFrames,
-        },
+        primaryTimeframe: { timeframe: body.timeframe, screenshots: currentFrames },
       };
 
       const progressiveResult: any = await analyze(progressiveRequest);
-      partialBatch = {
-        analysisId: progressiveResult.analysisId || crypto.randomUUID(),
-        batchId: body.nextBatchId ?? completedBatches.length + 1,
-        status: "PARTIAL",
-        frameStart: body.currentFrameStart ?? null,
-        frameEnd: body.currentFrameEnd ?? null,
-        frameCount: currentFrames.length,
-        timestamp: new Date().toISOString(),
-        trend: progressiveResult.trend || "Unknown",
-        momentum: progressiveResult.momentum || "Unknown",
-        marketState: progressiveResult.marketState || "Unknown",
-        candlestickBehavior: progressiveResult.candlestickBehavior || "Unknown",
-        indicatorState: progressiveResult.indicatorState || {},
-        strategyConsensus: progressiveResult.strategyConsensus || "Unknown",
-        strategyConflicts: progressiveResult.strategyConflicts || [],
-        changesFromPrevious: progressiveResult.changesFromPrevious || "None",
-        confidence: progressiveResult.confidence || 0,
-        unifiedMarketData: progressiveResult.unifiedMarketData,
-        source: "partial_progressive",
-      };
-      analysisContext.push(partialBatch);
+      const invalid = progressiveResult.explanation?.startsWith("[AI_ANALYSIS_INVALID]");
+      if (!invalid) {
+        partialBatch = {
+          analysisId: progressiveResult.analysisId || crypto.randomUUID(),
+          batchId: body.nextBatchId ?? completedBatches.length + 1,
+          status: "PARTIAL",
+          frameStart: body.currentFrameStart ?? null,
+          frameEnd: body.currentFrameEnd ?? null,
+          frameCount: currentFrames.length,
+          timestamp: new Date().toISOString(),
+          trend: progressiveResult.trend || "Unknown",
+          momentum: progressiveResult.momentum || "Unknown",
+          marketState: progressiveResult.marketState || "Unknown",
+          candlestickBehavior: progressiveResult.candlestickBehavior || "Unknown",
+          indicatorState: progressiveResult.indicatorState || {},
+          strategyConsensus: progressiveResult.strategyConsensus || "Unknown",
+          strategyConflicts: progressiveResult.strategyConflicts || [],
+          changesFromPrevious: progressiveResult.changesFromPrevious || "None",
+          confidence: progressiveResult.confidence || 0,
+          unifiedMarketData: progressiveResult.unifiedMarketData,
+          source: "partial_progressive",
+        };
+        analysisContext.push(partialBatch);
+      }
     }
 
     const result = generateFastSignal({
@@ -92,14 +95,12 @@ export async function POST(req: NextRequest) {
       estimatedConfidence: result.confidence >= 75 ? "HIGH" : result.confidence >= 55 ? "MEDIUM" : "LOW",
       recommendedTimeframe: body.timeframe,
       requiredTimeframe: null,
-      requestedIndicators: [],
+      requestedIndicators: body.visibleIndicators || [],
       entryPrice: null,
       stopLoss: null,
       takeProfit: null,
       marketState: result.marketState,
-      changesFromPrevious: partialBatch
-        ? "Fast signal includes all completed batches plus the current partial progressive batch."
-        : "Fast signal derived from completed progressive batches.",
+      changesFromPrevious: partialBatch ? "Fast signal includes usable completed batches plus the current partial progressive batch." : "Fast signal derived from usable completed progressive batches.",
       momentum: result.momentum,
       candlestickBehavior: partialBatch?.candlestickBehavior || "From progressive observation state.",
       indicatorState: partialBatch?.indicatorState || {},
