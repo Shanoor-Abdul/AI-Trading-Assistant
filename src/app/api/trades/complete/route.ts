@@ -5,8 +5,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const supabase = await createClient();
+<<<<<<< HEAD
     
     const { data: { user } } = await supabase.auth.getUser();
+=======
+    const { data: { user } } = await supabase.auth.getUser();
+
+>>>>>>> feature/ai-signal-accuracy2
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -27,11 +32,18 @@ export async function POST(req: NextRequest) {
       signal_quality,
       market_regime,
       notes,
+<<<<<<< HEAD
       } = body;
     const engine_metrics = body.engineMetrics;
 
     const finalNotes = body.engineMetrics 
       ? `[VERSION: ${body.engineMetrics.engineVersion} | PROMPT: ${body.engineMetrics.promptVersion} | MODE: ${body.engineMetrics.validationMode}]\n\n${notes || ""}` 
+=======
+    } = body;
+
+    const finalNotes = body.engineMetrics
+      ? `[VERSION: ${body.engineMetrics.engineVersion} | PROMPT: ${body.engineMetrics.promptVersion} | MODE: ${body.engineMetrics.validationMode}]\n\n${notes || ""}`
+>>>>>>> feature/ai-signal-accuracy2
       : notes;
 
     const { data: trade, error } = await supabase

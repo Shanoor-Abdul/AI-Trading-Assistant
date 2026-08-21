@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
       model: model || "gemini-2.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
+<<<<<<< HEAD
         temperature: 0.2, // Low temperature for analytical strictness
+=======
+        temperature: 0.2,
+>>>>>>> feature/ai-signal-accuracy2
         responseMimeType: "application/json",
       },
     });
@@ -40,14 +44,20 @@ export async function POST(req: NextRequest) {
       throw new Error("Red Team AI returned empty response.");
     }
 
+<<<<<<< HEAD
     // Attempt to parse JSON
+=======
+>>>>>>> feature/ai-signal-accuracy2
     const parsed = JSON.parse(text);
     const validated = RedTeamResponseSchema.parse(parsed);
 
     return NextResponse.json(validated);
   } catch (error: any) {
     console.error("[Red Team Error]:", error);
+<<<<<<< HEAD
     // If the red team fails, default to VETO to fail safely.
+=======
+>>>>>>> feature/ai-signal-accuracy2
     return NextResponse.json({
       decision: "VETO",
       reasoning: `Red Team Validator encountered an error: ${error.message}`,

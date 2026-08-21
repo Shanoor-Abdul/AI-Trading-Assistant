@@ -4,21 +4,27 @@ import { generateFastSignal } from "@/lib/engines/FastSignalEngine";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isUsableProgressiveBatch(batch: any): boolean {
+  if (!batch || batch.status === "INVALID" || batch.analysisType === "invalid") return false;
+  if (typeof batch.explanation === "string" && batch.explanation.startsWith("[AI_ANALYSIS_INVALID]")) return false;
+  if (batch.marketState === "Analysis Failed: Invalid JSON or Schema" || batch.marketState === "Analysis Failed: Invalid JSON or Filtered") return false;
+  return true;
+}
+
 export async function POST(req: NextRequest) {
   const started = Date.now();
-
   try {
     const body = await req.json();
-
     if (!body?.symbol || !body?.timeframe) {
       return NextResponse.json({ error: "symbol and timeframe are required" }, { status: 400 });
     }
 
-    const completedBatches = Array.isArray(body.progressive)
+    const rawBatches = Array.isArray(body.progressive)
       ? body.progressive
       : Array.isArray(body.progressive?.analyses)
         ? body.progressive.analyses
         : [];
+<<<<<<< HEAD
 
     // STRICT CONTRACT: this endpoint never accepts screenshots/currentFrames and
     // never calls an AI provider. Image -> structured JSON belongs to Progressive API.
@@ -33,6 +39,58 @@ export async function POST(req: NextRequest) {
         signal: "WAIT",
         confidence: 0,
       }, { status: 400 });
+=======
+    const completedBatches = rawBatches.filter(isUsableProgressiveBatch);
+    const analysisContext = [...completedBatches];
+    let partialBatch: any = null;
+
+    const currentFrames = Array.isArray(body.currentFrames) ? body.currentFrames : [];
+    if (currentFrames.length > 0) {
+      const progressiveRequest: any = {
+        symbol: body.symbol,
+        timeframe: body.timeframe,
+        platform: body.platform,
+        tradeDuration: body.tradeDuration,
+        provider: body.progressiveProvider || body.provider,
+        model: body.progressiveModel || body.model,
+        marketDataMode: body.marketDataMode || "visual_only",
+        visibleIndicators: body.visibleIndicators || [],
+        selectedStrategies: body.selectedStrategies || [],
+        activeConnectionId: body.activeConnectionId || null,
+        isProgressive: true,
+        progressiveState: completedBatches,
+        macroTimeframeImage: body.macroTimeframeImage,
+        confirmationTimeframeImage: body.confirmationTimeframeImage,
+        structureTimeframeImage: body.structureTimeframeImage,
+        primaryTimeframe: { timeframe: body.timeframe, screenshots: currentFrames },
+      };
+
+      const progressiveResult: any = await analyze(progressiveRequest);
+      const invalid = progressiveResult.explanation?.startsWith("[AI_ANALYSIS_INVALID]");
+      if (!invalid) {
+        partialBatch = {
+          analysisId: progressiveResult.analysisId || crypto.randomUUID(),
+          batchId: body.nextBatchId ?? completedBatches.length + 1,
+          status: "PARTIAL",
+          frameStart: body.currentFrameStart ?? null,
+          frameEnd: body.currentFrameEnd ?? null,
+          frameCount: currentFrames.length,
+          timestamp: new Date().toISOString(),
+          trend: progressiveResult.trend || "Unknown",
+          momentum: progressiveResult.momentum || "Unknown",
+          marketState: progressiveResult.marketState || "Unknown",
+          candlestickBehavior: progressiveResult.candlestickBehavior || "Unknown",
+          indicatorState: progressiveResult.indicatorState || {},
+          strategyConsensus: progressiveResult.strategyConsensus || "Unknown",
+          strategyConflicts: progressiveResult.strategyConflicts || [],
+          changesFromPrevious: progressiveResult.changesFromPrevious || "None",
+          confidence: progressiveResult.confidence || 0,
+          unifiedMarketData: progressiveResult.unifiedMarketData,
+          source: "partial_progressive",
+        };
+        analysisContext.push(partialBatch);
+      }
+>>>>>>> feature/ai-signal-accuracy2
     }
 
     const result = generateFastSignal({
@@ -58,9 +116,13 @@ export async function POST(req: NextRequest) {
       stopLoss: null,
       takeProfit: null,
       marketState: result.marketState,
+<<<<<<< HEAD
       changesFromPrevious: partialBatch
         ? "Fast signal evaluates completed progressive batches plus the current ephemeral partial batch."
         : "Fast signal evaluates completed progressive batches only.",
+=======
+      changesFromPrevious: partialBatch ? "Fast signal includes usable completed batches plus the current partial progressive batch." : "Fast signal derived from usable completed progressive batches.",
+>>>>>>> feature/ai-signal-accuracy2
       momentum: result.momentum,
       candlestickBehavior: partialBatch?.candlestickBehavior || "From progressive observation state.",
       indicatorState: partialBatch?.indicatorState || {},
