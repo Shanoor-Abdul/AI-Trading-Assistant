@@ -111,59 +111,65 @@ function stableLevel(levels: number[], currentPrice: number | null, direction: "
   }
 
   const ranked = clusters
-    .map(cluster => ({
-      value: cluster.reduce((sum, n) => sum + n, 0) / cluster.length,
-      count: cluster.length,
-    }))
+    .map(cluster => ({ value: cluster.reduce((sum, n) => sum + n, 0) / cluster.length, count: cluster.length }))
     .sort((a, b) => b.count - a.count || (direction === "support" ? b.value - a.value : a.value - b.value));
 
   if (currentPrice === null) return ranked[0]?.value ?? null;
-
   const valid = ranked.filter(item => direction === "support" ? item.value < currentPrice : item.value > currentPrice);
   return valid[0]?.value ?? null;
 }
 
-function latestDirectionalEvidence(batches: any[]): { bull: number; bear: number; groups: Set<string> } {
-  const groups = new Set<string>();
-  let bull = 0;
-  let bear = 0;
+function latestDirectionalEvidence(batches: any[]): { bull: number; bear: number } {
   const latest = batches[batches.length - 1] || {};
   const unified = latest?.unifiedMarketData || {};
   const evidence = unified.evidenceGroups || {};
-
   const groupNames = ["structure", "candle", "momentum", "indicators", "supportResistance", "volatility", "volume", "mtf"];
+  let bull = 0;
+  let bear = 0;
+
   for (const name of groupNames) {
     const text = asText(evidence[name]).toLowerCase();
     const dir = extractDirection(text);
-    if (dir === "bull") { bull++; groups.add(name); }
-    if (dir === "bear") { bear++; groups.add(name); }
+    if (dir === "bull") bull++;
+    if (dir === "bear") bear++;
   }
 
-  // A structured frame observation is evidence for the corresponding group,
-  // but the same group can only count once. This prevents repeated frames from
-  // artificially inflating confluence.
-  const observations = Array.isArray(unified.frameObservations) ? unified.frameObservations : [];
-  const recent = observations.slice(-5);
-  for (const observation of recent) {
-    if (extractDirection(observation.structure) === "bull") { bull = Math.max(bull, 1); groups.add("structure"); }
-    if (extractDirection(observation.structure) === "bear") { bear = Math.max(bear, 1); groups.add("structure"); }
-    if (extractDirection(observation.momentum) === "bull") { bull = Math.max(bull, 1); groups.add("momentum"); }
-    if (extractDirection(observation.momentum) === "bear") { bear = Math.max(bear, 1); groups.add("momentum"); }
+  // Backward-compatible inference for older progressive payloads that only
+  // contain high-level fields. These are distinct evidence categories, not
+  // repeated frame votes.
+  if (Array.isArray(evidence.structure) === false || !evidence.structure?.length) {
+    if (extractDirection(asText(unified.marketStructure?.value)) === "bull") bull++;
+    if (extractDirection(asText(unified.marketStructure?.value)) === "bear") bear++;
+  }
+  if (Array.isArray(evidence.momentum) === false || !evidence.momentum?.length) {
+    if (extractDirection(asText(unified.momentum?.value)) === "bull") bull++;
+    if (extractDirection(asText(unified.momentum?.value)) === "bear") bear++;
+  }
+  if (Array.isArray(evidence.supportResistance) === false || !evidence.supportResistance?.length) {
+    const hasLevels = collectLevels(batches, "supportLevels").length || collectLevels(batches, "resistanceLevels").length;
+    if (hasLevels && extractDirection(asText(unified.trend?.value)) === "bull") bull++;
+    if (hasLevels && extractDirection(asText(unified.trend?.value)) === "bear") bear++;
   }
 
-  return { bull, bear, groups };
+  // Legacy market fallback can still be used for tests and API-data mode.
+  if (!bull && !bear) {
+    if (extractDirection(asText(unified.trend?.value)) === "bull") bull++;
+    if (extractDirection(asText(unified.trend?.value)) === "bear") bear++;
+  }
+
+  return { bull, bear };
 }
 
 export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const started = Date.now();
-  const batches = Array.isArray(input.progressive) ? input.progressive.filter(Boolean) : [];
+  const progressiveBatches = Array.isArray(input.progressive) ? input.progressive.filter(Boolean) : [];
+  const fallbackMarket = input.market ? { unifiedMarketData: input.market.unifiedMarketData || input.market } : null;
+  const batches = progressiveBatches.length ? progressiveBatches : fallbackMarket ? [fallbackMarket] : [];
   const latestBatch = batches[batches.length - 1] || {};
   const unified = latestBatch?.unifiedMarketData || {};
   const temporal = unified.temporalState || {};
 
-  // Aggregate the latest structured snapshot, while retaining older batches only
-  // for stability/confirmation. Never average frames into a simple vote.
-  const currentPrice = numeric(unified.currentPrice) ?? numeric(latestBatch.currentPrice);
+  const currentPrice = numeric(unified.currentPrice) ?? numeric(latestBatch.currentPrice) ?? numeric(input.market?.unifiedMarketData?.currentPrice);
   const supportLevels = collectLevels(batches, "supportLevels");
   const resistanceLevels = collectLevels(batches, "resistanceLevels");
   const support = stableLevel(supportLevels, currentPrice, "support");
@@ -172,15 +178,14 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const structureDir = extractDirection(asText(unified.marketStructure?.value ?? latestBatch.marketStructure));
   const momentumDir = extractDirection(asText(unified.momentum?.value ?? latestBatch.momentum));
   const trendDir = extractDirection(asText(unified.trend?.value ?? latestBatch.trend));
-
   const { bull: latestBullGroups, bear: latestBearGroups } = latestDirectionalEvidence(batches);
+
   const stableTrend = batches.slice(-4).map(batch => extractDirection(asText(batch?.unifiedMarketData?.trend?.value ?? batch?.trend))).filter(d => d !== "neutral");
   const stableBullTrend = stableTrend.length >= 2 && stableTrend.filter(d => d === "bull").length >= Math.ceil(stableTrend.length * 0.75);
   const stableBearTrend = stableTrend.length >= 2 && stableTrend.filter(d => d === "bear").length >= Math.ceil(stableTrend.length * 0.75);
 
   const isBullishAlignment = (trendDir === "bull" || stableBullTrend) && (structureDir === "bull" || momentumDir === "bull");
   const isBearishAlignment = (trendDir === "bear" || stableBearTrend) && (structureDir === "bear" || momentumDir === "bear");
-
   const conflicts = Array.isArray(temporal.conflicts) ? temporal.conflicts : [];
   const hasContradiction = unified.dataConflict === true || conflicts.length > 0 || (latestBullGroups >= 2 && latestBearGroups >= 2);
 
@@ -189,7 +194,6 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   const isConfirmed = confirmation === "CONFIRMED" || transition === "REVERSAL_CONFIRMED" || transition === "CONTINUATION" || transition === "BREAKOUT";
   const isDeveloping = confirmation === "DEVELOPING" || transition === "REVERSAL_DEVELOPING" || transition === "PULLBACK" || transition === "RECOVERY";
 
-  // Require independent evidence categories. Trend alone is never enough.
   const candidateSignal: Signal = latestBullGroups >= 3 && isBullishAlignment && !hasContradiction
     ? "BUY"
     : latestBearGroups >= 3 && isBearishAlignment && !hasContradiction
@@ -202,8 +206,6 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
   let takeProfit: number | null = null;
   let riskDecision: "APPROVED" | "REJECTED" | "WAIT" = "WAIT";
 
-  // Exact numeric values are mandatory. Visual descriptions alone must never
-  // be converted into fabricated prices.
   if (currentPrice !== null && support !== null && resistance !== null) {
     entryPrice = currentPrice;
     if (candidateSignal === "BUY") {
@@ -219,15 +221,10 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
       const reward = entryPrice - takeProfit;
       riskReward = risk > 0 && reward > 0 ? reward / risk : null;
     }
-
-    if (candidateSignal !== "WAIT") {
-      riskDecision = riskReward !== null && riskReward >= 1.2 ? "APPROVED" : "REJECTED";
-    }
+    if (candidateSignal !== "WAIT") riskDecision = riskReward !== null && riskReward >= 1.2 ? "APPROVED" : "REJECTED";
   }
 
-  const finalSignal: Signal = candidateSignal !== "WAIT" && riskDecision === "APPROVED" && isConfirmed
-    ? candidateSignal
-    : "WAIT";
+  const finalSignal: Signal = candidateSignal !== "WAIT" && riskDecision === "APPROVED" && isConfirmed ? candidateSignal : "WAIT";
 
   const latestVisualConfidence = Math.max(
     confidenceOf(unified.currentPrice),
@@ -237,22 +234,19 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     Number(latestBatch.confidence) || 0,
   );
 
-  const evidenceScore = Math.min(
-    100,
+  const evidenceScore = Math.min(100,
     Math.max(latestBullGroups, latestBearGroups) * 15 +
-      (isConfirmed ? 25 : isDeveloping ? 10 : 0) +
-      (stableBullTrend || stableBearTrend ? 15 : 0) +
-      (!hasContradiction ? 10 : 0) +
-      (currentPrice !== null ? 10 : 0) +
-      (support !== null && resistance !== null ? 10 : 0),
+    (isConfirmed ? 25 : isDeveloping ? 10 : 0) +
+    (stableBullTrend || stableBearTrend ? 15 : 0) +
+    (!hasContradiction ? 10 : 0) +
+    (currentPrice !== null ? 10 : 0) +
+    (support !== null && resistance !== null ? 10 : 0),
   );
 
-  // Confidence is evidence quality, not win probability.
   const confidence = finalSignal !== "WAIT"
     ? Math.max(75, evidenceScore)
     : Math.min(70, Math.max(evidenceScore, latestVisualConfidence));
-
-  const dataConfidence = Math.max(latestVisualConfidence, unified?.currentPrice?.confidence || 0);
+  const dataConfidence = Math.max(latestVisualConfidence, confidenceOf(unified.currentPrice));
   const marketRegime = (temporal.regime || latestBatch.marketRegime || "UNCLEAR") as FastSignalResult["marketRegime"];
 
   let explanation = "WAIT: Insufficient independent confluence.";
@@ -266,6 +260,8 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     explanation = "WAIT: Conflicting evidence detected in the current snapshot.";
   } else if (finalSignal !== "WAIT") {
     explanation = `${finalSignal} APPROVED: Independent confluence, confirmation and Risk Gate passed (R:R ${riskReward?.toFixed(2)}).`;
+  } else if (currentPrice === null || support === null || resistance === null) {
+    explanation = "WAIT: Missing precise visual risk data (current price, invalidation, or target levels).";
   }
 
   return {
@@ -304,7 +300,7 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
     selectedStrategy: "Deterministic Hard Gate Engine",
     riskReward,
     transition,
-    currentFrameCount: batches.length,
+    currentFrameCount: progressiveBatches.length,
     entryPrice,
     stopLoss,
     takeProfit,
