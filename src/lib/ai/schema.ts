@@ -50,8 +50,8 @@ export const UniversalAIRequestSchema = z.object({
 export type UniversalAIRequest = z.infer<typeof UniversalAIRequestSchema>;
 
 export const UniversalAIResponseSchema = z.object({
-  trend: z.enum(["Bullish", "Bearish", "Sideways"]).catch("Sideways"),
-  signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).catch("NO_TRADE"),
+  trend: z.enum(["Bullish", "Bearish", "Sideways"]).default("Sideways"),
+  signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).default("NO_TRADE"),
   confidence: z.coerce.number().min(0).max(100),
   readiness: z.enum(["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"]).default("NOT READY"),
   estimatedConfidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),

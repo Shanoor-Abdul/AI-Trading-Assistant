@@ -228,6 +228,7 @@ export interface ProgressiveAnalysisSummary {
 }
 
 export interface Observation {
+  imageId?: string;
   timestamp: number;
   imageBase64: string;
 }
@@ -244,4 +245,76 @@ export interface ObservationSessionConfig {
   provider: string;
   model: string;
   observationFrequency: number;
+}
+
+
+export type MarketStateSequence = 
+  | "NEUTRAL"
+  | "TREND_UP"
+  | "TREND_DOWN"
+  | "PULLBACK_UP"
+  | "PULLBACK_DOWN"
+  | "SETUP_FORMING"
+  | "BREAKOUT_PENDING"
+  | "BREAKOUT_CONFIRMED"
+  | "RETEST_PENDING"
+  | "RETEST_CONFIRMED"
+  | "REVERSAL_DEVELOPING"
+  | "REVERSAL_CONFIRMED"
+  | "RANGE"
+  | "CHOPPY"
+  | "FALSE_BREAKOUT"
+  | "INVALIDATED";
+
+export type SignalQuality = "A+" | "A" | "B" | "C" | "WAIT";
+
+export type RedTeamValidation = "PASS" | "REJECT" | "UNCLEAR";
+
+export interface TimeframeState {
+  trend: string;
+  structure: string;
+  momentum: string;
+  candle: string;
+  supportResistance: string;
+  regime: string;
+  transition: string;
+  confidence: number;
+  evidenceGroups: string[];
+  invalidation: string;
+}
+
+export interface TemporalState {
+  previousState: MarketStateSequence;
+  currentState: MarketStateSequence;
+  transition: string;
+  staleEvidence: string[];
+  currentEvidence: string[];
+  conflicts: string[];
+}
+
+export interface VisualState {
+  currentFrame: number;
+  recentFrameWindow: number[];
+  visualConfidence: number;
+}
+
+export interface MarketSnapshot {
+  market: {
+    symbol: string;
+    timestamp: string;
+    currentVisualPrice: number | null;
+    currentMarketState: MarketStateSequence;
+  };
+  timeframes: {
+    t4H?: TimeframeState;
+    t1H?: TimeframeState;
+    t15M?: TimeframeState;
+    t5M?: TimeframeState;
+    t2M?: TimeframeState;
+    t60S?: TimeframeState;
+    t30S?: TimeframeState;
+    t15S?: TimeframeState;
+  };
+  temporal: TemporalState;
+  visual: VisualState;
 }

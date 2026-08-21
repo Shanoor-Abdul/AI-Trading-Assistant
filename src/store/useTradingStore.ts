@@ -25,7 +25,7 @@ export interface TradingState {
   useDualModel: boolean; setUseDualModel: (val: boolean) => void;
   selectedReasoningProvider: string; selectedReasoningModel: string; setSelectedReasoningModel: (provider: string, model: string) => void;
   selectedStrategies: string[]; setSelectedStrategies: (val: string[]) => void;
-  observations: Observation[]; addObservation: (imageBase64: string) => void; clearObservations: () => void;
+  observations: Observation[]; addObservation: (imageId: string, imageBase64?: string) => void; clearObservations: () => void;
   tradingMode: "MANUAL" | "PAPER" | "LIVE"; setTradingMode: (val: "MANUAL" | "PAPER" | "LIVE") => void;
   marketDataMode: "api" | "visual_only"; setMarketDataMode: (val: "api" | "visual_only") => void;
   platform: string; setPlatform: (val: string) => void; tradeDuration: string; setTradeDuration: (val: string) => void;
@@ -83,12 +83,18 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   selectedStrategies: ["Auto (AI Selection)"], setSelectedStrategies: (val) => set((state) => JSON.stringify(state.selectedStrategies) !== JSON.stringify(val) ? { selectedStrategies: val, ...resetObservationSessionState() } : { selectedStrategies: val }),
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
-  addObservation: (imageBase64) => set((state) => {
-    const newObservation: Observation = { timestamp: Date.now(), imageBase64 };
+  addObservation: (imageId, imageBase64) => set((state) => {
+    const newObservation: Observation = { timestamp: Date.now(), imageId: imageId || undefined, imageBase64: imageBase64 || '' };
     let observations = [...state.observations, newObservation];
     let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
     const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
     if (evictedCount > 0) {
+      const evicted = observations.slice(0, evictedCount);
+      evicted.forEach(obs => {
+        if (obs.imageId) {
+          import('@/lib/utils/imageStore').then(m => m.ImageStore.deleteImage(obs.imageId as string)).catch(console.error);
+        }
+      });
       observations = observations.slice(evictedCount);
       if (lastAnalyzedObservationIndex >= 0) lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
     }

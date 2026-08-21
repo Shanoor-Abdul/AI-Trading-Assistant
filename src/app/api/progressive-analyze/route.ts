@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    console.log(`\n[Progressive Analysis] Incoming request for ${body.symbol || "UNKNOWN"} (${body.timeframe || "UNKNOWN"})`);
+
     const primaryScreenshots = Array.isArray(body?.primaryTimeframe?.screenshots)
       ? body.primaryTimeframe.screenshots
       : [];
@@ -31,7 +33,13 @@ export async function POST(req: NextRequest) {
           : undefined),
     };
 
+    console.log(`[Progressive Analysis] Normalized Payload. Processing ${normalizedBody.screenshots?.length || 0} primary frames.`);
+    if (normalizedBody.macroTimeframeImage) console.log(`[Progressive Analysis] Includes MACRO (4H) context image.`);
+    if (normalizedBody.confirmationTimeframeImage) console.log(`[Progressive Analysis] Includes CONFIRMATION (1H) context image.`);
+    if (normalizedBody.structureTimeframeImage) console.log(`[Progressive Analysis] Includes STRUCTURE (15M) context image.`);
+
     if (normalizedBody.screenshots.length === 0 && !normalizedBody.imageBase64) {
+      console.log(`[Progressive Analysis] ERROR: No images found in payload.`);
       return NextResponse.json(
         {
           error: "Image(s) are required",
@@ -47,9 +55,10 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(normalizedBody),
     });
 
+    console.log(`[Progressive Analysis] Handing off to AI Vision Extractor -> legacyRoute...`);
     return await analyzePOST(normalizedRequest);
   } catch (error: any) {
-    console.error("Progressive Analysis API Error:", error);
+    console.error("[Progressive Analysis API Error]:", error);
 
     return NextResponse.json(
       {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTradingStore } from "@/store/useTradingStore";
+import { ImageStore } from "@/lib/utils/imageStore";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -327,7 +328,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!stream || marketDataMode !== "visual_only" || !isLiveObservationEnabled || isLiveObservationPaused) return;
 
-    const captureObservation = () => {
+    const captureObservation = async () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!video || !canvas || video.videoWidth === 0) return;
@@ -356,7 +357,9 @@ export default function Dashboard() {
       ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
 
       const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
-      state.addObservation(imageBase64);
+      const imageId = crypto.randomUUID();
+      await ImageStore.saveImage(imageId, imageBase64);
+      state.addObservation(imageId, imageBase64);
       state.incrementVisualChangeCount();
     };
 
@@ -501,13 +504,13 @@ export default function Dashboard() {
                 structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
                 primaryTimeframe: {
                   timeframe: "5m",
-                  screenshots: framesToAnalyze.map((obs) => ({
+                  screenshots: await Promise.all(framesToAnalyze.map(async (obs) => ({
                     timestamp: new Date(obs.timestamp).toISOString(),
                     mimeType: "image/jpeg",
-                    base64: obs.imageBase64,
+                    base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
                     platform: current.platform,
                     symbol: current.symbol,
-                  })),
+                  }))),
                 },
               }),
             });
@@ -535,6 +538,12 @@ export default function Dashboard() {
             const lastBatchIndex = latest.observations.findIndex(
               (observation) => observation.timestamp === lastBatchTimestamp,
             );
+
+            // Phase 2: Adaptive Frame Sampling
+            if (data?.marketState?.includes("SETUP_FORMING") && latest.observationFrequency > 30) {
+              latest.setObservationFrequency(30);
+              toast.success("SETUP_FORMING detected. Accelerating analysis to 30s intervals.", { icon: "⚡" });
+            }
 
             latest.addProgressiveAnalysis({
               analysisId: data.analysisId || crypto.randomUUID(),
@@ -620,9 +629,9 @@ export default function Dashboard() {
     
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
     
-    if (timeframe === '4h') store.setMacroTimeframeImage(imageBase64);
-    else if (timeframe === '1h') store.setConfirmationTimeframeImage(imageBase64);
-    else if (timeframe === '15m') store.setStructureTimeframeImage(imageBase64);
+    if (timeframe === '4h') { store.setMacroTimeframeImage(imageBase64); store.setMacroTimeframeCapturedAt(Date.now()); }
+    else if (timeframe === '1h') { store.setConfirmationTimeframeImage(imageBase64); store.setConfirmationTimeframeCapturedAt(Date.now()); }
+    else if (timeframe === '15m') { store.setStructureTimeframeImage(imageBase64); store.setStructureTimeframeCapturedAt(Date.now()); }
     
     toast.success(`${timeframe.toUpperCase()} Context Captured!`, { icon: '📸' });
   };
@@ -771,7 +780,9 @@ export default function Dashboard() {
 
         // Grab immediate fresh snapshot for "now"
         const currentImageBase64 = canvas.toDataURL("image/jpeg", 0.8);
-        useTradingStore.getState().addObservation(currentImageBase64);
+        const imgId = crypto.randomUUID();
+        await ImageStore.saveImage(imgId, currentImageBase64);
+        useTradingStore.getState().addObservation(imgId, currentImageBase64);
 
         const obs = useTradingStore.getState().observations;
         if (obs.length > 0) {
@@ -808,13 +819,13 @@ export default function Dashboard() {
             );
           }
 
-          reqBody.screenshots = selected.map((o) => ({
+          reqBody.screenshots = await Promise.all(selected.map(async (o) => ({
             timestamp: new Date(o.timestamp).toISOString(),
             mimeType: "image/jpeg",
-            base64: o.imageBase64,
+            base64: o.imageBase64 || (o.imageId ? await ImageStore.getImage(o.imageId) : ""),
             platform: platform,
             symbol: symbol,
-          }));
+          })));
         } else {
           reqBody.imageBase64 = currentImageBase64;
         }
@@ -926,13 +937,13 @@ export default function Dashboard() {
           structureTimeframeImage: current.structureTimeframeImage ? { timeframe: "15m", image: current.structureTimeframeImage } : undefined,
           primaryTimeframe: {
             timeframe: "5m",
-            screenshots: framesToAnalyze.map((obs) => ({
+            screenshots: await Promise.all(framesToAnalyze.map(async (obs) => ({
               timestamp: new Date(obs.timestamp).toISOString(),
               mimeType: "image/jpeg",
-              base64: obs.imageBase64,
+              base64: obs.imageBase64 || (obs.imageId ? await ImageStore.getImage(obs.imageId) : ""),
               platform: current.platform,
               symbol: current.symbol,
-            })),
+            }))),
           },
         }),
       });
@@ -1472,8 +1483,10 @@ export default function Dashboard() {
                   {useTradingStore.getState().macroTimeframeImage ? (
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
-                      {useTradingStore.getState().macroTimeframeCapturedAt && (
-                        <MTFCountdown capturedAt={useTradingStore.getState().macroTimeframeCapturedAt!} timeframe="4h" onReset={() => useTradingStore.getState().setMacroTimeframeImage(null)} />
+                      {useTradingStore.getState().macroTimeframeCapturedAt ? (
+                        <MTFCountdown capturedAt={useTradingStore.getState().macroTimeframeCapturedAt!} timeframe="4h" onReset={() => { useTradingStore.getState().setMacroTimeframeImage(null); useTradingStore.getState().setMacroTimeframeCapturedAt(null); }} />
+                      ) : (
+                        <button onClick={() => { useTradingStore.getState().setMacroTimeframeImage(null); useTradingStore.getState().setMacroTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
                       )}
                     </div>
                   ) : (
@@ -1485,8 +1498,10 @@ export default function Dashboard() {
                   {useTradingStore.getState().confirmationTimeframeImage ? (
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
-                      {useTradingStore.getState().confirmationTimeframeCapturedAt && (
-                        <MTFCountdown capturedAt={useTradingStore.getState().confirmationTimeframeCapturedAt!} timeframe="1h" onReset={() => useTradingStore.getState().setConfirmationTimeframeImage(null)} />
+                      {useTradingStore.getState().confirmationTimeframeCapturedAt ? (
+                        <MTFCountdown capturedAt={useTradingStore.getState().confirmationTimeframeCapturedAt!} timeframe="1h" onReset={() => { useTradingStore.getState().setConfirmationTimeframeImage(null); useTradingStore.getState().setConfirmationTimeframeCapturedAt(null); }} />
+                      ) : (
+                        <button onClick={() => { useTradingStore.getState().setConfirmationTimeframeImage(null); useTradingStore.getState().setConfirmationTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
                       )}
                     </div>
                   ) : (
@@ -1498,8 +1513,10 @@ export default function Dashboard() {
                   {useTradingStore.getState().structureTimeframeImage ? (
                     <div className="flex items-center">
                       <span className="text-green-400">✔ Captured</span>
-                      {useTradingStore.getState().structureTimeframeCapturedAt && (
-                        <MTFCountdown capturedAt={useTradingStore.getState().structureTimeframeCapturedAt!} timeframe="15m" onReset={() => useTradingStore.getState().setStructureTimeframeImage(null)} />
+                      {useTradingStore.getState().structureTimeframeCapturedAt ? (
+                        <MTFCountdown capturedAt={useTradingStore.getState().structureTimeframeCapturedAt!} timeframe="15m" onReset={() => { useTradingStore.getState().setStructureTimeframeImage(null); useTradingStore.getState().setStructureTimeframeCapturedAt(null); }} />
+                      ) : (
+                        <button onClick={() => { useTradingStore.getState().setStructureTimeframeImage(null); useTradingStore.getState().setStructureTimeframeCapturedAt(null); }} className="text-amber-500 hover:text-amber-400 underline text-[10px] ml-2">Recapture</button>
                       )}
                     </div>
                   ) : (
@@ -1597,7 +1614,7 @@ export default function Dashboard() {
               <div className="flex flex-col text-[10px] text-zinc-400 md:border-l md:border-zinc-800 md:pl-4 min-w-[140px] space-y-1">
                 <div className="flex items-center justify-between gap-4 mb-2">
                   <span>Next Frame:</span>
-                  <span className="text-zinc-200">{`${timeUntilNextFrame.toFixed(2)}s`}</span>
+                  <span className="text-zinc-200">{Math.ceil(timeUntilNextFrame).toString().padStart(2, '0')}s</span>
                 </div>
 
                 <div className="flex items-center justify-between gap-4">

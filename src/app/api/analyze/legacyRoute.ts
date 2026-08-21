@@ -1,3 +1,4 @@
+import { RiskEngine } from '@/lib/engines/RiskEngine';
 import { NextRequest, NextResponse } from "next/server";
 
 import { analyze } from "@/lib/ai";
@@ -501,20 +502,8 @@ async function getRiskConfiguration(
   };
 }
 
-async function persistAnalysis(
-  supabase: any,
-  userId: string,
-  body: AnalyzeRequest,
-  result: TradingAnalysis,
-  context: MarketAnalysisContext,
-  screenshotUrl: string | null,
-  tradingMode: string
-) {
+async function persistAnalysis(supabase: any, userId: string, body: any, result: any, context: any, screenshotUrl: string | null, tradingMode: string) {
   try {
-    const { RiskEngine } = await import(
-      "@/lib/engines/RiskEngine"
-    );
-
     const {
       marketData,
       indicators,
@@ -888,13 +877,7 @@ export async function POST(
 
     const screenshotToUpload = body.imageBase64 || ((body as any).screenshots && (body as any).screenshots.length > 0 ? (body as any).screenshots[(body as any).screenshots.length - 1].base64 : undefined);
     
-    const screenshotUrlPromise = body.isProgressive 
-      ? Promise.resolve(null)
-      : uploadScreenshot(
-          supabase,
-          user?.id,
-          screenshotToUpload
-        );
+    const screenshotUrlPromise = Promise.resolve(null);
 
     /*
      * AI + screenshot upload continue
