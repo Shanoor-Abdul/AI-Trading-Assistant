@@ -6,11 +6,46 @@ const NumericObservationSchema = z.object({
   confidence: z.coerce.number().min(0).max(100).default(0),
 });
 
-const NumericObservationDefault = {
-  value: null,
-  source: "visual" as const,
-  confidence: 0,
-};
+const NumericObservationDefault = { value: null, source: "visual" as const, confidence: 0 };
+
+const IndicatorValueSchema = z.object({
+  value: z.number().finite().nullable().default(null),
+  state: z.string().default("UNKNOWN"),
+  visible: z.boolean().default(false),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+  source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+}).passthrough();
+
+const MacdObservationSchema = z.object({
+  macd: z.number().finite().nullable().default(null),
+  signal: z.number().finite().nullable().default(null),
+  histogram: z.number().finite().nullable().default(null),
+  state: z.string().default("UNKNOWN"),
+  visible: z.boolean().default(false),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+  source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+}).passthrough();
+
+const BollingerObservationSchema = z.object({
+  upper: z.number().finite().nullable().default(null),
+  middle: z.number().finite().nullable().default(null),
+  lower: z.number().finite().nullable().default(null),
+  position: z.string().default("UNKNOWN"),
+  state: z.string().default("UNKNOWN"),
+  visible: z.boolean().default(false),
+  confidence: z.coerce.number().min(0).max(100).default(0),
+  source: z.enum(["visual", "api", "hybrid"]).default("visual"),
+}).passthrough();
+
+const IndicatorSetSchema = z.object({
+  RSI: IndicatorValueSchema.optional(),
+  MACD: MacdObservationSchema.optional(),
+  "Bollinger Bands": BollingerObservationSchema.optional(),
+  BollingerBands: BollingerObservationSchema.optional(),
+  ATR: IndicatorValueSchema.optional(),
+  EMA: z.record(z.string(), IndicatorValueSchema).optional(),
+  volume: IndicatorValueSchema.optional(),
+}).passthrough();
 
 const PriceLevelSchema = z.object({
   value: z.number().finite().nullable().default(null),
@@ -19,7 +54,7 @@ const PriceLevelSchema = z.object({
   strength: z.coerce.number().min(0).max(100).default(0),
   confidence: z.coerce.number().min(0).max(100).default(0),
   interaction: z.string().optional(),
-});
+}).passthrough();
 
 const LevelsDefault = {
   supportLevels: [] as z.infer<typeof PriceLevelSchema>[],
@@ -28,198 +63,83 @@ const LevelsDefault = {
   resistanceInteraction: "",
 };
 
+const CandleSchema = z.object({
+  open: z.number().finite().nullable().default(null),
+  high: z.number().finite().nullable().default(null),
+  low: z.number().finite().nullable().default(null),
+  close: z.number().finite().nullable().default(null),
+  complete: z.boolean().default(false),
+}).passthrough();
+
 const FrameObservationSchema = z.object({
   frameIndex: z.coerce.number().int().nonnegative(),
   timestamp: z.union([z.string(), z.number()]).nullable().default(null),
   timeframe: z.string().default(""),
   isPartial: z.boolean().default(false),
   price: z.number().finite().nullable().default(null),
-  completedCandle: z.any().nullable().default(null),
-  currentIncompleteCandle: z.any().nullable().default(null),
+  completedCandle: CandleSchema.nullable().default(null),
+  currentIncompleteCandle: CandleSchema.nullable().default(null),
   trend: z.string().default("Unknown"),
   shortTermDirection: z.string().default("Unknown"),
   structure: z.string().default(""),
   momentum: z.string().default(""),
   candleBehavior: z.string().default(""),
-  indicators: z.record(z.string(), z.any()).default({}),
+  indicators: IndicatorSetSchema.default({}),
   levels: z.object({
     supportLevels: z.array(PriceLevelSchema).default([]),
     resistanceLevels: z.array(PriceLevelSchema).default([]),
     supportInteraction: z.string().default(""),
     resistanceInteraction: z.string().default(""),
+    breakoutLevel: z.number().finite().nullable().default(null),
+    invalidationLevel: z.number().finite().nullable().default(null),
   }).default(LevelsDefault),
+  swingHigh: z.number().finite().nullable().default(null),
+  swingLow: z.number().finite().nullable().default(null),
   marketRegime: z.string().default("UNCLEAR"),
   bullishEvidenceGroups: z.array(z.string()).default([]),
   bearishEvidenceGroups: z.array(z.string()).default([]),
   invalidation: z.array(z.string()).default([]),
   confidence: z.coerce.number().min(0).max(100).default(0),
-});
+}).passthrough();
 
 const UnifiedMarketDataSchema = z.object({
   symbol: z.string().default(""),
   timeframe: z.string().default(""),
   currentPrice: NumericObservationSchema.default(NumericObservationDefault),
-  completedCandle: NumericObservationSchema.default(NumericObservationDefault),
-  currentIncompleteCandle: NumericObservationSchema.default(NumericObservationDefault),
+  completedCandle: CandleSchema.nullable().default(null),
+  currentIncompleteCandle: CandleSchema.nullable().default(null),
   volume: NumericObservationSchema.default(NumericObservationDefault),
   bidAskSpread: NumericObservationSchema.default(NumericObservationDefault),
-  supportLevels: z.object({
-    value: z.array(z.any()).default([]),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({ value: [], source: "visual", confidence: 0 }),
-  resistanceLevels: z.object({
-    value: z.array(z.any()).default([]),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default({ value: [], source: "visual", confidence: 0 }),
-  indicators: z.record(z.string(), z.any()).default({}),
-  marketStructure: z.object({
-    value: z.any().nullable().default(null),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default(NumericObservationDefault),
-  trend: z.object({
-    value: z.any().nullable().default(null),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default(NumericObservationDefault),
-  momentum: z.object({
-    value: z.any().nullable().default(null),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default(NumericObservationDefault),
-  tradingSession: z.object({
-    value: z.any().nullable().default(null),
-    source: z.enum(["visual", "api", "hybrid"]).default("visual"),
-    confidence: z.coerce.number().min(0).max(100).default(0),
-  }).default(NumericObservationDefault),
+  supportLevels: z.object({ value: z.array(PriceLevelSchema).default([]), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default({ value: [], source: "visual", confidence: 0 }),
+  resistanceLevels: z.object({ value: z.array(PriceLevelSchema).default([]), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default({ value: [], source: "visual", confidence: 0 }),
+  indicators: IndicatorSetSchema.default({}),
+  marketStructure: z.object({ value: z.any().nullable().default(null), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default(NumericObservationDefault),
+  trend: z.object({ value: z.any().nullable().default(null), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default(NumericObservationDefault),
+  momentum: z.object({ value: z.any().nullable().default(null), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default(NumericObservationDefault),
+  tradingSession: z.object({ value: z.any().nullable().default(null), source: z.enum(["visual", "api", "hybrid"]).default("visual"), confidence: z.coerce.number().min(0).max(100).default(0) }).default(NumericObservationDefault),
+  swingHigh: NumericObservationSchema.default(NumericObservationDefault),
+  swingLow: NumericObservationSchema.default(NumericObservationDefault),
+  breakoutLevel: NumericObservationSchema.default(NumericObservationDefault),
+  invalidationLevel: NumericObservationSchema.default(NumericObservationDefault),
   dataConflict: z.boolean().default(false),
   conflictDetails: z.string().default(""),
   frameObservations: z.array(FrameObservationSchema).default([]),
-  temporalState: z.object({
-    previousTrend: z.string().default(""),
-    currentDirection: z.string().default(""),
-    transition: z.string().default("NONE"),
-    regime: z.string().default("UNCLEAR"),
-    staleEvidence: z.array(z.string()).default([]),
-    currentEvidence: z.array(z.string()).default([]),
-    conflicts: z.array(z.string()).default([]),
-    confirmationStatus: z.string().default("UNCLEAR"),
-  }).default({
-    previousTrend: "",
-    currentDirection: "",
-    transition: "NONE",
-    regime: "UNCLEAR",
-    staleEvidence: [],
-    currentEvidence: [],
-    conflicts: [],
-    confirmationStatus: "UNCLEAR",
-  }),
-  evidenceGroups: z.object({
-    structure: z.array(z.string()).default([]),
-    candle: z.array(z.string()).default([]),
-    momentum: z.array(z.string()).default([]),
-    indicators: z.array(z.string()).default([]),
-    supportResistance: z.array(z.string()).default([]),
-    volatility: z.array(z.string()).default([]),
-    volume: z.array(z.string()).default([]),
-    mtf: z.array(z.string()).default([]),
-  }).default({
-    structure: [],
-    candle: [],
-    momentum: [],
-    indicators: [],
-    supportResistance: [],
-    volatility: [],
-    volume: [],
-    mtf: [],
-  }),
+  temporalState: z.object({ previousTrend: z.string().default(""), currentDirection: z.string().default(""), transition: z.string().default("NONE"), regime: z.string().default("UNCLEAR"), staleEvidence: z.array(z.string()).default([]), currentEvidence: z.array(z.string()).default([]), conflicts: z.array(z.string()).default([]), confirmationStatus: z.string().default("UNCLEAR") }).default({ previousTrend: "", currentDirection: "", transition: "NONE", regime: "UNCLEAR", staleEvidence: [], currentEvidence: [], conflicts: [], confirmationStatus: "UNCLEAR" }),
+  evidenceGroups: z.object({ structure: z.array(z.string()).default([]), candle: z.array(z.string()).default([]), momentum: z.array(z.string()).default([]), indicators: z.array(z.string()).default([]), supportResistance: z.array(z.string()).default([]), volatility: z.array(z.string()).default([]), volume: z.array(z.string()).default([]), mtf: z.array(z.string()).default([]) }).default({ structure: [], candle: [], momentum: [], indicators: [], supportResistance: [], volatility: [], volume: [], mtf: [] }),
 }).passthrough();
 
 export const UniversalAIRequestSchema = z.object({
-  mode: z.enum(["visual_only", "api_data"]),
-  provider: z.string(),
-  model: z.string().optional(),
-  platform: z.string(),
-  symbol: z.string(),
-  primaryTimeframe: z.string(),
-  confirmationTimeframe: z.string().optional(),
-  trendTimeframe: z.string().optional(),
-  tradeDuration: z.string().optional(),
-  isProgressive: z.boolean().optional(),
-  progressiveState: z.any().optional(),
-  selectedStrategies: z.array(z.string()).optional(),
-  strategyRules: z.string().optional(),
-  visibleIndicators: z.array(z.string()).default([]),
-  screenshot: z.object({
-    mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-    base64: z.string(),
-  }).optional(),
-  screenshots: z.array(z.object({
-    timeframe: z.string(),
-    mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-    base64: z.string(),
-  })).optional(),
-  primaryTimeframePayload: z.object({
-    timeframe: z.string().optional(),
-    screenshots: z.array(z.object({
-      timestamp: z.union([z.string(), z.number()]).optional(),
-      mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
-      base64: z.string(),
-    })).default([]),
-  }).optional(),
-  macroTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
-  confirmationTimeframeImage: z.object({ timeframe: z.string(), image: z.string() }).optional(),
-  structureTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(),
-  marketData: z.any().optional(),
-  previousAnalysis: z.any().optional(),
-  marketHistorySummary: z.any().optional(),
-  partialBatch: z.any().optional(),
-  riskContext: z.any().optional(),
+  mode: z.enum(["visual_only", "api_data"]), provider: z.string(), model: z.string().optional(), platform: z.string(), symbol: z.string(), primaryTimeframe: z.string(), confirmationTimeframe: z.string().optional(), trendTimeframe: z.string().optional(), tradeDuration: z.string().optional(), isProgressive: z.boolean().optional(), progressiveState: z.any().optional(), selectedStrategies: z.array(z.string()).optional(), strategyRules: z.string().optional(), visibleIndicators: z.array(z.string()).default([]),
+  screenshot: z.object({ mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() }).optional(),
+  screenshots: z.array(z.object({ timeframe: z.string(), mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() })).optional(),
+  primaryTimeframePayload: z.object({ timeframe: z.string().optional(), screenshots: z.array(z.object({ timestamp: z.union([z.string(), z.number()]).optional(), mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() })).default([]) }).optional(),
+  macroTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(), confirmationTimeframeImage: z.object({ timeframe: z.string(), image: z.string() }).optional(), structureTimeframe: z.object({ timeframe: z.string(), image: z.string() }).optional(), marketData: z.any().optional(), previousAnalysis: z.any().optional(), marketHistorySummary: z.any().optional(), partialBatch: z.any().optional(), riskContext: z.any().optional(),
 });
 
 export type UniversalAIRequest = z.infer<typeof UniversalAIRequestSchema>;
 
 export const UniversalAIResponseSchema = z.object({
-  trend: z.enum(["Bullish", "Bearish", "Sideways"]).default("Sideways"),
-  signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).default("NO_TRADE"),
-  confidence: z.coerce.number().min(0).max(100).default(0),
-  readiness: z.enum(["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"]).default("NOT READY"),
-  estimatedConfidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),
-  recommendedTimeframe: z.string().default(""),
-  entryPrice: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
-  stopLoss: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
-  takeProfit: z.union([z.number(), z.string().transform(Number)]).nullable().default(null),
-  explanation: z.string().default(""),
-  requestedIndicators: z.array(z.string()).default([]),
-  requiredTimeframe: z.string().nullable().default(null),
-  detectedSymbol: z.string().nullable().default(null),
-  detectedTimeframe: z.string().nullable().default(null),
-  exchange: z.string().nullable().default(null),
-  marketProvider: z.enum(["visual_only", "ccxt", "broker_api", "unknown"]).default("unknown"),
-  riskDecision: z.string().default("UNSURE"),
-  reasoning: z.string().default("No reasoning provided"),
-  dataConfidence: z.coerce.number().min(0).max(100).default(0),
-  riskReward: z.coerce.number().nullable().optional(),
-  marketState: z.string().optional(),
-  unifiedMarketData: UnifiedMarketDataSchema.optional(),
-  changesFromPrevious: z.string().optional(),
-  momentum: z.string().optional(),
-  candlestickBehavior: z.string().optional(),
-  indicatorState: z.any().optional(),
-  strategyConsensus: z.string().optional(),
-  strategyConflicts: z.array(z.string()).optional(),
-  analysisId: z.string().optional(),
-  evidenceScore: z.coerce.number().min(0).max(100).optional(),
-  signalQuality: z.enum(["EXCELLENT", "GOOD", "FAIR", "POOR", "AVOID"]).optional(),
-  bullishEvidence: z.array(z.string()).default([]),
-  bearishEvidence: z.array(z.string()).default([]),
-  invalidationConditions: z.array(z.string()).default([]),
-  confirmationStatus: z.enum(["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"]).optional(),
-  primaryTrend: z.string().optional(),
-  shortTermDirection: z.string().optional(),
-  structureTransition: z.string().optional(),
+  trend: z.enum(["Bullish", "Bearish", "Sideways"]).default("Sideways"), signal: z.enum(["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"]).default("NO_TRADE"), confidence: z.coerce.number().min(0).max(100).default(0), readiness: z.enum(["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"]).default("NOT READY"), estimatedConfidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"), recommendedTimeframe: z.string().default(""), entryPrice: z.union([z.number(), z.string().transform(Number)]).nullable().default(null), stopLoss: z.union([z.number(), z.string().transform(Number)]).nullable().default(null), takeProfit: z.union([z.number(), z.string().transform(Number)]).nullable().default(null), explanation: z.string().default(""), requestedIndicators: z.array(z.string()).default([]), requiredTimeframe: z.string().nullable().default(null), detectedSymbol: z.string().nullable().default(null), detectedTimeframe: z.string().nullable().default(null), exchange: z.string().nullable().default(null), marketProvider: z.enum(["visual_only", "ccxt", "broker_api", "unknown"]).default("unknown"), riskDecision: z.string().default("UNSURE"), reasoning: z.string().default("No reasoning provided"), dataConfidence: z.coerce.number().min(0).max(100).default(0), riskReward: z.coerce.number().nullable().optional(), marketState: z.string().optional(), unifiedMarketData: UnifiedMarketDataSchema.optional(), changesFromPrevious: z.string().optional(), momentum: z.string().optional(), candlestickBehavior: z.string().optional(), indicatorState: z.any().optional(), strategyConsensus: z.string().optional(), strategyConflicts: z.array(z.string()).optional(), analysisId: z.string().optional(), evidenceScore: z.coerce.number().min(0).max(100).optional(), signalQuality: z.enum(["EXCELLENT", "GOOD", "FAIR", "POOR", "AVOID"]).optional(), bullishEvidence: z.array(z.string()).default([]), bearishEvidence: z.array(z.string()).default([]), invalidationConditions: z.array(z.string()).default([]), confirmationStatus: z.enum(["CONFIRMED", "DEVELOPING", "WEAKENING", "INVALIDATED", "REVERSING", "UNCLEAR"]).optional(), primaryTrend: z.string().optional(), shortTermDirection: z.string().optional(), structureTransition: z.string().optional(),
 }).passthrough();
 
 export type UniversalAIResponse = z.infer<typeof UniversalAIResponseSchema>;
