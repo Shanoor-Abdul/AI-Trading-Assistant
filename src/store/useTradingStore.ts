@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { TradeHistoryEntry, ProgressiveAnalysisSummary, Observation, Trend, Signal } from "@/lib/types";
 import { calculateMaxObservationFrames } from "@/lib/observation/calculation";
+import { ImageStore } from "@/lib/utils/imageStore";
 
 // Trade history is synchronized by the dashboard's single initial loader and explicit create/delete operations.
 export interface TradingState {
@@ -69,7 +70,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   symbol: "", setSymbol: (val) => set((state) => state.symbol !== val ? { symbol: val, ...resetObservationSessionState() } : { symbol: val }),
   timeframe: "5m", setTimeframe: (val) => set((state) => state.timeframe !== val ? { timeframe: val, ...resetObservationSessionState() } : { timeframe: val }),
   stream: null, setStream: (stream) => set({ stream }),
-  lastImageBase64: null, setLastImageBase64: (val) => set({ lastImageBase64: val }),
+  // Deprecated compatibility field. Do not populate it with image data.
+  lastImageBase64: null, setLastImageBase64: (_val) => set({ lastImageBase64: null }),
   isFetchingAnalysis: false,
   setIsFetchingAnalysis: (val) => set((state) => val ? { ...state, isFetchingAnalysis: true, ...clearAnalysisState } : { isFetchingAnalysis: false }),
   trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
@@ -84,26 +86,22 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   observationFrequency: 15, setObservationFrequency: (val) => set((state) => state.observationFrequency !== val ? { observationFrequency: val, ...resetObservationSessionState() } : { observationFrequency: val }),
   observations: [],
   addObservation: (imageId, _imageBase64) => set((state) => {
-    // IMPORTANT: observation pixels live in IndexedDB, not Zustand/React memory.
-    // _imageBase64 is intentionally ignored for backwards compatibility with
-    // existing callers. This prevents JPEG Base64 from being retained in RAM.
     const newObservation: Observation = { timestamp: Date.now(), imageId: imageId || undefined };
     let observations = [...state.observations, newObservation];
     let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
     const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
     if (evictedCount > 0) {
       const evicted = observations.slice(0, evictedCount);
-      evicted.forEach(obs => {
-        if (obs.imageId) {
-          import('@/lib/utils/imageStore').then(m => m.ImageStore.deleteImage(obs.imageId as string)).catch(console.error);
-        }
-      });
+      void Promise.all(evicted.map((obs) => obs.imageId ? ImageStore.deleteImage(obs.imageId) : Promise.resolve())).catch(console.error);
       observations = observations.slice(evictedCount);
       if (lastAnalyzedObservationIndex >= 0) lastAnalyzedObservationIndex = Math.max(-1, lastAnalyzedObservationIndex - evictedCount);
     }
     return { observations, lastAnalyzedObservationIndex, totalFramesCaptured: state.totalFramesCaptured + 1, lastObservationTimestamp: newObservation.timestamp };
   }),
-  clearObservations: () => set({ ...resetObservationSessionState() }),
+  clearObservations: () => {
+    void ImageStore.clearAllImages().catch(console.error);
+    set({ ...resetObservationSessionState() });
+  },
   tradingMode: "MANUAL", setTradingMode: (val) => set({ tradingMode: val }),
   marketDataMode: "api", setMarketDataMode: (val) => set((state) => state.marketDataMode !== val ? { marketDataMode: val, ...resetObservationSessionState() } : { marketDataMode: val }),
   platform: "Binance", setPlatform: (val) => set((state) => state.platform !== val ? { platform: val, ...resetObservationSessionState() } : { platform: val }),
@@ -124,27 +122,27 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   lastAnalyzedObservationIndex: -1,
   setLastAnalyzedObservationIndex: (val) => set((state) => {
     if (val < 0 || val >= state.observations.length) return { lastAnalyzedObservationIndex: val };
-    const consumedCount = val + 1;
-    return { observations: state.observations.slice(consumedCount), lastAnalyzedObservationIndex: -1, totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumedCount) };
+    const consumed = state.observations.slice(0, val + 1);
+    void Promise.all(consumed.map((obs) => obs.imageId ? ImageStore.deleteImage(obs.imageId) : Promise.resolve())).catch(console.error);
+    return { observations: state.observations.slice(val + 1), lastAnalyzedObservationIndex: -1, totalFramesCaptured: Math.max(0, state.totalFramesCaptured - consumed.length) };
   }),
   totalFramesCaptured: 0, currentBatchId: 1,
   lastObservationTimestamp: 0, setLastObservationTimestamp: (val) => set({ lastObservationTimestamp: val }),
   visualChangeCount: 0, incrementVisualChangeCount: () => set((state) => ({ visualChangeCount: state.visualChangeCount + 1 })),
   incrementTotalFrames: () => set((state) => ({ totalFramesCaptured: state.totalFramesCaptured + 1 })),
   incrementBatchId: () => set((state) => ({ currentBatchId: state.currentBatchId + 1 })),
-  resetFramesButKeepSession: () => set((state) => ({ observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId })),
-  stopLiveObservationSession: () => set({ 
-    isLiveObservationEnabled: false,
-    observations: [],
-    lastAnalyzedObservationIndex: -1,
-    totalFramesCaptured: 0,
-    lastObservationTimestamp: 0,
-    retryProgressiveAnalysis: false,
-    lastFailedPendingCount: 0,
-    aiReadiness: null,
-    aiEstimatedConfidence: null,
+  resetFramesButKeepSession: () => set((state) => {
+    void Promise.all(state.observations.map((obs) => obs.imageId ? ImageStore.deleteImage(obs.imageId) : Promise.resolve())).catch(console.error);
+    return { observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, aiReadiness: state.aiReadiness, aiEstimatedConfidence: state.aiEstimatedConfidence, progressiveAnalyses: state.progressiveAnalyses, currentBatchId: state.currentBatchId };
   }),
-  clearProgressiveSession: () => set({ ...resetObservationSessionState() }),
+  stopLiveObservationSession: () => {
+    void ImageStore.clearAllImages().catch(console.error);
+    set({ isLiveObservationEnabled: false, observations: [], lastAnalyzedObservationIndex: -1, totalFramesCaptured: 0, lastObservationTimestamp: 0, retryProgressiveAnalysis: false, lastFailedPendingCount: 0, aiReadiness: null, aiEstimatedConfidence: null });
+  },
+  clearProgressiveSession: () => {
+    void ImageStore.clearAllImages().catch(console.error);
+    set({ ...resetObservationSessionState() });
+  },
   aiReadiness: null, aiEstimatedConfidence: null,
   retryProgressiveAnalysis: false, setRetryProgressiveAnalysis: (val) => set({ retryProgressiveAnalysis: val }),
   retryLoading: false, setRetryLoading: (val) => set({ retryLoading: val }),
@@ -174,7 +172,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           recommendedTimeframe: (data as any).recommendedTimeframe || newState.recommendedTimeframe,
           entryPrice: newState.entryPrice, stopLoss: newState.stopLoss, takeProfit: newState.takeProfit,
           explanation: newState.explanation, status: "OPEN", open: newState.open, high: newState.high, low: newState.low, close: newState.close,
-          screenshotBase64: newState.lastImageBase64 || undefined, dbTradeId: (data as any).dbTradeId,
+          screenshotBase64: undefined, dbTradeId: (data as any).dbTradeId,
           requiredTimeframe: (data as any).requiredTimeframe, requestedIndicators: (data as any).requestedIndicators || newState.requestedIndicators,
           detectedSymbol: (data as any).detectedSymbol, detectedTimeframe: (data as any).detectedTimeframe,
           exchange: (data as any).exchange, marketProvider: (data as any).marketProvider,
@@ -186,8 +184,5 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       }
       return newState;
     });
-    // Do not refetch /api/trades here. The analysis response already creates
-    // the local history entry; a background full-table GET could race with
-    // DELETE and resurrect stale rows or hide a just-created row.
   },
 }));
