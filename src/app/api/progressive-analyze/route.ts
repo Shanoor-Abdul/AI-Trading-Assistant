@@ -1,69 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
-import { POST as analyzePOST } from "@/app/api/analyze/route";
+import { analyze } from "@/lib/ai";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
- * Dedicated endpoint for background progressive analysis.
+ * Progressive endpoint is intentionally extraction-only.
  *
- * /api/analyze expects the primary 5m screenshots at the top level as
- * `screenshots`. The progressive client keeps them under `primaryTimeframe`
- * so the MTF context (4h / 1h / 15m) stays separate. Normalize that payload
- * here before delegating to the shared analysis engine.
+ * It must not invoke /api/analyze, RiskEngine, Supabase persistence, or
+ * trade execution. The client receives structured visual evidence and the
+ * final Fast Signal / Red-Team flow consumes that evidence later.
  */
 export async function POST(req: NextRequest) {
+  const started = performance.now();
+
   try {
     const body = await req.json();
-
-    console.log(`\n[Progressive Analysis] Incoming request for ${body.symbol || "UNKNOWN"} (${body.timeframe || "UNKNOWN"})`);
 
     const primaryScreenshots = Array.isArray(body?.primaryTimeframe?.screenshots)
       ? body.primaryTimeframe.screenshots
       : [];
 
-    const normalizedBody = {
-      ...body,
-      isProgressive: true,
-      screenshots:
-        Array.isArray(body?.screenshots) && body.screenshots.length > 0
-          ? body.screenshots
-          : primaryScreenshots,
-      imageBase64:
-        body?.imageBase64 ||
-        (primaryScreenshots.length > 0
-          ? primaryScreenshots[primaryScreenshots.length - 1]?.base64
-          : undefined),
-    };
+    const screenshots = Array.isArray(body?.screenshots) && body.screenshots.length > 0
+      ? body.screenshots
+      : primaryScreenshots;
 
-    console.log(`[Progressive Analysis] Normalized Payload. Processing ${normalizedBody.screenshots?.length || 0} primary frames.`);
-    if (normalizedBody.macroTimeframeImage) console.log(`[Progressive Analysis] Includes MACRO (4H) context image.`);
-    if (normalizedBody.confirmationTimeframeImage) console.log(`[Progressive Analysis] Includes CONFIRMATION (1H) context image.`);
-    if (normalizedBody.structureTimeframeImage) console.log(`[Progressive Analysis] Includes STRUCTURE (15M) context image.`);
-
-    if (normalizedBody.screenshots.length === 0 && !normalizedBody.imageBase64) {
-      console.log(`[Progressive Analysis] ERROR: No images found in payload.`);
+    if (!screenshots.length && !body?.imageBase64) {
       return NextResponse.json(
-        {
-          error: "Image(s) are required",
-          analysisType: "progressive",
-        },
+        { error: "Image(s) are required", analysisType: "progressive" },
         { status: 400 },
       );
     }
 
-    const normalizedRequest = new NextRequest(req.url, {
-      method: "POST",
-      headers: req.headers,
-      body: JSON.stringify(normalizedBody),
-    });
+    if (!body?.symbol || !body?.timeframe) {
+      return NextResponse.json(
+        { error: "symbol and timeframe are required", analysisType: "progressive" },
+        { status: 400 },
+      );
+    }
 
-    console.log(`[Progressive Analysis] Handing off to AI Vision Extractor -> legacyRoute...`);
-    return await analyzePOST(normalizedRequest);
+    const result = await analyze({
+      imageBase64: body.imageBase64,
+      screenshots,
+      symbol: body.symbol,
+      timeframe: body.timeframe,
+      platform: body.platform || "visual_only",
+      tradeDuration: body.tradeDuration,
+      provider: body.provider || "gemini",
+      model: body.model,
+      useDualModel: false,
+      visibleIndicators: body.visibleIndicators || [],
+      selectedStrategies: body.selectedStrategies,
+      isProgressive: true,
+      progressiveState: body.progressiveState || [],
+      partialBatch: body.partialBatch || null,
+      previousData: body.previousData,
+      marketHistorySummary: body.marketHistorySummary,
+      macroTimeframeImage: body.macroTimeframeImage,
+      confirmationTimeframeImage: body.confirmationTimeframeImage,
+      structureTimeframeImage: body.structureTimeframeImage,
+      marketDataMode: "visual_only",
+      marketData: undefined,
+    } as any);
+
+    return NextResponse.json({
+      ...result,
+      analysisType: "progressive",
+      extractionOnly: true,
+      timings: {
+        totalMs: performance.now() - started,
+      },
+    });
   } catch (error: any) {
     console.error("[Progressive Analysis API Error]:", error);
-
     return NextResponse.json(
       {
         error: error?.message || "Progressive analysis failed",
         analysisType: "progressive",
+        extractionOnly: true,
       },
       { status: 500 },
     );
