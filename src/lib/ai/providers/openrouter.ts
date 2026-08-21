@@ -10,6 +10,11 @@ const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
+function isInvalidNormalizedResult(result: UniversalAIResponse): boolean {
+  return result.marketState === "Analysis Failed: Invalid JSON or Schema" ||
+    result.explanation?.startsWith("[AI_ANALYSIS_INVALID]") === true;
+}
+
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
   const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
   const currentModel = req.model || "qwen/qwen-2-vl-7b-instruct:free";
@@ -37,23 +42,48 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       console.log(`[OpenRouter] Silently stripping images for text-only model: ${currentModel}`);
     }
 
-    const response = await openai.chat.completions.create({
-      model: currentModel,
-      messages: [{ role: "user", content: messagesContent }],
-      max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
-      // Keep the existing prompt/schema validation as the source of truth,
-      // while asking compatible OpenAI-compatible endpoints for JSON output.
-      response_format: { type: "json_object" },
-    });
+    const request = async (retry = false) => {
+      const retryInstruction = retry
+        ? "\n\nFINAL JSON RETRY: Return the complete JSON object now. Do not truncate. Do not add markdown. Use null/[]/{} for unreadable optional values. Keep evidence arrays concise so the entire object fits in the response."
+        : "";
 
-    if (!response?.choices?.length) {
-      throw new Error(`OpenRouter Model ${currentModel} returned an invalid response.`);
+      return openai.chat.completions.create({
+        model: currentModel,
+        messages: [{
+          role: "user",
+          content: retry ? [...messagesContent, { type: "text", text: retryInstruction }] : messagesContent,
+        }],
+        max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+      });
+    };
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(attempt === 1);
+
+      if (!response?.choices?.length) {
+        throw new Error(`OpenRouter Model ${currentModel} returned an invalid response.`);
+      }
+
+      const text = response.choices[0]?.message?.content ?? "";
+      const result = normalizeResponse(text, {
+        marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
+      });
+
+      if (!isInvalidNormalizedResult(result)) {
+        return result;
+      }
+
+      if (attempt === 0) {
+        console.warn(`[OpenRouter] Invalid/incomplete JSON from ${currentModel}; retrying once.`);
+        continue;
+      }
+
+      throw new Error("AI_ANALYSIS_INVALID: OpenRouter returned invalid or incomplete JSON after retry.");
     }
 
-    const text = response.choices[0]?.message?.content ?? "";
-    return normalizeResponse(text, {
-      marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
-    });
+    throw new Error("AI_ANALYSIS_INVALID: OpenRouter analysis did not produce a valid response.");
   } catch (error: any) {
     console.warn(`OpenRouter model failed: ${currentModel} - ${error.message}`);
     throw error;
