@@ -10,9 +10,26 @@ const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-function isInvalidNormalizedResult(result: UniversalAIResponse): boolean {
-  return result.marketState === "Analysis Failed: Invalid JSON or Schema" ||
-    result.explanation?.startsWith("[AI_ANALYSIS_INVALID]") === true;
+function hasMeaningfulProgressiveAnalysis(result: UniversalAIResponse): boolean {
+  const unified = result.unifiedMarketData as any;
+  return Boolean(
+    result.marketState?.trim() ||
+    result.reasoning?.trim() && result.reasoning !== "No reasoning provided" ||
+    result.explanation?.trim() ||
+    result.bullishEvidence?.length ||
+    result.bearishEvidence?.length ||
+    result.invalidationConditions?.length ||
+    unified?.currentPrice?.value != null ||
+    unified?.completedCandle?.close != null ||
+    unified?.currentIncompleteCandle?.close != null ||
+    unified?.frameObservations?.length ||
+    unified?.supportLevels?.value?.length ||
+    unified?.resistanceLevels?.value?.length ||
+    (unified?.indicators && Object.keys(unified.indicators).length > 0) ||
+    unified?.marketStructure?.value != null ||
+    unified?.trend?.value != null ||
+    unified?.momentum?.value != null
+  );
 }
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
@@ -38,13 +55,16 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
           image_url: { url: `data:${req.screenshot.mimeType};base64,${req.screenshot.base64}` },
         });
       }
-    } else {
-      console.log(`[OpenRouter] Silently stripping images for text-only model: ${currentModel}`);
+    }
+
+    const imageCount = messagesContent.filter((item) => item.type === "image_url").length;
+    if (req.isProgressive && imageCount === 0) {
+      throw new Error("PROGRESSIVE_IMAGE_MISSING: No screenshot image data was retrieved for the AI request.");
     }
 
     const request = async (retry = false) => {
       const retryInstruction = retry
-        ? "\n\nFINAL JSON RETRY: Return the complete JSON object now. Do not truncate. Do not add markdown. Use null/[]/{} for unreadable optional values. Keep evidence arrays concise so the entire object fits in the response."
+        ? "\n\nFINAL JSON RETRY: Analyze the supplied chart image(s). Return the complete JSON object. Do not return an empty/template response. Do not add markdown. If the chart is unreadable, explicitly state that in marketState/reasoning. Keep arrays concise."
         : "";
 
       return openai.chat.completions.create({
@@ -61,29 +81,33 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await request(attempt === 1);
-
       if (!response?.choices?.length) {
         throw new Error(`OpenRouter Model ${currentModel} returned an invalid response.`);
       }
 
       const text = response.choices[0]?.message?.content ?? "";
+      if (!text.trim()) {
+        if (attempt === 0) continue;
+        throw new Error("AI_ANALYSIS_EMPTY: OpenRouter returned an empty response after retry.");
+      }
+
       const result = normalizeResponse(text, {
         marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
       });
 
-      if (!isInvalidNormalizedResult(result)) {
+      if (!req.isProgressive || hasMeaningfulProgressiveAnalysis(result)) {
         return result;
       }
 
       if (attempt === 0) {
-        console.warn(`[OpenRouter] Invalid/incomplete JSON from ${currentModel}; retrying once.`);
+        console.warn(`[OpenRouter] Progressive response contained no usable evidence from ${currentModel}; retrying.`);
         continue;
       }
 
-      throw new Error("AI_ANALYSIS_INVALID: OpenRouter returned invalid or incomplete JSON after retry.");
+      throw new Error("AI_ANALYSIS_EMPTY: OpenRouter returned no usable progressive market evidence after retry.");
     }
 
-    throw new Error("AI_ANALYSIS_INVALID: OpenRouter analysis did not produce a valid response.");
+    throw new Error("AI_ANALYSIS_EMPTY: OpenRouter analysis failed after retry.");
   } catch (error: any) {
     console.warn(`OpenRouter model failed: ${currentModel} - ${error.message}`);
     throw error;
