@@ -35,38 +35,14 @@ export interface ExchangeConnection {
   api_secret?: string;
   api_passphrase?: string;
   is_active: boolean;
-  permissions: {
-    read: boolean;
-    trade: boolean;
-    withdraw: boolean;
-  };
+  permissions: { read: boolean; trade: boolean; withdraw: boolean };
   created_at: string;
   updated_at: string;
 }
 
 export type Trend = "Bullish" | "Bearish" | "Sideways";
-
-export type Signal =
-  | "STRONG_BUY"
-  | "BUY"
-  | "SELL"
-  | "STRONG_SELL"
-  | "WAIT"
-  | "UNSURE"
-  | "NO_TRADE";
-
-export type TradeStatus =
-  | "SIGNAL_GENERATED"
-  | "PENDING"
-  | "OPEN"
-  | "PARTIALLY_CLOSED"
-  | "CLOSED"
-  | "WON"
-  | "LOST"
-  | "REVIEWED"
-  | "RISK_REJECTED"
-  | "SKIPPED";
-
+export type Signal = "STRONG_BUY" | "BUY" | "SELL" | "STRONG_SELL" | "WAIT" | "UNSURE" | "NO_TRADE";
+export type TradeStatus = "SIGNAL_GENERATED" | "PENDING" | "OPEN" | "PARTIALLY_CLOSED" | "CLOSED" | "WON" | "LOST" | "REVIEWED" | "RISK_REJECTED" | "SKIPPED";
 export type MarketDataMode = "api" | "visual_only";
 export type MarketDataStatus = "available" | "unavailable" | "stale" | "not_requested";
 
@@ -95,19 +71,12 @@ export interface AnalyzeRequest {
   progressiveState?: any;
   marketHistorySummary?: any;
   screenshots?: any[];
-
   macroTimeframeImage?: MultiTimeframeContext;
   confirmationTimeframeImage?: MultiTimeframeContext;
   structureTimeframeImage?: MultiTimeframeContext;
   primaryTimeframe?: {
     timeframe: string;
-    screenshots: {
-      timestamp: string;
-      mimeType: string;
-      base64: string;
-      platform?: string;
-      symbol?: string;
-    }[];
+    screenshots: { timestamp: string; mimeType: string; base64: string; platform?: string; symbol?: string }[];
   };
 }
 
@@ -122,8 +91,6 @@ export interface TradingAnalysis {
   takeProfit: number | null;
   explanation: string;
   requestedIndicators: string[];
-
-  // These fields are part of the normalized AI response contract.
   readiness: "NOT READY" | "FAIR" | "GOOD" | "VERY GOOD" | "READY" | "READY / COMPLETE" | "EXCELLENT";
   estimatedConfidence?: "LOW" | "MEDIUM" | "HIGH";
   signalQuality?: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" | "AVOID";
@@ -132,14 +99,7 @@ export interface TradingAnalysis {
   bullishEvidence?: string[];
   bearishEvidence?: string[];
   invalidationConditions?: string[];
-  signalQualification?: {
-    approved: boolean;
-    score: number;
-    reasons: string[];
-    blockers: string[];
-    grade: "A+" | "A" | "B" | "C" | "NO_TRADE";
-  };
-
+  signalQualification?: { approved: boolean; score: number; reasons: string[]; blockers: string[]; grade: "A+" | "A" | "B" | "C" | "NO_TRADE" };
   detectedSymbol: string | null;
   detectedTimeframe: string | null;
   exchange: string | null;
@@ -147,7 +107,6 @@ export interface TradingAnalysis {
   riskDecision: string;
   reasoning: string;
   dataConfidence: number;
-
   riskReward?: number;
   marketRegime?: string;
   marketState?: string;
@@ -157,7 +116,6 @@ export interface TradingAnalysis {
   indicatorState?: Record<string, string>;
   strategyConsensus?: string;
   strategyConflicts?: string[];
-
   analysisId?: string;
   dataTimestamp?: number;
   dataAge?: number;
@@ -165,10 +123,8 @@ export interface TradingAnalysis {
   confirmationTimeframe?: string;
   trendTimeframe?: string;
   tradeDuration?: string;
-
   marketDataMode?: MarketDataMode;
   marketDataStatus?: MarketDataStatus;
-
   open?: number | null;
   high?: number | null;
   low?: number | null;
@@ -195,9 +151,7 @@ export interface TradeHistoryEntry extends TradingAnalysis {
   dbTradeId?: string;
 }
 
-export interface AIProviderResponse {
-  text: string;
-}
+export interface AIProviderResponse { text: string; }
 
 export interface MultiTimeframeContext {
   timeframe: string;
@@ -228,9 +182,11 @@ export interface ProgressiveAnalysisSummary {
 }
 
 export interface Observation {
+  /** Browser-local IndexedDB key. The image bytes must never live in Zustand. */
   imageId?: string;
   timestamp: number;
-  imageBase64: string;
+  /** Deprecated compatibility field. New observations must leave this undefined. */
+  imageBase64?: string;
 }
 
 export interface ObservationSessionConfig {
@@ -247,74 +203,17 @@ export interface ObservationSessionConfig {
   observationFrequency: number;
 }
 
-
-export type MarketStateSequence = 
-  | "NEUTRAL"
-  | "TREND_UP"
-  | "TREND_DOWN"
-  | "PULLBACK_UP"
-  | "PULLBACK_DOWN"
-  | "SETUP_FORMING"
-  | "BREAKOUT_PENDING"
-  | "BREAKOUT_CONFIRMED"
-  | "RETEST_PENDING"
-  | "RETEST_CONFIRMED"
-  | "REVERSAL_DEVELOPING"
-  | "REVERSAL_CONFIRMED"
-  | "RANGE"
-  | "CHOPPY"
-  | "FALSE_BREAKOUT"
-  | "INVALIDATED";
-
+export type MarketStateSequence = "NEUTRAL" | "TREND_UP" | "TREND_DOWN" | "PULLBACK_UP" | "PULLBACK_DOWN" | "SETUP_FORMING" | "BREAKOUT_PENDING" | "BREAKOUT_CONFIRMED" | "RETEST_PENDING" | "RETEST_CONFIRMED" | "REVERSAL_DEVELOPING" | "REVERSAL_CONFIRMED" | "RANGE" | "CHOPPY" | "FALSE_BREAKOUT" | "INVALIDATED";
 export type SignalQuality = "A+" | "A" | "B" | "C" | "WAIT";
-
 export type RedTeamValidation = "PASS" | "REJECT" | "UNCLEAR";
 
-export interface TimeframeState {
-  trend: string;
-  structure: string;
-  momentum: string;
-  candle: string;
-  supportResistance: string;
-  regime: string;
-  transition: string;
-  confidence: number;
-  evidenceGroups: string[];
-  invalidation: string;
-}
-
-export interface TemporalState {
-  previousState: MarketStateSequence;
-  currentState: MarketStateSequence;
-  transition: string;
-  staleEvidence: string[];
-  currentEvidence: string[];
-  conflicts: string[];
-}
-
-export interface VisualState {
-  currentFrame: number;
-  recentFrameWindow: number[];
-  visualConfidence: number;
-}
+export interface TimeframeState { trend: string; structure: string; momentum: string; candle: string; supportResistance: string; regime: string; transition: string; confidence: number; evidenceGroups: string[]; invalidation: string; }
+export interface TemporalState { previousState: MarketStateSequence; currentState: MarketStateSequence; transition: string; staleEvidence: string[]; currentEvidence: string[]; conflicts: string[]; }
+export interface VisualState { currentFrame: number; recentFrameWindow: number[]; visualConfidence: number; }
 
 export interface MarketSnapshot {
-  market: {
-    symbol: string;
-    timestamp: string;
-    currentVisualPrice: number | null;
-    currentMarketState: MarketStateSequence;
-  };
-  timeframes: {
-    t4H?: TimeframeState;
-    t1H?: TimeframeState;
-    t15M?: TimeframeState;
-    t5M?: TimeframeState;
-    t2M?: TimeframeState;
-    t60S?: TimeframeState;
-    t30S?: TimeframeState;
-    t15S?: TimeframeState;
-  };
+  market: { symbol: string; timestamp: string; currentVisualPrice: number | null; currentMarketState: MarketStateSequence };
+  timeframes: { t4H?: TimeframeState; t1H?: TimeframeState; t15M?: TimeframeState; t5M?: TimeframeState; t2M?: TimeframeState; t60S?: TimeframeState; t30S?: TimeframeState; t15S?: TimeframeState };
   temporal: TemporalState;
   visual: VisualState;
 }
