@@ -8,11 +8,12 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const indicators = req.visibleIndicators?.length ? req.visibleIndicators.join(", ") : "None specified";
   const history = req.progressiveState?.length ? JSON.stringify(req.progressiveState, null, 2) : "None";
   const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
+  const primaryFrames = req.primaryTimeframePayload?.screenshots?.length || req.screenshots?.length || 0;
   const mtf = [
     `4H Macro Trend Image: ${req.macroTimeframe ? "AVAILABLE" : "MISSING"}`,
     `1H Confirmation Image: ${req.confirmationTimeframeImage ? "AVAILABLE" : "MISSING"}`,
     `15M Structure Image: ${req.structureTimeframe ? "AVAILABLE" : "MISSING"}`,
-    `5M Primary Frames: ${req.primaryTimeframePayload?.screenshots?.length || req.screenshots?.length || 0}`,
+    `5M Primary Frames: ${primaryFrames}`,
   ].join("\n");
 
   const rules = `
@@ -29,6 +30,17 @@ EVIDENCE RULES
 - Progressive mode is observation-first. Do not manufacture BUY/SELL activity.
 - Do not expose private chain-of-thought. Return only a concise user-facing reasoning summary.
 - confidence, evidenceScore, and dataConfidence are integer percentages from 0 to 100.
+
+PROGRESSIVE FRAME EXTRACTION (MANDATORY)
+- When primary 5M frames are supplied, process them as a chronological sequence from oldest to newest.
+- The supplied 5M frames are the evidence for this batch. Do not ignore them and do not analyze only the last frame.
+- Populate unifiedMarketData.frameObservations with ONE observation for EACH supplied 5M frame, in the same order.
+- frameIndex must be 1-based within this batch.
+- For every frame, record whatever is actually readable: price, candle, trend, shortTermDirection, structure, momentum, candleBehavior, visible indicators, support/resistance, swing levels, evidence groups, and confidence. Use null/UNKNOWN when a particular value is unreadable.
+- If the chart image is readable, frameObservations MUST NOT be an empty array.
+- If all supplied frames are genuinely unreadable, frameObservations may contain observations marked UNKNOWN, but marketState and reasoning MUST explicitly say the frames are unreadable.
+- Also populate unifiedMarketData.currentPrice from the latest readable 5M frame and completed/currentIncomplete candle fields when visible.
+- Do not fabricate values merely to satisfy this contract.
 
 OUTPUT CONTRACT
 Return ONLY one valid JSON object. No markdown fences. No prose before or after JSON. No comments. No trailing commas.
@@ -104,8 +116,15 @@ VALID JSON SHAPE
     "trend": { "value": null, "source": "visual", "confidence": 0 },
     "momentum": { "value": null, "source": "visual", "confidence": 0 },
     "tradingSession": { "value": null, "source": "visual", "confidence": 0 },
+    "swingHigh": null,
+    "swingLow": null,
+    "breakoutLevel": null,
+    "invalidationLevel": null,
     "dataConflict": false,
-    "conflictDetails": ""
+    "conflictDetails": "",
+    "frameObservations": [],
+    "temporalState": { "previousTrend": "", "currentDirection": "", "transition": "NONE", "regime": "UNCLEAR", "staleEvidence": [], "currentEvidence": [], "conflicts": [], "confirmationStatus": "UNCLEAR" },
+    "evidenceGroups": { "structure": [], "candle": [], "momentum": [], "indicators": [], "supportResistance": [], "volatility": [], "volume": [], "mtf": [] }
   }
 }
 
