@@ -53,6 +53,11 @@ STRICT RULES
 11. WAIT may have medium/high analytical confidence when evidence is clear but entry confirmation is absent.
 12. entryPrice, stopLoss and takeProfit MUST remain null unless the extracted evidence supports defensible levels.
 13. Never manufacture a trade merely because the user requested a signal.
+14. Do not return an empty reasoning or explanation.
+15. Do not return the default/template response with confidence 0 unless the extraction genuinely contains no usable evidence. If extraction is insufficient, explicitly explain why and use UNSURE.
+16. The final response MUST contain at least one concrete evidence item in bullishEvidence or bearishEvidence, or a concrete strategy conflict/invalidation condition explaining why no trade is justified.
+17. The final reasoning MUST mention the actual extracted evidence used for the decision. Do not write generic text such as "mixed signals" without identifying what was mixed.
+18. If the extraction contains a readable current price or indicator state, preserve that evidence in unifiedMarketData rather than dropping it.
 
 IMPORTANT TIMEFRAME RULE
 Evaluate the setup specifically for the requested trade duration (${req.tradeDuration || req.primaryTimeframe || "unknown"}).
@@ -62,8 +67,23 @@ EXTRACTED MARKET EVIDENCE
 ${extractionJson}
 
 RETURN ONLY VALID JSON matching the application's UniversalAIResponse structure.
-Populate the final signal, evidence, reasoning, confidence, strategy conclusion, confirmation status,
-and unifiedMarketData using ONLY the extracted evidence above.
+Populate:
+- trend
+- signal
+- confidence
+- readiness
+- reasoning
+- explanation
+- indicatorState
+- bullishEvidence and/or bearishEvidence
+- strategyConsensus
+- strategyConflicts
+- confirmationStatus
+- marketState
+- unifiedMarketData
+- invalidationConditions
+
+All fields must be based only on the extracted evidence above.
 Do not add markdown or commentary.
 `;
 }
