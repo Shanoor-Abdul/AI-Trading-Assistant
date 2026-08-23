@@ -28,17 +28,16 @@ STRICT EXTRACTION RULES
 1. Inspect the image itself. Extract every value that is genuinely readable.
 2. NEVER invent an exact numeric value from line position, spacing, color, or visual estimation.
 3. If an exact number is not visibly readable, use null for that numeric field.
-4. Qualitative visual evidence MUST still be extracted when reliable, e.g.:
-   RSI rising/falling, MACD bullish/bearish, histogram expanding/contracting,
-   price near upper/middle/lower Bollinger Band, volatility increasing/decreasing.
+4. Qualitative visual evidence MUST still be extracted when reliable.
 5. If an indicator is not visible, set visible=false, numeric values=null, state="UNKNOWN", confidence=0.
 6. If visible but numeric labels are unreadable, set numeric values=null and describe only what is visually defensible.
-7. Extract current price, visible candles/OHLC, candle behavior, trend, momentum,
-   market structure, swing highs/lows, support/resistance, breakout/rejection,
-   and every requested visible indicator.
-8. Never infer historical candles that are outside the supplied image.
+7. Extract current price, visible candles/OHLC, candle behavior, trend, momentum, market structure, swing highs/lows, support/resistance, breakout/rejection, and every requested visible indicator.
+8. Never infer historical candles outside the supplied image.
 9. Never calculate a value that requires data not present in the image.
 10. Confidence is confidence in the extracted observation, NOT probability of a trade.
+11. Do not leave visualEvidence empty when the chart visibly contains useful factual price/indicator observations.
+12. Do not leave visibleIndicators empty when an indicator is visibly present. Record its name even when its numeric value is unreadable.
+13. If the chart is readable, extractionConfidence must be greater than 0 and at least one factual observation must be populated.
 
 INDICATORS
 For RSI: value if displayed; otherwise null; also extract zone/direction/state.
