@@ -36,12 +36,20 @@ function hasKnownState(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0 && value.toUpperCase() !== "UNKNOWN";
 }
 
+/** Extraction prompts use 0-100. Accept 0-1 defensively so older model responses do not become 0.99%. */
+function normalizeConfidence(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const normalized = n <= 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+}
+
 function hasExtractionEvidence(extraction: any): boolean {
   if (!extraction || typeof extraction !== "object") return false;
   const indicators = extraction.indicators && typeof extraction.indicators === "object" ? Object.values(extraction.indicators) : [];
   const indicatorEvidence = indicators.some((x: any) => x && typeof x === "object" && (
-    x.visible === true || x.value != null || x.macd != null || x.signal != null || x.histogram != null ||
-    hasKnownState(x.state) || hasKnownState(x.position)
+    x.visible === true || x.value != null || x.approximateValue != null || x.macd != null || x.signal != null || x.histogram != null ||
+    hasKnownState(x.state) || hasKnownState(x.position) || hasKnownState(x.zone) || hasKnownState(x.direction)
   ));
   return Boolean(
     extraction.currentPrice?.value != null ||
@@ -52,6 +60,8 @@ function hasExtractionEvidence(extraction: any): boolean {
     extraction.visualEvidence?.length ||
     extraction.supportLevels?.length ||
     extraction.resistanceLevels?.length ||
+    extraction.visualQuality?.overallConfidence > 0 ||
+    normalizeConfidence(extraction.extractionConfidence) > 0 ||
     indicatorEvidence
   );
 }
@@ -63,52 +73,104 @@ function num(value: unknown): number | null {
 }
 
 function observation(value: unknown, confidence = 0) {
-  return { value: num(value), source: "visual" as const, confidence: Math.max(0, Math.min(100, Number(confidence) || 0)) };
+  return { value: num(value), source: "visual" as const, confidence: normalizeConfidence(confidence) };
 }
 
 function levels(value: any): any[] {
   if (!Array.isArray(value)) return [];
   return value.map((x: any) => {
     const n = num(typeof x === "number" ? x : x?.value ?? x?.price);
-    return n == null ? null : { value: n, price: n, type: typeof x?.type === "string" ? x.type : undefined, strength: Number(x?.strength) || 0, confidence: Number(x?.confidence) || 0 };
+    return n == null ? null : {
+      value: n,
+      price: n,
+      type: typeof x?.type === "string" ? x.type : undefined,
+      strength: Number(x?.strength) || 0,
+      confidence: normalizeConfidence(x?.confidence),
+    };
   }).filter(Boolean);
 }
 
-/** Stage 1 is authoritative for visual facts. Stage 2 is authoritative for the signal. */
+function indicatorConfidence(indicator: any): number {
+  if (!indicator || typeof indicator !== "object") return 0;
+  return normalizeConfidence(indicator.confidence);
+}
+
+/**
+ * Stage 1 is authoritative for visual facts. Stage 2 is authoritative for the signal.
+ * This merge deliberately preserves the extraction instead of allowing Stage 2 to
+ * erase useful pixel evidence with null/default fields.
+ */
 function mergeExtraction(result: any, extraction: any, req: any): any {
   const existing = result?.unifiedMarketData && typeof result.unifiedMarketData === "object" ? result.unifiedMarketData : {};
   const candle = extraction?.candles?.latest && typeof extraction.candles.latest === "object" ? extraction.candles.latest : null;
   const visualEvidence = Array.isArray(extraction?.visualEvidence) ? extraction.visualEvidence.filter((x: any) => typeof x === "string" && x.trim()) : [];
   const indicatorState = extraction?.indicators && typeof extraction.indicators === "object" ? extraction.indicators : {};
-  const indicatorEvidence = Object.entries(indicatorState).flatMap(([name, x]: [string, any]) => {
+  const normalizedIndicators = Object.fromEntries(
+    Object.entries(indicatorState).map(([name, x]: [string, any]) => [
+      name,
+      x && typeof x === "object"
+        ? { ...x, confidence: indicatorConfidence(x) }
+        : x,
+    ]),
+  );
+  const indicatorEvidence = Object.entries(normalizedIndicators).flatMap(([name, x]: [string, any]) => {
     if (!x || typeof x !== "object") return [];
     const facts: string[] = [];
     if (x.visible === true) facts.push(`${name} is visible.`);
     if (hasKnownState(x.state)) facts.push(`${name} state: ${x.state}.`);
     if (hasKnownState(x.position)) facts.push(`${name} position: ${x.position}.`);
+    if (hasKnownState(x.zone)) facts.push(`${name} zone: ${x.zone}.`);
+    if (hasKnownState(x.direction)) facts.push(`${name} direction: ${x.direction}.`);
+    if (hasKnownState(x.nearestBand)) facts.push(`${name} nearest band: ${x.nearestBand}.`);
+    if (hasKnownState(x.width)) facts.push(`${name} width: ${x.width}.`);
     if (x.value != null) facts.push(`${name} value: ${x.value}.`);
+    if (x.approximateValue != null) facts.push(`${name} approximate value: ${x.approximateValue}.`);
     if (x.macd != null) facts.push(`MACD value: ${x.macd}.`);
     if (x.signal != null) facts.push(`MACD signal: ${x.signal}.`);
     if (x.histogram != null) facts.push(`MACD histogram: ${x.histogram}.`);
     return facts;
   });
 
+  const extractionConfidence = normalizeConfidence(extraction?.extractionConfidence);
+  const visualQualityConfidence = normalizeConfidence(extraction?.visualQuality?.overallConfidence);
+  const currentPriceConfidence = normalizeConfidence(extraction?.currentPrice?.confidence);
+  const candleConfidence = normalizeConfidence(extraction?.candles?.confidence);
+  const requestedIndicators = Array.isArray(req.visibleIndicators) ? req.visibleIndicators : [];
+  const requestedIndicatorScores = requestedIndicators.map((name: string) => indicatorConfidence(normalizedIndicators[name])).filter((x: number) => x > 0);
+  const indicatorScore = requestedIndicatorScores.length
+    ? Math.round(requestedIndicatorScores.reduce((sum: number, score: number) => sum + score, 0) / requestedIndicatorScores.length)
+    : 0;
+  const evidenceScore = visualEvidence.length > 0 ? Math.min(100, 45 + visualEvidence.length * 8) : 0;
+  const computedExtractionConfidence = extractionConfidence || Math.round(
+    [visualQualityConfidence, currentPriceConfidence, candleConfidence, indicatorScore, evidenceScore]
+      .filter((x) => x > 0)
+      .reduce((sum, score, _, arr) => sum + score / arr.length, 0),
+  );
+
   const unified = {
     symbol: extraction?.symbol || req.symbol || "",
     timeframe: extraction?.timeframe || req.primaryTimeframe || "",
     ...existing,
-    currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, extraction?.currentPrice?.confidence),
-    completedCandle: existing.completedCandle ?? (candle ? { open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close), complete: candle.complete !== false } : null),
-    indicators: Object.keys(existing.indicators || {}).length ? existing.indicators : indicatorState,
+    currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, currentPriceConfidence),
+    completedCandle: existing.completedCandle ?? (candle ? {
+      open: num(candle.open),
+      high: num(candle.high),
+      low: num(candle.low),
+      close: num(candle.close),
+      complete: candle.complete !== false,
+    } : null),
+    indicators: Object.keys(existing.indicators || {}).length ? existing.indicators : normalizedIndicators,
     supportLevels: existing.supportLevels?.value?.length ? existing.supportLevels : { value: levels(extraction?.supportLevels), source: "visual", confidence: 50 },
     resistanceLevels: existing.resistanceLevels?.value?.length ? existing.resistanceLevels : { value: levels(extraction?.resistanceLevels), source: "visual", confidence: 50 },
-    marketStructure: existing.marketStructure?.value != null ? existing.marketStructure : { value: extraction?.marketStructure?.state ?? null, source: "visual", confidence: Number(extraction?.marketStructure?.confidence) || 0 },
-    trend: existing.trend?.value != null ? existing.trend : { value: extraction?.trend?.state ?? null, source: "visual", confidence: Number(extraction?.trend?.confidence) || 0 },
-    momentum: existing.momentum?.value != null ? existing.momentum : { value: extraction?.momentum?.state ?? null, source: "visual", confidence: Number(extraction?.momentum?.confidence) || 0 },
+    marketStructure: existing.marketStructure?.value != null ? existing.marketStructure : { value: extraction?.marketStructure?.state ?? null, source: "visual", confidence: normalizeConfidence(extraction?.marketStructure?.confidence) },
+    trend: existing.trend?.value != null ? existing.trend : { value: extraction?.trend?.state ?? null, source: "visual", confidence: normalizeConfidence(extraction?.trend?.confidence) },
+    momentum: existing.momentum?.value != null ? existing.momentum : { value: extraction?.momentum?.state ?? null, source: "visual", confidence: normalizeConfidence(extraction?.momentum?.confidence) },
     swingHigh: existing.swingHigh?.value != null ? existing.swingHigh : observation(extraction?.swingHigh, 50),
     swingLow: existing.swingLow?.value != null ? existing.swingLow : observation(extraction?.swingLow, 50),
     breakoutLevel: existing.breakoutLevel?.value != null ? existing.breakoutLevel : observation(extraction?.breakoutLevel, 50),
     invalidationLevel: existing.invalidationLevel?.value != null ? existing.invalidationLevel : observation(extraction?.invalidationLevel, 50),
+    extractionConfidence: computedExtractionConfidence,
+    visualQuality: extraction?.visualQuality || null,
     evidenceGroups: {
       ...(existing.evidenceGroups || {}),
       indicators: Array.from(new Set([...(existing.evidenceGroups?.indicators || []), ...indicatorEvidence])),
@@ -132,7 +194,17 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
 function hasFinalEvidence(result: any): boolean {
   const u = result?.unifiedMarketData;
   const text = [result?.reasoning, result?.explanation, result?.marketState].some((x: any) => typeof x === "string" && x.trim() && x !== "No reasoning provided");
-  const data = Boolean(u?.currentPrice?.value != null || u?.completedCandle?.close != null || u?.indicators && Object.keys(u.indicators).length || u?.trend?.value || u?.momentum?.value || u?.marketStructure?.value || u?.supportLevels?.value?.length || u?.resistanceLevels?.value?.length);
+  const data = Boolean(
+    u?.currentPrice?.value != null ||
+    u?.completedCandle?.close != null ||
+    u?.indicators && Object.keys(u.indicators).length ||
+    u?.trend?.value ||
+    u?.momentum?.value ||
+    u?.marketStructure?.value ||
+    u?.supportLevels?.value?.length ||
+    u?.resistanceLevels?.value?.length ||
+    u?.extractionConfidence > 0,
+  );
   return text && data;
 }
 
@@ -159,7 +231,14 @@ export async function POST(request: NextRequest) {
 
     // Stage 1: image -> structured visual evidence.
     const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
-    if (!hasExtractionEvidence(extraction)) return NextResponse.json({ error: "Mobile extraction returned no usable chart evidence.", code: "MOBILE_EXTRACTION_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction"], extraction } }, { status: 502 });
+    if (!hasExtractionEvidence(extraction)) {
+      return NextResponse.json({
+        error: "Mobile extraction returned no usable chart evidence.",
+        code: "MOBILE_EXTRACTION_EMPTY",
+        analysisType: "mobile_visual",
+        mobilePipeline: { stages: ["image_extraction"], extraction },
+      }, { status: 502 });
+    }
 
     // Stage 2: structured evidence -> signal. Screenshot is intentionally not sent again.
     const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
@@ -169,14 +248,25 @@ export async function POST(request: NextRequest) {
     // just because Stage 2 omitted optional nested fields.
     const merged = mergeExtraction(stage2, extraction, baseRequest);
     const validated = UniversalAIResponseSchema.parse(merged);
-    if (!hasFinalEvidence(validated)) return NextResponse.json({ error: "Mobile signal analysis returned an empty or invalid analysis.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction", "evidence_analysis"], extraction, analysis: validated } }, { status: 502 });
+    if (!hasFinalEvidence(validated)) {
+      return NextResponse.json({
+        error: "Mobile signal analysis returned an empty or invalid analysis.",
+        code: "MOBILE_ANALYSIS_EMPTY",
+        analysisType: "mobile_visual",
+        mobilePipeline: { stages: ["image_extraction", "evidence_analysis"], extraction, analysis: validated },
+      }, { status: 502 });
+    }
 
     return NextResponse.json({
       ...validated,
       analysisType: "mobile_visual",
       extractionOnly: false,
       source: "mobile_separate",
-      mobilePipeline: { stages: ["image_extraction", "evidence_analysis"], extraction },
+      mobilePipeline: {
+        stages: ["image_extraction", "evidence_analysis"],
+        extraction,
+        extractionConfidence: normalizeConfidence(merged?.unifiedMarketData?.extractionConfidence),
+      },
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {
