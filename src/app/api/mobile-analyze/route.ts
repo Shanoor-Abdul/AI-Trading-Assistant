@@ -5,15 +5,18 @@ import { analyze as analyzeGroq } from "@/lib/ai/providers/groq";
 import { analyze as analyzeOpenRouter } from "@/lib/ai/providers/openrouter";
 import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/schema";
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
-import { buildMobileAnalysisPrompt } from "@/lib/ai/mobileAnalysisPrompt";
+import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
+import { buildMobileSignalPrompt } from "@/lib/ai/mobileSignalPrompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function getMimeAndBase64(value: string): {
+type ImageData = {
   mimeType: "image/jpeg" | "image/png" | "image/webp";
   base64: string;
-} {
+};
+
+function getMimeAndBase64(value: string): ImageData {
   if (value.startsWith("data:image/")) {
     const [header, data] = value.split(";base64,");
     const mime = header.replace("data:", "");
@@ -38,6 +41,22 @@ async function callProvider(req: any) {
     default:
       throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
   }
+}
+
+function hasExtractionEvidence(extraction: any): boolean {
+  if (!extraction || typeof extraction !== "object") return false;
+
+  return Boolean(
+    extraction.currentPrice?.value != null ||
+    extraction.candles?.latest?.close != null ||
+    extraction.trend?.state && extraction.trend.state !== "UNKNOWN" ||
+    extraction.momentum?.state && extraction.momentum.state !== "UNKNOWN" ||
+    extraction.marketStructure?.state && extraction.marketStructure.state !== "UNKNOWN" ||
+    extraction.visualEvidence?.length ||
+    extraction.supportLevels?.length ||
+    extraction.resistanceLevels?.length ||
+    (extraction.indicators && Object.keys(extraction.indicators).length > 0),
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -81,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     const image = getMimeAndBase64(rawImage);
 
-    const aiRequest = UniversalAIRequestSchema.parse({
+    const baseRequest = UniversalAIRequestSchema.parse({
       mode: "visual_only",
       provider,
       model,
@@ -93,15 +112,45 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [],
       screenshot: image,
       promptOverride: "",
-      rawOutput: false,
+      rawOutput: true,
+      isProgressive: false,
     });
 
-    const prompt = buildMobileAnalysisPrompt(aiRequest);
-    const result = await callProvider({ ...aiRequest, promptOverride: prompt, rawOutput: false, isProgressive: false });
+    // STAGE 1: Vision model extracts factual values/evidence from the image only.
+    const extractionPrompt = buildMobileExtractionPrompt(baseRequest);
+    const extraction = await callProvider({
+      ...baseRequest,
+      promptOverride: extractionPrompt,
+      rawOutput: true,
+      isProgressive: false,
+    });
+
+    if (!hasExtractionEvidence(extraction)) {
+      return NextResponse.json(
+        {
+          error: "Mobile extraction returned no usable chart evidence.",
+          code: "MOBILE_EXTRACTION_EMPTY",
+          analysisType: "mobile_visual",
+        },
+        { status: 502 },
+      );
+    }
+
+    // STAGE 2: Text reasoning receives ONLY the extracted structured evidence.
+    // The screenshot is intentionally omitted so the second stage cannot re-read/guess pixels.
+    const analysisRequest = UniversalAIRequestSchema.parse({
+      ...baseRequest,
+      screenshot: undefined,
+      promptOverride: buildMobileSignalPrompt(baseRequest, extraction),
+      rawOutput: false,
+      isProgressive: false,
+    });
+
+    const result = await callProvider(analysisRequest);
     const validated = UniversalAIResponseSchema.parse(result);
 
     const unified = validated.unifiedMarketData as any;
-    const hasEvidence = Boolean(
+    const hasFinalEvidence = Boolean(
       validated.explanation?.trim() ||
       validated.reasoning?.trim() ||
       validated.marketState?.trim() ||
@@ -112,9 +161,9 @@ export async function POST(request: NextRequest) {
       (unified?.indicators && Object.keys(unified.indicators).length > 0),
     );
 
-    if (!hasEvidence) {
+    if (!hasFinalEvidence) {
       return NextResponse.json(
-        { error: "Mobile AI returned no usable chart evidence.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual" },
+        { error: "Mobile signal analysis returned no usable evidence.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual" },
         { status: 502 },
       );
     }
@@ -124,6 +173,10 @@ export async function POST(request: NextRequest) {
       analysisType: "mobile_visual",
       extractionOnly: false,
       source: "mobile_separate",
+      mobilePipeline: {
+        stages: ["image_extraction", "evidence_analysis"],
+        extraction,
+      },
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {
