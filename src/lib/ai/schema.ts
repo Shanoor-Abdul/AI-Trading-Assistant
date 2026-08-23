@@ -1,15 +1,20 @@
 import { z } from "zod";
 
 const NumericObservationSchema = z.object({
-  value: z.number().finite().nullable().default(null),
+  value: z.coerce.number().finite().nullable().default(null),
   source: z.enum(["visual", "api", "hybrid"]).default("visual"),
   confidence: z.coerce.number().min(0).max(100).default(0),
 });
 
 const NumericObservationDefault = { value: null, source: "visual" as const, confidence: 0 };
 
+// Vision models commonly serialize chart values as strings. Coerce numeric
+// indicator fields at the schema boundary so valid numeric strings do not fail
+// the entire mobile analysis response.
+const NullableNumber = z.coerce.number().finite().nullable().default(null);
+
 const IndicatorValueSchema = z.object({
-  value: z.number().finite().nullable().default(null),
+  value: NullableNumber,
   state: z.string().default("UNKNOWN"),
   visible: z.boolean().default(false),
   confidence: z.coerce.number().min(0).max(100).default(0),
@@ -17,9 +22,9 @@ const IndicatorValueSchema = z.object({
 }).passthrough();
 
 const MacdObservationSchema = z.object({
-  macd: z.number().finite().nullable().default(null),
-  signal: z.number().finite().nullable().default(null),
-  histogram: z.number().finite().nullable().default(null),
+  macd: NullableNumber,
+  signal: NullableNumber,
+  histogram: NullableNumber,
   state: z.string().default("UNKNOWN"),
   visible: z.boolean().default(false),
   confidence: z.coerce.number().min(0).max(100).default(0),
@@ -27,9 +32,9 @@ const MacdObservationSchema = z.object({
 }).passthrough();
 
 const BollingerObservationSchema = z.object({
-  upper: z.number().finite().nullable().default(null),
-  middle: z.number().finite().nullable().default(null),
-  lower: z.number().finite().nullable().default(null),
+  upper: NullableNumber,
+  middle: NullableNumber,
+  lower: NullableNumber,
   position: z.string().default("UNKNOWN"),
   state: z.string().default("UNKNOWN"),
   visible: z.boolean().default(false),
@@ -48,8 +53,8 @@ const IndicatorSetSchema = z.object({
 }).passthrough();
 
 const PriceLevelSchema = z.object({
-  value: z.number().finite().nullable().default(null),
-  price: z.number().finite().nullable().default(null),
+  value: z.coerce.number().finite().nullable().default(null),
+  price: z.coerce.number().finite().nullable().default(null),
   type: z.string().optional(),
   strength: z.coerce.number().min(0).max(100).default(0),
   confidence: z.coerce.number().min(0).max(100).default(0),
@@ -66,10 +71,10 @@ const LevelsDefault = {
 };
 
 const CandleSchema = z.object({
-  open: z.number().finite().nullable().default(null),
-  high: z.number().finite().nullable().default(null),
-  low: z.number().finite().nullable().default(null),
-  close: z.number().finite().nullable().default(null),
+  open: z.coerce.number().finite().nullable().default(null),
+  high: z.coerce.number().finite().nullable().default(null),
+  low: z.coerce.number().finite().nullable().default(null),
+  close: z.coerce.number().finite().nullable().default(null),
   complete: z.boolean().default(false),
 }).passthrough();
 
@@ -78,7 +83,7 @@ const FrameObservationSchema = z.object({
   timestamp: z.union([z.string(), z.number()]).nullable().default(null),
   timeframe: z.string().default(""),
   isPartial: z.boolean().default(false),
-  price: z.number().finite().nullable().default(null),
+  price: z.coerce.number().finite().nullable().default(null),
   completedCandle: CandleSchema.nullable().default(null),
   currentIncompleteCandle: CandleSchema.nullable().default(null),
   trend: z.string().default("Unknown"),
@@ -92,11 +97,11 @@ const FrameObservationSchema = z.object({
     resistanceLevels: z.array(PriceLevelSchema).default([]),
     supportInteraction: z.string().default(""),
     resistanceInteraction: z.string().default(""),
-    breakoutLevel: z.number().finite().nullable().default(null),
-    invalidationLevel: z.number().finite().nullable().default(null),
+    breakoutLevel: z.coerce.number().finite().nullable().default(null),
+    invalidationLevel: z.coerce.number().finite().nullable().default(null),
   }).default(LevelsDefault),
-  swingHigh: z.number().finite().nullable().default(null),
-  swingLow: z.number().finite().nullable().default(null),
+  swingHigh: z.coerce.number().finite().nullable().default(null),
+  swingLow: z.coerce.number().finite().nullable().default(null),
   marketRegime: z.string().default("UNCLEAR"),
   bullishEvidenceGroups: z.array(z.string()).default([]),
   bearishEvidenceGroups: z.array(z.string()).default([]),
