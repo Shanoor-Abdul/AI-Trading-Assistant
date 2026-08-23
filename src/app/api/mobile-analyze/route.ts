@@ -43,20 +43,76 @@ async function callProvider(req: any) {
   }
 }
 
+function hasKnownState(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0 && value.toUpperCase() !== "UNKNOWN";
+}
+
 function hasExtractionEvidence(extraction: any): boolean {
   if (!extraction || typeof extraction !== "object") return false;
+
+  const indicators = extraction.indicators && typeof extraction.indicators === "object"
+    ? Object.values(extraction.indicators as Record<string, any>)
+    : [];
+
+  const hasIndicatorEvidence = indicators.some((indicator: any) =>
+    indicator && typeof indicator === "object" && (
+      indicator.visible === true ||
+      Object.values(indicator).some((value) => typeof value === "number" && Number.isFinite(value)) ||
+      hasKnownState(indicator.state) ||
+      hasKnownState(indicator.position)
+    ),
+  );
 
   return Boolean(
     extraction.currentPrice?.value != null ||
     extraction.candles?.latest?.close != null ||
-    extraction.trend?.state && extraction.trend.state !== "UNKNOWN" ||
-    extraction.momentum?.state && extraction.momentum.state !== "UNKNOWN" ||
-    extraction.marketStructure?.state && extraction.marketStructure.state !== "UNKNOWN" ||
-    extraction.visualEvidence?.length ||
-    extraction.supportLevels?.length ||
-    extraction.resistanceLevels?.length ||
-    (extraction.indicators && Object.keys(extraction.indicators).length > 0),
+    hasKnownState(extraction.trend?.state) ||
+    hasKnownState(extraction.momentum?.state) ||
+    hasKnownState(extraction.marketStructure?.state) ||
+    extraction.visualEvidence?.length > 0 ||
+    extraction.supportLevels?.length > 0 ||
+    extraction.resistanceLevels?.length > 0 ||
+    hasIndicatorEvidence ||
+    extraction.visibleIndicators?.length > 0,
   );
+}
+
+function hasFinalAnalysisEvidence(validated: any): boolean {
+  const unified = validated?.unifiedMarketData as any;
+  const reasoning = typeof validated?.reasoning === "string" ? validated.reasoning.trim() : "";
+  const explanation = typeof validated?.explanation === "string" ? validated.explanation.trim() : "";
+  const marketState = typeof validated?.marketState === "string" ? validated.marketState.trim() : "";
+
+  const usableText = [reasoning, explanation, marketState].some(
+    (value) => value && value !== "No reasoning provided" && value !== "No explanation provided",
+  );
+
+  const hasEvidenceArrays = Boolean(
+    validated?.bullishEvidence?.length ||
+    validated?.bearishEvidence?.length ||
+    validated?.strategyConflicts?.length ||
+    validated?.invalidationConditions?.length,
+  );
+
+  const hasUnifiedEvidence = Boolean(
+    unified?.currentPrice?.value != null ||
+    unified?.completedCandle?.close != null ||
+    unified?.currentIncompleteCandle?.close != null ||
+    unified?.supportLevels?.value?.length ||
+    unified?.resistanceLevels?.value?.length ||
+    (unified?.indicators && Object.values(unified.indicators).some((indicator: any) =>
+      indicator && typeof indicator === "object" && (
+        indicator.value != null ||
+        indicator.visible === true ||
+        (typeof indicator.state === "string" && indicator.state !== "UNKNOWN")
+      ),
+    )),
+    typeof unified?.marketStructure?.value === "string" && unified.marketStructure.value.trim(),
+    typeof unified?.trend?.value === "string" && unified.trend.value.trim(),
+    typeof unified?.momentum?.value === "string" && unified.momentum.value.trim(),
+  );
+
+  return Boolean(usableText && (hasEvidenceArrays || hasUnifiedEvidence));
 }
 
 export async function POST(request: NextRequest) {
@@ -149,21 +205,13 @@ export async function POST(request: NextRequest) {
     const result = await callProvider(analysisRequest);
     const validated = UniversalAIResponseSchema.parse(result);
 
-    const unified = validated.unifiedMarketData as any;
-    const hasFinalEvidence = Boolean(
-      validated.explanation?.trim() ||
-      validated.reasoning?.trim() ||
-      validated.marketState?.trim() ||
-      validated.bullishEvidence?.length ||
-      validated.bearishEvidence?.length ||
-      unified?.currentPrice?.value != null ||
-      unified?.completedCandle?.close != null ||
-      (unified?.indicators && Object.keys(unified.indicators).length > 0),
-    );
-
-    if (!hasFinalEvidence) {
+    if (!hasFinalAnalysisEvidence(validated)) {
       return NextResponse.json(
-        { error: "Mobile signal analysis returned no usable evidence.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual" },
+        {
+          error: "Mobile signal analysis returned an empty or invalid analysis.",
+          code: "MOBILE_ANALYSIS_EMPTY",
+          analysisType: "mobile_visual",
+        },
         { status: 502 },
       );
     }
