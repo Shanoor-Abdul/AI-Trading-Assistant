@@ -15,10 +15,10 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
 
     let exchangeName = "binance";
-    let apiKey = undefined;
-    let apiSecret = undefined;
-    let environment = undefined;
-    let passphrase = undefined;
+    let apiKey: string | undefined;
+    let apiSecret: string | undefined;
+    let environment: string | undefined;
+    let passphrase: string | undefined;
 
     if (connectionId && user) {
       const { data: conn } = await supabase
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         .eq("id", connectionId)
         .eq("user_id", user.id)
         .single();
-      
+
       if (conn) {
         exchangeName = conn.exchange;
         apiKey = conn.api_key;
@@ -37,10 +37,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
-    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
-
-    const ticker = await provider.fetchTicker(symbol);
+    const ticker = exchangeName.toLowerCase() === "alpaca"
+      ? await (async () => {
+          const { AlpacaProvider } = await import("@/lib/providers/market/AlpacaProvider");
+          return new AlpacaProvider(apiKey, apiSecret).fetchTicker(symbol);
+        })()
+      : await (async () => {
+          const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
+          return new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment).fetchTicker(symbol);
+        })();
 
     return NextResponse.json({ price: ticker.last });
   } catch (error: any) {
