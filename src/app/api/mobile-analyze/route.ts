@@ -7,6 +7,7 @@ import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/sc
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
 import { buildMobileSignalPrompt } from "@/lib/ai/mobileSignalPrompt";
+import { calculateMobileSignalConfidence } from "@/lib/ai/mobileSignalConfidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -247,7 +248,20 @@ export async function POST(request: NextRequest) {
     // Server-side merge guarantees that successful pixel extraction cannot disappear
     // just because Stage 2 omitted optional nested fields.
     const merged = mergeExtraction(stage2, extraction, baseRequest);
-    const validated = UniversalAIResponseSchema.parse(merged);
+    const signalConfidence = calculateMobileSignalConfidence({
+      result: merged,
+      extraction,
+      extractionConfidence: merged?.unifiedMarketData?.extractionConfidence,
+      requestedIndicators: baseRequest.visibleIndicators,
+    });
+    const mergedWithConfidence = {
+      ...merged,
+      confidence: signalConfidence,
+      dataConfidence: signalConfidence,
+      evidenceScore: signalConfidence,
+      confidenceSource: "server_evidence_confluence",
+    };
+    const validated = UniversalAIResponseSchema.parse(mergedWithConfidence);
     if (!hasFinalEvidence(validated)) {
       return NextResponse.json({
         error: "Mobile signal analysis returned an empty or invalid analysis.",
@@ -266,6 +280,8 @@ export async function POST(request: NextRequest) {
         stages: ["image_extraction", "evidence_analysis"],
         extraction,
         extractionConfidence: normalizeConfidence(merged?.unifiedMarketData?.extractionConfidence),
+        signalConfidence,
+        confidenceSource: "server_evidence_confluence",
       },
       timings: { totalMs: performance.now() - started },
     });
