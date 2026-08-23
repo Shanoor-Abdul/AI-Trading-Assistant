@@ -34,6 +34,12 @@ MANDATORY EXTRACTION
 9. Exact numbers may only be copied when printed/readable. Approximate values are allowed only when the scale makes the approximation defensible and MUST be marked valueType=approximate. Never invent exact numbers.
 10. Partial extraction is better than an UNKNOWN template when concrete visual evidence exists.
 
+MOVING AVERAGES / EMA — ONLY IF ACTUALLY VISIBLE
+- If the chart visibly labels or clearly identifies one or more EMA/SMA lines, record their readable values/relationship.
+- If both a fast and slow MA are visibly identifiable, record whether fast is above/below slow and any visible crossover direction.
+- Do NOT treat Bollinger middle as an EMA pair and do NOT invent fast/slow MA values.
+- If no MA/EMA is clearly identifiable, leave EMA empty/unknown.
+
 BOLLINGER BANDS — PRICE PANEL ONLY
 Record current price position relative to upper/middle/lower, nearest band, middle-band cross between visible candles, cross direction, whether a candle CLOSED on the new side, approach/touch/pierce/rejection of upper/lower band, band width, and expansion/contraction. Stage 1 records evidence only; it never converts a band touch into BUY/SELL.
 
@@ -68,6 +74,7 @@ RETURN ONLY JSON
     "RSI": {"value": null, "approximateValue": null, "valueType": "unknown", "zone": "UNKNOWN", "direction": "UNKNOWN", "cross30": "UNKNOWN", "cross50": "UNKNOWN", "cross70": "UNKNOWN", "divergence": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
     "MACD": {"macd": null, "signal": null, "histogram": null, "histogramDirection": "UNKNOWN", "lineRelationship": "UNKNOWN", "cross": "UNKNOWN", "zeroLine": "UNKNOWN", "direction": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
     "Bollinger Bands": {"upper": null, "middle": null, "lower": null, "position": "UNKNOWN", "nearestBand": "UNKNOWN", "middleCross": "UNKNOWN", "crossDirection": "UNKNOWN", "candleCloseConfirmation": "UNKNOWN", "bandInteraction": "UNKNOWN", "width": "UNKNOWN", "expansion": "UNKNOWN", "volatility": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
+    "EMA": {},
     "ATR": {"value": null, "state": "UNKNOWN", "visible": false, "confidence": 0}
   },
   "visibleIndicators": [], "visualEvidence": [],
@@ -75,6 +82,6 @@ RETURN ONLY JSON
   "extractionConfidence": 0
 }
 
-FINAL CHECK: inspect the image; copy printed price exactly; inspect candles and lower panels; extract candle anatomy and visible structure; extract Bollinger middle-cross/band interaction; extract RSI direction/threshold crosses/divergence when supported; extract MACD relationship/histogram when supported; preserve visible=true when visible; use approximate only when defensible; put concrete observations in visualEvidence; never produce a trading signal.
+FINAL CHECK: inspect the image; copy printed price exactly; inspect candles and lower panels; extract candle anatomy and visible structure; extract EMA/MA only when genuinely visible; extract Bollinger middle-cross/band interaction; extract RSI direction/threshold crosses/divergence when supported; extract MACD relationship/histogram when supported; preserve visible=true when visible; use approximate only when defensible; put concrete observations in visualEvidence; never produce a trading signal.
 `;
 }
