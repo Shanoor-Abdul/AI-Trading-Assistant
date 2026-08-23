@@ -122,10 +122,10 @@ export async function POST(req: NextRequest) {
           ...(result.unifiedMarketData?.indicators || {}),
           RAW_VALUES: indData?.latest
         },
-        marketStructure: { value: marketRegime.regime, source: "api", confidence: 100 },
-        trend: { value: marketRegime.trend, source: "api", confidence: 100 },
-        supportLevels: { value: swings.lows, source: "api", confidence: 100 },
-        resistanceLevels: { value: swings.highs, source: "api", confidence: 100 }
+        marketStructure: { value: marketRegime, source: "api", confidence: 100 },
+        trend: { value: marketRegime, source: "api", confidence: 100 },
+        supportLevels: { value: swings.swingLows, source: "api", confidence: 100 },
+        resistanceLevels: { value: swings.swingHighs, source: "api", confidence: 100 }
       },
       analysisType: "api",
       extractionOnly: false
