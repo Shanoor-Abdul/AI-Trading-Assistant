@@ -1,6 +1,6 @@
 import { parseDurationToSeconds } from "./timeframe";
 
-export const PROGRESSIVE_BATCH_SIZE = 20;
+export const PROGRESSIVE_BATCH_SIZE = 5;
 export const OBSERVATION_CACHE_SIZE = PROGRESSIVE_BATCH_SIZE * 2;
 
 export function calculateExpectedFrames(
@@ -17,6 +17,11 @@ export function calculateExpectedFrames(
   return Math.ceil(targetSeconds / frequencySecs);
 }
 
-export function calculateMaxObservationFrames(): number {
-  return OBSERVATION_CACHE_SIZE;
+export function calculateMaxObservationFrames(
+  chartTimeframe: string,
+  tradeDuration: string,
+  frequencySecs: number
+): number {
+  const expected = calculateExpectedFrames(chartTimeframe, tradeDuration, frequencySecs);
+  return Math.max(10, expected * 2);
 }

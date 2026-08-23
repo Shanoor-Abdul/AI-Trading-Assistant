@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     let exchangeName = "binance";
     let apiKey = undefined;
     let apiSecret = undefined;
+    let environment = undefined;
+    let passphrase = undefined;
 
     if (connectionId && user) {
       const { data: conn } = await supabase
@@ -30,11 +32,13 @@ export async function GET(req: NextRequest) {
         exchangeName = conn.exchange;
         apiKey = conn.api_key;
         apiSecret = conn.api_secret;
+        environment = conn.environment;
+        passphrase = conn.passphrase;
       }
     }
 
     const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
-    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret);
+    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
 
     const ticker = await provider.fetchTicker(symbol);
 

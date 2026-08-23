@@ -46,6 +46,13 @@ export const ExchangeRegistry: ExchangeProvider[] = [
     environments: ["mainnet"],
     fields: ["apiKey", "apiSecret"],
     capabilities: { marketData: true, trading: true }
+  },
+  {
+    id: "alpaca",
+    name: "Alpaca",
+    environments: ["mainnet", "testnet"],
+    fields: ["apiKey", "apiSecret"],
+    capabilities: { marketData: true, trading: true }
   }
 ];
 

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     // Initialize CCXT and test connection
     const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
-    const provider = new CCXTProvider(conn.exchange, conn.api_key, conn.api_secret);
+    const provider = new CCXTProvider(conn.exchange, conn.api_key, conn.api_secret, conn.passphrase, conn.environment);
     
     // We just need a simple call that requires authentication to verify credentials.
     // Fetching balance is the standard way to verify CCXT API keys.

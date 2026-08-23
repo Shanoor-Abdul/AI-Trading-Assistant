@@ -20,7 +20,7 @@ export function getModelCapabilities(
     return {
       vision: configuredModel.vision,
       structuredOutput: p === "openrouter" ? false : true,
-      maxImageCount: configuredModel.vision ? 1 : 0,
+      maxImageCount: configuredModel.vision ? 20 : 0,
       maxOutputTokens: p === "gemini" ? 8192 : 4096,
     };
   }
@@ -44,7 +44,7 @@ export function getModelCapabilities(
     return {
       vision,
       structuredOutput: true,
-      maxImageCount: vision ? 1 : 0,
+      maxImageCount: vision ? 20 : 0,
       maxOutputTokens: 4096,
     };
   }
@@ -54,7 +54,7 @@ export function getModelCapabilities(
     return {
       vision,
       structuredOutput: true,
-      maxImageCount: vision ? 1 : 0,
+      maxImageCount: vision ? 20 : 0,
       maxOutputTokens: 4096,
     };
   }

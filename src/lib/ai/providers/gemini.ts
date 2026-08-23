@@ -26,8 +26,8 @@ function hasMeaningfulAnalysis(result: UniversalAIResponse): boolean {
 }
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
-  const currentModel = req.model || "gemini-2.5-flash";
+  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
+  const currentModel = req.model || "gemini-3.7-flash";
 
   try {
     const parts: any[] = [{ text: prompt }];
@@ -67,6 +67,11 @@ Return the complete JSON object only.`;
       }
 
       try {
+        if (req.rawOutput) {
+          const match = text.match(/\{[\s\S]*\}/);
+          return (match ? JSON.parse(match[0]) : {}) as any;
+        }
+
         const result = normalizeResponse(text, {
           marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
         });

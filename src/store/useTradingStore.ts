@@ -89,7 +89,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const newObservation: Observation = { timestamp: Date.now(), imageId: imageId || undefined };
     let observations = [...state.observations, newObservation];
     let lastAnalyzedObservationIndex = state.lastAnalyzedObservationIndex;
-    const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames());
+    const evictedCount = Math.max(0, observations.length - calculateMaxObservationFrames(state.timeframe, state.tradeDuration, state.observationFrequency));
     if (evictedCount > 0) {
       const evicted = observations.slice(0, evictedCount);
       void Promise.all(evicted.map((obs) => obs.imageId ? ImageStore.deleteImage(obs.imageId) : Promise.resolve())).catch(console.error);

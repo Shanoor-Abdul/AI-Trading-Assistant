@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyze } from "@/lib/ai";
+import fs from "fs";
+import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,22 @@ export async function POST(req: NextRequest) {
     if (!body?.symbol || !body?.timeframe) {
       return NextResponse.json({ error: "symbol and timeframe are required", analysisType: "progressive" }, { status: 400 });
     }
+
+    // --- DEBUGGING: SAVE FRAMES TO DISK ---
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const debugDir = path.join(process.cwd(), 'debug_frames');
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    validScreenshots.forEach((shot: any, index: number) => {
+      if (shot.base64) {
+        const base64Data = shot.base64.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
+        fs.writeFileSync(path.join(debugDir, `batch_${timestampStr}_frame_${index + 1}.png`), buffer);
+      }
+    });
+    // --------------------------------------
 
     const result = await analyze({
       imageBase64: body.imageBase64,
@@ -65,9 +83,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Progressive AI returned an empty or invalid analysis.", code: "AI_ANALYSIS_EMPTY", analysisType: "progressive", extractionOnly: true }, { status: 502 });
     }
 
+    // --- DEBUGGING: LOG EXTRACTION RESULT ---
+    try {
+      const logPath = path.join(debugDir, 'extraction_log.txt');
+      const logEntry = `
+========================================
+TIMESTAMP: ${timestampStr}
+BATCH ID/FRAMES: ${validScreenshots.length} frames
+SYMBOL: ${body.symbol} | TIMEFRAME: ${body.timeframe}
+EXTRACTED FULL RESULT:
+${JSON.stringify(result, null, 2)}
+========================================
+`;
+      fs.appendFileSync(logPath, logEntry);
+    } catch (e) {
+      console.error("Failed to write extraction log:", e);
+    }
+    // ----------------------------------------
+
     return NextResponse.json({ ...result, analysisType: "progressive", extractionOnly: true, timings: { totalMs: performance.now() - started } });
   } catch (error: any) {
     console.error("[Progressive Analysis API Error]:", error);
+      require("fs").writeFileSync("debug_frames/route_error.txt", error.stack || error.message);
     return NextResponse.json({ error: error?.message || "Progressive analysis failed", analysisType: "progressive", extractionOnly: true }, { status: 500 });
   }
 }

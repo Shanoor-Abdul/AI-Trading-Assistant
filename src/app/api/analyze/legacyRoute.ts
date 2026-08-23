@@ -191,6 +191,8 @@ async function fetchMarketData(
     let exchangeName = "binance";
     let apiKey = undefined;
     let apiSecret = undefined;
+    let environment = undefined;
+    let passphrase = undefined;
 
     if (body.activeConnectionId && supabase && userId) {
       const { data: conn } = await supabase
@@ -204,10 +206,12 @@ async function fetchMarketData(
         exchangeName = conn.exchange;
         apiKey = conn.api_key;
         apiSecret = conn.api_secret;
+        environment = conn.environment;
+        passphrase = conn.passphrase;
       }
     }
 
-    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret);
+    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
 
     exchange = exchangeName;
     marketProvider = "ccxt";

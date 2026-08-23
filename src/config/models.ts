@@ -17,6 +17,41 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
+    id: "gemini-3.5-flash-lite",
+    name: "Gemini 3.5 Flash Lite (High Rate Limit)",
+    provider: "gemini",
+    isFree: true,
+    vision: true,
+  },
+  {
+    id: "gemini-3.7-flash",
+    name: "Gemini 3.7 Flash",
+    provider: "gemini",
+    isFree: true,
+    vision: true,
+  },
+  {
+    id: "gemini-3.6-flash",
+    name: "Gemini 3.6 Flash",
+    provider: "gemini",
+    isFree: true,
+    vision: true,
+  },
+  {
+    id: "gemini-3.5-flash",
+    name: "Gemini 3.5 Flash",
+    provider: "gemini",
+    isFree: true,
+    vision: true,
+  },
+  {
+    id: "openai/gpt-4o",
+    name: "GPT-4o",
+    provider: "openrouter",
+    isFree: false,
+    vision: true,
+  },
+  {
     id: "openai/gpt-4o-mini",
     name: "GPT-4o Mini",
     provider: "openrouter",

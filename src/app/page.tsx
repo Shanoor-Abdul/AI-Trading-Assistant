@@ -375,8 +375,10 @@ export default function Dashboard() {
       const canvas = canvasRef.current;
       if (!video || !canvas || video.videoWidth === 0) return;
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      const MAX_WIDTH = 1200;
+      const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
+      canvas.width = video.videoWidth * scale;
+      canvas.height = video.videoHeight * scale;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
@@ -515,13 +517,17 @@ export default function Dashboard() {
               : 0;
           const pending = current.observations.length - analyzedCount;
 
-          const pendingMultiples = Math.floor(pending / 20);
+          const currentExpectedFrames = current.marketDataMode === "visual_only" 
+            ? calculateExpectedFrames(current.timeframe, current.tradeDuration, current.observationFrequency) 
+            : 60;
+
+          const pendingMultiples = Math.floor(pending / currentExpectedFrames);
           if (pendingMultiples === 0) break;
 
-          const framesToAnalyzeCount = pendingMultiples * 20;
+          const framesToAnalyzeCount = pendingMultiples * currentExpectedFrames;
 
           if (framesToAnalyzeCount === current.lastFailedPendingCount) {
-            // Wait for user to retry manually, or for new frames to arrive (next multiple of 20)
+            // Wait for user to retry manually, or for new frames to arrive (next multiple)
             break;
           }
 
@@ -689,8 +695,10 @@ export default function Dashboard() {
     const canvas = canvasRef.current;
     if (video.videoWidth === 0) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const MAX_WIDTH = 1200;
+    const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
+    canvas.width = video.videoWidth * scale;
+    canvas.height = video.videoHeight * scale;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -730,7 +738,11 @@ export default function Dashboard() {
 
   const handleAnalyzeSnapshot = async () => {
     if (!validateRequiredFields()) return;
-    if (!videoRef.current || !canvasRef.current || !stream) return;
+    
+    // In visual_only mode, require video refs and stream
+    if (marketDataMode === "visual_only") {
+      if (!videoRef.current || !canvasRef.current || !stream) return;
+    }
 
     if (useTradingStore.getState().isFetchingAnalysis) return;
 
@@ -844,34 +856,41 @@ export default function Dashboard() {
       }
     }
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+    let imageBase64 = "";
 
-    if (video.videoWidth === 0) return;
+    if (marketDataMode === "visual_only") {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      if (video && canvas && video.videoWidth > 0) {
+        const MAX_WIDTH = 1200;
+        const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
+        canvas.width = video.videoWidth * scale;
+        canvas.height = video.videoHeight * scale;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          // Add reference watermark for AI validation
+          const state = useTradingStore.getState();
+          const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
+          const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
 
-    // Add reference watermark for AI validation
-    const state = useTradingStore.getState();
-    const text1 = `Symbol: ${state.symbol} | TF: ${state.timeframe}`;
-    const text2 = `Platform: ${state.platform} | Time: ${new Date().toLocaleTimeString()}`;
+          ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+          ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.fillRect(canvas.width - 320, canvas.height - 80, 310, 70);
+          ctx.fillStyle = "#4ade80"; // green-400
+          ctx.font = "bold 18px Arial";
+          ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
 
-    ctx.fillStyle = "#4ade80"; // green-400
-    ctx.font = "bold 18px Arial";
-    ctx.fillText(text1, canvas.width - 300, canvas.height - 50);
+          ctx.fillStyle = "#e4e4e7"; // zinc-200
+          ctx.font = "16px Arial";
+          ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
+          imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
+        }
+      }
+    }
 
-    ctx.fillStyle = "#e4e4e7"; // zinc-200
-    ctx.font = "16px Arial";
-    ctx.fillText(text2, canvas.width - 300, canvas.height - 25);
-    const imageBase64 = canvas.toDataURL("image/jpeg", 0.7);
     setLastImageBase64(imageBase64);
 
     setIsFetchingAnalysis(true);
@@ -972,16 +991,35 @@ export default function Dashboard() {
         } else {
           reqBody.imageBase64 = currentImageBase64;
         }
-      } else {
-        const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
-        reqBody.imageBase64 = imageBase64;
-      }
+        } else if (marketDataMode === "visual_only" && canvasRef.current) {
+          const imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.8);
+          reqBody.imageBase64 = imageBase64;
+        }
+        let finalReqBody = reqBody;
+        
+        if (marketDataMode === "api") {
+          finalReqBody = {
+            exchange: useTradingStore.getState().platform.toLowerCase(),
+            environment: useTradingStore.getState().tradingMode.toLowerCase(),
+            symbol,
+            timeframe,
+            tradeDuration: timeframe,
+            strategy: useTradingStore.getState().selectedStrategies[0] || "trend_following",
+            requestedIndicators: ["RSI", "MACD", "Bollinger Bands", "ATR"],
+            // Essential backend keys
+            activeConnectionId: useTradingStore.getState().activeConnectionId,
+            provider: selectedProvider,
+            model: selectedModel,
+            marketDataMode: "api"
+          };
+        }
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      });
+        const endpoint = marketDataMode === "api" ? "/api/api-data-analyze" : "/api/analyze";
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(finalReqBody),
+        });
 
       if (res.ok) {
         resetFailCount();
@@ -1162,6 +1200,11 @@ export default function Dashboard() {
   };
 
   const handleStartCapture = async () => {
+    if (marketDataMode === "api") {
+      setIsAnalyzing(true);
+      return;
+    }
+
     try {
       const mediaStream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: "browser" },
@@ -1640,7 +1683,7 @@ export default function Dashboard() {
                 onClick={handleStartCapture}
                 className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
               >
-                <Play className="w-3 h-3 mr-2" /> Connect Chart
+                <Play className="w-3 h-3 mr-2" /> {marketDataMode === "api" ? "Start API Mode" : "Connect Chart"}
               </Button>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
@@ -1893,7 +1936,7 @@ export default function Dashboard() {
                   <span>Current Batch:</span>
                   <span className="text-zinc-200">
                     {Math.min(
-                      20,
+                      expectedFrames,
                       Math.max(
                         0,
                         useTradingStore.getState().observations.length -
@@ -1904,7 +1947,7 @@ export default function Dashboard() {
                                 .lastAnalyzedObservationIndex + 1),
                       ),
                     )}{" "}
-                    / 20
+                    / {expectedFrames}
                   </span>
                 </div>
 
@@ -2030,7 +2073,7 @@ export default function Dashboard() {
                 className="w-full h-full object-cover"
               />
             )}
-            {isAnalyzing && marketDataMode === "visual_only" && (
+            {isAnalyzing && (
               <div className="absolute top-4 right-4 flex gap-2 z-20 bg-black/60 p-2 rounded-lg backdrop-blur-sm border border-white/10">
                 <div className="flex flex-col gap-1 relative">
                   <Label className="text-[10px] text-zinc-400 px-1">

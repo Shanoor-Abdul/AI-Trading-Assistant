@@ -1,4 +1,4 @@
-import { EMA, RSI, MACD, ADX, OBV, SMA } from 'technicalindicators';
+import { EMA, RSI, MACD, ADX, OBV, SMA, BollingerBands, ATR } from 'technicalindicators';
 import { OHLCV } from '../providers/market/MarketProvider';
 
 export class IndicatorEngine {
@@ -45,6 +45,12 @@ export class IndicatorEngine {
     // Volume SMA 20
     const volumeSma = SMA.calculate({ period: 20, values: volumes });
 
+    // Bollinger Bands
+    const bb = BollingerBands.calculate({ period: 20, stdDev: 2, values: closePrices });
+
+    // ATR
+    const atr = ATR.calculate({ period: 14, high: highPrices, low: lowPrices, close: closePrices });
+
     // Get latest values
     const latest = {
       ema20: ema20.length > 0 ? ema20[ema20.length - 1] : null,
@@ -54,6 +60,8 @@ export class IndicatorEngine {
       adx: adx.length > 0 ? adx[adx.length - 1] : null,
       obv: obv.length > 0 ? obv[obv.length - 1] : null,
       volumeSma: volumeSma.length > 0 ? volumeSma[volumeSma.length - 1] : null,
+      bb: bb.length > 0 ? bb[bb.length - 1] : null,
+      atr: atr.length > 0 ? atr[atr.length - 1] : null,
     };
 
     return {
@@ -65,7 +73,9 @@ export class IndicatorEngine {
         macd,
         adx,
         obv,
-        volumeSma
+        volumeSma,
+        bb,
+        atr
       }
     };
   }

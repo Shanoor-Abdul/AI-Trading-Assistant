@@ -6,12 +6,17 @@ export class CCXTProvider implements MarketProvider {
   name: string;
   private exchange: ccxt.Exchange;
 
-  constructor(exchangeId: string = 'binance', apiKey?: string, apiSecret?: string, apiPassphrase?: string) {
+  constructor(exchangeId: string = 'binance', apiKey?: string, apiSecret?: string, apiPassphrase?: string, environment?: string) {
     this.name = exchangeId;
     
     // Check if exchange is supported
     if (!(ccxt as any)[exchangeId]) {
       throw new Error(`Exchange ${exchangeId} is not supported by CCXT.`);
+    }
+
+    if (exchangeId === 'alpaca') {
+      apiKey = apiKey || process.env.ALPACA_API_KEY;
+      apiSecret = apiSecret || process.env.ALPACA_SECRET_KEY;
     }
 
     // Initialize the CCXT exchange dynamically
@@ -22,6 +27,10 @@ export class CCXTProvider implements MarketProvider {
       secret: apiSecret,
       password: apiPassphrase,
     });
+    
+    if (environment === 'paper' || environment === 'testnet') {
+      this.exchange.setSandboxMode(true);
+    }
   }
 
   async testConnection(): Promise<boolean> {

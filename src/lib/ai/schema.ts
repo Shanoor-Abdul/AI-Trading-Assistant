@@ -125,13 +125,13 @@ const UnifiedMarketDataSchema = z.object({
   invalidationLevel: NumericObservationSchema.default(NumericObservationDefault),
   dataConflict: z.boolean().default(false),
   conflictDetails: z.string().default(""),
-  frameObservations: z.array(FrameObservationSchema).default([]),
+  frameObservations: z.array(z.any()).default([]),
   temporalState: z.object({ previousTrend: z.string().default(""), currentDirection: z.string().default(""), transition: z.string().default("NONE"), regime: z.string().default("UNCLEAR"), staleEvidence: z.array(z.string()).default([]), currentEvidence: z.array(z.string()).default([]), conflicts: z.array(z.string()).default([]), confirmationStatus: z.string().default("UNCLEAR") }).default({ previousTrend: "", currentDirection: "", transition: "NONE", regime: "UNCLEAR", staleEvidence: [], currentEvidence: [], conflicts: [], confirmationStatus: "UNCLEAR" }),
   evidenceGroups: z.object({ structure: z.array(z.string()).default([]), candle: z.array(z.string()).default([]), momentum: z.array(z.string()).default([]), indicators: z.array(z.string()).default([]), supportResistance: z.array(z.string()).default([]), volatility: z.array(z.string()).default([]), volume: z.array(z.string()).default([]), mtf: z.array(z.string()).default([]) }).default({ structure: [], candle: [], momentum: [], indicators: [], supportResistance: [], volatility: [], volume: [], mtf: [] }),
 }).passthrough();
 
 export const UniversalAIRequestSchema = z.object({
-  mode: z.enum(["visual_only", "api_data"]), provider: z.string(), model: z.string().optional(), platform: z.string(), symbol: z.string(), primaryTimeframe: z.string(), confirmationTimeframe: z.string().optional(), trendTimeframe: z.string().optional(), tradeDuration: z.string().optional(), isProgressive: z.boolean().optional(), progressiveState: z.any().optional(), selectedStrategies: z.array(z.string()).optional(), strategyRules: z.string().optional(), visibleIndicators: z.array(z.string()).default([]),
+  mode: z.enum(["visual_only", "api_data"]), provider: z.string(), model: z.string().optional(), platform: z.string(), symbol: z.string(), primaryTimeframe: z.string(), confirmationTimeframe: z.string().optional(), trendTimeframe: z.string().optional(), tradeDuration: z.string().optional(), isProgressive: z.boolean().optional(), progressiveState: z.any().optional(), selectedStrategies: z.array(z.string()).optional(), strategyRules: z.string().optional(), visibleIndicators: z.array(z.string()).default([]), promptOverride: z.string().optional(), rawOutput: z.boolean().optional(),
   screenshot: z.object({ mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() }).optional(),
   screenshots: z.array(z.object({ timeframe: z.string(), mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() })).optional(),
   primaryTimeframePayload: z.object({ timeframe: z.string().optional(), screenshots: z.array(z.object({ timestamp: z.union([z.string(), z.number()]).optional(), mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), base64: z.string() })).default([]) }).optional(),

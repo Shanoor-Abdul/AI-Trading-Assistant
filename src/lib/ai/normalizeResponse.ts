@@ -124,6 +124,12 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
   if (parsed.success) return parsed.data;
 
   console.warn("[AI Normalization] Nested market data failed validation; returning core analysis.", parsed.error.issues);
+  try {
+    require("fs").writeFileSync(
+      require("path").join(process.cwd(), "debug_frames", "zod_error.json"),
+      JSON.stringify(parsed.error.issues, null, 2)
+    );
+  } catch (e) {}
   delete normalized.unifiedMarketData;
 
   const core = UniversalAIResponseSchema.safeParse(normalized);

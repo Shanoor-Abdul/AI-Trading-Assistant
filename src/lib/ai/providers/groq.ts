@@ -55,6 +55,12 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     }
 
     const text = response.choices[0]?.message?.content ?? "";
+    
+    if (req.rawOutput) {
+      const match = text.match(/\{[\s\S]*\}/);
+      return (match ? JSON.parse(match[0]) : {}) as any;
+    }
+
     return normalizeResponse(text, {
       marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown",
     });

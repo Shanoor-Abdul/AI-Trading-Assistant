@@ -33,7 +33,7 @@ function hasMeaningfulProgressiveAnalysis(result: UniversalAIResponse): boolean 
 }
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
+  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
   const currentModel = req.model || "qwen/qwen-2-vl-7b-instruct:free";
 
   try {
@@ -73,7 +73,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
           role: "user",
           content: retry ? [...messagesContent, { type: "text", text: retryInstruction }] : messagesContent,
         }],
-        max_tokens: AI_REQUEST_CONFIG.maxOutputTokens,
+        max_tokens: Math.min(AI_REQUEST_CONFIG.maxOutputTokens || 6000, 4000),
         temperature: 0.1,
         response_format: { type: "json_object" },
       });
@@ -89,6 +89,11 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       if (!text.trim()) {
         if (attempt === 0) continue;
         throw new Error("AI_ANALYSIS_EMPTY: OpenRouter returned an empty response after retry.");
+      }
+
+      if (req.rawOutput) {
+        const match = text.match(/\{[\s\S]*\}/);
+        return (match ? JSON.parse(match[0]) : {}) as any;
       }
 
       const result = normalizeResponse(text, {

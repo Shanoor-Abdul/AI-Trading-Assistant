@@ -4,6 +4,9 @@ import { analyze as analyzeGroq } from "./providers/groq";
 import { analyze as analyzeOpenRouter } from "./providers/openrouter";
 import { AnalyzeRequest } from "../types";
 import { UniversalAIRequest, UniversalAIResponse } from "./schema";
+import { buildProgressiveReasoningPrompt } from "./progressiveReasoningPrompt";
+import { buildFrameExtractionPrompt } from "./frameExtractionPrompt";
+import { buildApiDataPrompt } from "./apiDataPrompt";
 import { getModelCapabilities } from "./providerCapabilities";
 import { applySignalQualification } from "../engines/SignalQualificationEngine";
 
@@ -129,14 +132,49 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
   }
 
   try {
-    let result: UniversalAIResponse;
-    switch (req.provider) {
-      case "gemini": result = await analyzeGemini(universalReq); break;
-      case "openai": result = await analyzeOpenAI(universalReq); break;
-      case "groq": result = await analyzeGroq(universalReq); break;
-      case "openrouter": result = await analyzeOpenRouter(universalReq); break;
-      default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
-    }
+    let result: UniversalAIResponse | undefined;
+    if (req.isProgressive && universalReq.screenshots && universalReq.screenshots.length > 0) {
+      const extractedFrames = [];
+      const shots = universalReq.screenshots;
+      for (let i = 0; i < shots.length; i++) {
+        const shot = shots[i];
+        const frameReq = { ...universalReq, screenshots: [shot], promptOverride: buildFrameExtractionPrompt(universalReq), rawOutput: true };
+        try {
+          let fr: any;
+          switch (req.provider) {
+            case "gemini": fr = await analyzeGemini(frameReq as any); break;
+            case "openai": fr = await analyzeOpenAI(frameReq as any); break;
+            case "groq": fr = await analyzeGroq(frameReq as any); break;
+            case "openrouter": fr = await analyzeOpenRouter(frameReq as any); break;
+            default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
+          }
+          extractedFrames.push(fr);
+        } catch (err: any) {
+          extractedFrames.push({ frameIndex: i + 1, extractionStatus: "FAILED", error: err.message });
+        }
+      }
+      const reasoningReq: any = { ...universalReq, screenshots: undefined, screenshot: undefined, progressiveState: extractedFrames, rawOutput: false, isProgressive: false };
+      reasoningReq.promptOverride = buildProgressiveReasoningPrompt(reasoningReq);
+      switch (req.provider) {
+        case "gemini": result = await analyzeGemini(reasoningReq as any); break;
+        case "openai": result = await analyzeOpenAI(reasoningReq as any); break;
+        case "groq": result = await analyzeGroq(reasoningReq as any); break;
+        case "openrouter": result = await analyzeOpenRouter(reasoningReq as any); break;
+        default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
+      }
+      } else {
+        if (req.marketDataMode === "api") {
+          universalReq.promptOverride = buildApiDataPrompt(universalReq);
+        }
+        switch (req.provider) {
+          case "gemini": result = await analyzeGemini(universalReq); break;
+          case "openai": result = await analyzeOpenAI(universalReq); break;
+          case "groq": result = await analyzeGroq(universalReq); break;
+          case "openrouter": result = await analyzeOpenRouter(universalReq); break;
+          default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
+        }
+      }
+    if (!result) throw new Error("AI analysis resulted in undefined response.");
 
     if (isFinalDual) {
       return normalizeAIObservationStatus(
@@ -148,6 +186,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
   } catch (error: any) {
     if (error.message?.includes("AI_ANALYSIS_INVALID")) throw error;
     console.error("[AI Provider Error]", error);
+    
     throw new Error(`AI_PROVIDER_UNAVAILABLE: ${error.message}`);
   }
 }

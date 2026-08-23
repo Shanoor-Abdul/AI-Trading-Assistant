@@ -76,12 +76,28 @@ function buildFastResponse(body: any, result: ReturnType<typeof generateFastSign
   };
 }
 
+import fs from "fs";
+import path from "path";
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
+  // --- DEBUGGING: LOG API PAYLOAD ---
+  try {
+    const debugDir = path.join(process.cwd(), 'debug_apis');
+    if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+    fs.appendFileSync(
+      path.join(debugDir, 'api_analyze_payloads.txt'),
+      `\n\n[${new Date().toISOString()}] - FAST SIGNAL PAYLOAD:\n${JSON.stringify(body, null, 2)}`
+    );
+  } catch (e) {
+    console.error("Failed to log API payload:", e);
+  }
+  // ----------------------------------
+
   // Progressive requests intentionally use the Vision extractor. This route is
   // a thin router; it does not recursively call /api/analyze again.
-  if (body?.isProgressive) {
+  if (body?.isProgressive || body?.marketDataMode === "api") {
     const forwardedRequest = new NextRequest(req.url, {
       method: "POST",
       headers: req.headers,
@@ -167,6 +183,18 @@ export async function POST(req: NextRequest) {
     fastResponse.riskDecision = "VETOED";
     fastResponse.explanation = `VETOED: Red Team Validator crashed or failed to respond (${error.message}). Safely defaulting to WAIT.`;
   }
+
+  // --- DEBUGGING: LOG API RESPONSE ---
+  try {
+    const debugDir = path.join(process.cwd(), 'debug_apis');
+    fs.appendFileSync(
+      path.join(debugDir, 'api_analyze_responses.txt'),
+      `\n\n[${new Date().toISOString()}] - FAST SIGNAL RESPONSE:\n${JSON.stringify(fastResponse, null, 2)}`
+    );
+  } catch (e) {
+    console.error("Failed to log API response:", e);
+  }
+  // -----------------------------------
 
   return NextResponse.json(fastResponse);
 }
