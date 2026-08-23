@@ -7,7 +7,7 @@ import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/sc
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
 import { buildMobileSignalPrompt } from "@/lib/ai/mobileSignalPrompt";
-import { calculateMobileSignalConfidence } from "@/lib/ai/mobileSignalConfidence";
+import { calculateMobileSignalConfidence, calculateMobileSignalRules } from "@/lib/ai/mobileSignalConfidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,9 +97,9 @@ function indicatorConfidence(indicator: any): number {
 }
 
 /**
- * Stage 1 is authoritative for visual facts. Stage 2 is authoritative for the signal.
- * This merge deliberately preserves the extraction instead of allowing Stage 2 to
- * erase useful pixel evidence with null/default fields.
+ * Stage 1 is authoritative for visual facts. Stage 2 is authoritative for the
+ * explanation, while the deterministic confluence gate below is authoritative
+ * for the final BUY/SELL/WAIT decision.
  */
 function mergeExtraction(result: any, extraction: any, req: any): any {
   const existing = result?.unifiedMarketData && typeof result.unifiedMarketData === "object" ? result.unifiedMarketData : {};
@@ -109,9 +109,7 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
   const normalizedIndicators = Object.fromEntries(
     Object.entries(indicatorState).map(([name, x]: [string, any]) => [
       name,
-      x && typeof x === "object"
-        ? { ...x, confidence: indicatorConfidence(x) }
-        : x,
+      x && typeof x === "object" ? { ...x, confidence: indicatorConfidence(x) } : x,
     ]),
   );
   const indicatorEvidence = Object.entries(normalizedIndicators).flatMap(([name, x]: [string, any]) => {
@@ -154,11 +152,7 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
     ...existing,
     currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, currentPriceConfidence),
     completedCandle: existing.completedCandle ?? (candle ? {
-      open: num(candle.open),
-      high: num(candle.high),
-      low: num(candle.low),
-      close: num(candle.close),
-      complete: candle.complete !== false,
+      open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close), complete: candle.complete !== false,
     } : null),
     indicators: Object.keys(existing.indicators || {}).length ? existing.indicators : normalizedIndicators,
     supportLevels: existing.supportLevels?.value?.length ? existing.supportLevels : { value: levels(extraction?.supportLevels), source: "visual", confidence: 50 },
@@ -196,15 +190,9 @@ function hasFinalEvidence(result: any): boolean {
   const u = result?.unifiedMarketData;
   const text = [result?.reasoning, result?.explanation, result?.marketState].some((x: any) => typeof x === "string" && x.trim() && x !== "No reasoning provided");
   const data = Boolean(
-    u?.currentPrice?.value != null ||
-    u?.completedCandle?.close != null ||
-    u?.indicators && Object.keys(u.indicators).length ||
-    u?.trend?.value ||
-    u?.momentum?.value ||
-    u?.marketStructure?.value ||
-    u?.supportLevels?.value?.length ||
-    u?.resistanceLevels?.value?.length ||
-    u?.extractionConfidence > 0,
+    u?.currentPrice?.value != null || u?.completedCandle?.close != null ||
+    (u?.indicators && Object.keys(u.indicators).length) || u?.trend?.value || u?.momentum?.value ||
+    u?.marketStructure?.value || u?.supportLevels?.value?.length || u?.resistanceLevels?.value?.length || u?.extractionConfidence > 0,
   );
   return text && data;
 }
@@ -233,42 +221,44 @@ export async function POST(request: NextRequest) {
     // Stage 1: image -> structured visual evidence.
     const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
     if (!hasExtractionEvidence(extraction)) {
-      return NextResponse.json({
-        error: "Mobile extraction returned no usable chart evidence.",
-        code: "MOBILE_EXTRACTION_EMPTY",
-        analysisType: "mobile_visual",
-        mobilePipeline: { stages: ["image_extraction"], extraction },
-      }, { status: 502 });
+      return NextResponse.json({ error: "Mobile extraction returned no usable chart evidence.", code: "MOBILE_EXTRACTION_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction"], extraction } }, { status: 502 });
     }
 
-    // Stage 2: structured evidence -> signal. Screenshot is intentionally not sent again.
+    // Stage 2: structured evidence -> explanation and contextual analysis. Screenshot is not sent again.
     const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
     const stage2 = await callProvider(analysisRequest);
-
-    // Server-side merge guarantees that successful pixel extraction cannot disappear
-    // just because Stage 2 omitted optional nested fields.
     const merged = mergeExtraction(stage2, extraction, baseRequest);
+
+    // Deterministic server-side gate: the LLM can explain the setup, but the final
+    // signal must satisfy the same weighted confluence rules every time.
+    const signalRules = calculateMobileSignalRules(extraction);
+    const gated = {
+      ...merged,
+      trend: signalRules.trend,
+      signal: signalRules.signal,
+      bullishEvidence: Array.from(new Set([...(merged?.bullishEvidence || []), ...signalRules.bullishEvidence])).slice(0, 10),
+      bearishEvidence: Array.from(new Set([...(merged?.bearishEvidence || []), ...signalRules.bearishEvidence])).slice(0, 10),
+      strategyConflicts: Array.from(new Set([...(merged?.strategyConflicts || []), ...signalRules.conflicts])).slice(0, 10),
+      strategyConsensus: signalRules.signal === "WAIT" ? "Insufficient confluence" : "Weighted confluence aligned",
+      evidenceScore: Math.max(signalRules.bullishScore, signalRules.bearishScore),
+    };
+
     const signalConfidence = calculateMobileSignalConfidence({
-      result: merged,
+      result: gated,
       extraction,
-      extractionConfidence: merged?.unifiedMarketData?.extractionConfidence,
+      extractionConfidence: gated?.unifiedMarketData?.extractionConfidence,
       requestedIndicators: baseRequest.visibleIndicators,
     });
     const mergedWithConfidence = {
-      ...merged,
+      ...gated,
       confidence: signalConfidence,
       dataConfidence: signalConfidence,
-      evidenceScore: signalConfidence,
+      evidenceScore: Math.max(gated.evidenceScore || 0, signalConfidence),
       confidenceSource: "server_evidence_confluence",
     };
     const validated = UniversalAIResponseSchema.parse(mergedWithConfidence);
     if (!hasFinalEvidence(validated)) {
-      return NextResponse.json({
-        error: "Mobile signal analysis returned an empty or invalid analysis.",
-        code: "MOBILE_ANALYSIS_EMPTY",
-        analysisType: "mobile_visual",
-        mobilePipeline: { stages: ["image_extraction", "evidence_analysis"], extraction, analysis: validated },
-      }, { status: 502 });
+      return NextResponse.json({ error: "Mobile signal analysis returned an empty or invalid analysis.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction", "evidence_analysis", "confluence_gate"], extraction, analysis: validated } }, { status: 502 });
     }
 
     return NextResponse.json({
@@ -277,11 +267,19 @@ export async function POST(request: NextRequest) {
       extractionOnly: false,
       source: "mobile_separate",
       mobilePipeline: {
-        stages: ["image_extraction", "evidence_analysis"],
+        stages: ["image_extraction", "evidence_analysis", "confluence_gate"],
         extraction,
-        extractionConfidence: normalizeConfidence(merged?.unifiedMarketData?.extractionConfidence),
+        extractionConfidence: normalizeConfidence(gated?.unifiedMarketData?.extractionConfidence),
         signalConfidence,
         confidenceSource: "server_evidence_confluence",
+        confluence: {
+          signal: signalRules.signal,
+          trend: signalRules.trend,
+          bullishScore: signalRules.bullishScore,
+          bearishScore: signalRules.bearishScore,
+          availableWeight: signalRules.availableWeight,
+          evidenceCount: signalRules.evidenceCount,
+        },
       },
       timings: { totalMs: performance.now() - started },
     });
