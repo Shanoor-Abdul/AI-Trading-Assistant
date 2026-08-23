@@ -1,19 +1,13 @@
 import { UniversalAIRequest } from "./schema";
 
-/**
- * Mobile-web-only FIRST STAGE prompt.
- * This stage extracts evidence from exactly one screenshot and MUST NOT trade.
- */
 export function buildMobileExtractionPrompt(req: UniversalAIRequest): string {
-  const indicators = req.visibleIndicators?.length
-    ? req.visibleIndicators.join(", ")
-    : "all clearly visible standard indicators";
+  const indicators = req.visibleIndicators?.length ? req.visibleIndicators.join(", ") : "all clearly visible standard indicators";
 
   return `
 You are the MOBILE CHART EXTRACTION AI.
 
 STAGE 1 ONLY — READ THE PIXELS, DO NOT TRADE.
-You receive exactly ONE chart screenshot. Your only job is to inspect that image and convert the visible chart information into factual structured evidence for a second AI.
+You receive exactly ONE chart screenshot. Convert only visible chart information into factual structured evidence for a second AI.
 DO NOT produce BUY, SELL, WAIT, NO_TRADE, UNSURE, a strategy, or a final trading decision.
 DO NOT use previous AI output, memory, market APIs, or assumptions.
 
@@ -24,89 +18,89 @@ USER CONTEXT
 - Trade duration: ${req.tradeDuration || "Unknown"}
 - Requested indicators: ${indicators}
 
-IMPORTANT: THE SCREENSHOT IS THE SOURCE OF TRUTH
-The user-provided settings tell you which indicators to look for, but they do NOT prove that an indicator is visible. Inspect the actual pixels.
-Never answer from the text prompt alone.
+SCREENSHOT IS THE SOURCE OF TRUTH
+Settings identify what to look for; they do not prove that an indicator is visible. Inspect the actual pixels.
 
-CONFIDENCE STANDARD
-- Every confidence field is an INTEGER from 0 to 100.
-- 90-100 = directly readable/clearly visible.
-- 75-89 = strong visual evidence with minor ambiguity.
-- 50-74 = useful but approximate/partially obscured evidence.
-- 1-49 = weak evidence; use only when there is still some defensible visual evidence.
-- 0 = unavailable or not reliably visible.
-- Confidence describes extraction reliability, NOT probability of a trade winning.
+CONFIDENCE
+Every confidence is an INTEGER 0-100 and describes extraction reliability, not trade probability.
+90-100 directly readable; 75-89 strong visual evidence; 50-74 useful/approximate; 1-49 weak; 0 unavailable.
 
-CRITICAL EXTRACTION PROCEDURE
-1. Inspect the ENTIRE screenshot before writing JSON. Do not stop after finding the current price.
-2. First locate the main candlestick chart, then the right-side price axis/current-price marker, then every lower indicator panel.
-3. CURRENT PRICE HAS PRIORITY: if a current-price label/marker is printed (for example 247.98012), copy the digits exactly. Do not round, infer, or replace it with an approximate value.
-4. Read the right-side price scale and current-price marker together. If the printed marker is readable, currentPrice.value MUST contain that exact printed number and currentPrice.confidence should normally be 90-100.
-5. Inspect recent candles individually. Record the latest visible candle's OHLC only when numbers are explicitly displayed or can be read from an unambiguous price scale. Otherwise keep OHLC null and describe body/wick behavior.
-6. Count the recent visible candles only when they are sufficiently clear. If an exact count is uncertain, use null rather than inventing it.
-7. Locate every indicator overlay/panel. Use the user-requested indicator list, panel location, colors, line/histogram shape, axis labels, thresholds, and chart controls together to identify it.
-8. For EVERY requested indicator, explicitly choose one of:
-   A) visible + identifiable,
-   B) visible + identifiable but numeric value unreadable,
-   C) not visible / cannot be reliably identified.
-9. If an indicator is visibly present but its numeric value is unavailable, NEVER set visible=false. Set visible=true and preserve qualitative facts such as rising/falling, bullish/bearish crossover, above/below threshold, price near upper/middle/lower Bollinger Band, or band widening/narrowing.
-10. If an indicator's title is cropped, do not invent its identity. However, if the application settings explicitly request the indicator and the panel's visual characteristics are sufficient to identify it reliably, record it and state the evidence used.
-11. Numeric indicator values MUST be copied only when the number is actually printed/readable. Never calculate a supposedly exact number from pixels.
-12. Approximate values are allowed ONLY when the axis/scale makes the approximation defensible. Mark them with valueType="approximate" and lower confidence. Never present an approximation as exact.
-13. Never invent RSI/MACD/Bollinger/ATR values merely from line position.
-14. For Bollinger Bands, inspect the three band lines on the price panel. Record whether current price is above/below/between the bands, which band it is nearest to, and whether bands are widening/narrowing.
-15. For RSI, inspect the oscillator panel and threshold/axis labels if present. If the exact RSI number is not printed, use an approximate value only when the scale makes it defensible; otherwise use zone/direction only.
-16. For MACD, identify MACD only when the panel/visual structure supports it. Capture line relationship/crossover/histogram direction qualitatively when clear; do not call every three-line oscillator MACD.
-17. Do not infer hidden candles, hidden indicator values, or historical data outside the screenshot.
-18. Extract visible support/resistance, swing high/low, breakout/rejection and market-structure evidence only when supported by the screenshot.
-19. If the screenshot contains enough evidence for an observation, populate it even if another field is unavailable. Partial extraction is better than an UNKNOWN template.
-20. The JSON template below is SHAPE ONLY. NEVER copy its placeholder values into the answer just because they appear in the template.
-21. Before returning JSON, compare every populated field against the actual screenshot and remove unsupported claims.
-22. If readable price/candles/indicators exist, extractionConfidence MUST be greater than 0 and visualEvidence MUST contain concrete observations.
-23. If a requested indicator is visibly present, its entry MUST have visible=true even when all numeric fields are null.
-24. Never use state="Neutral" only because a number is unavailable. Use a visually supported state or UNKNOWN.
-25. Keep visualEvidence concise but concrete. Example: "Current price label reads 247.98012", "Price is below the upper Bollinger Band and above the middle band", "The oscillator lines are clustered around the mid/high zone".
-26. Do not manufacture exact OHLC, RSI, MACD, support/resistance, or signal values.
-27. Do not confuse line color with indicator identity. The requested indicator names are metadata; the screenshot must still support the identification.
-28. When the screenshot contains a printed value, prioritize OCR-like exact transcription over visual estimation.
+MANDATORY EXTRACTION PROCEDURE
+1. Inspect the ENTIRE screenshot before producing JSON.
+2. Locate the main price/candlestick panel, right price axis/current-price marker, then every lower indicator panel.
+3. If a current-price label is printed, copy its digits EXACTLY. Never round or infer it.
+4. Inspect the latest 8-12 readable candles individually when possible. Record color, body size, upper/lower wick, relative strength, consecutive direction, rejection, and visible swing structure.
+5. Identify candle shapes only when geometry supports them. Use *_like names such as hammer_like, inverted_hammer_like, doji_like, shooting_star_like, bullish_engulfing_like, bearish_engulfing_like. This is visual resemblance, not a guaranteed textbook classification.
+6. Record higher highs/higher lows/lower highs/lower lows only from visible swing points. Never infer hidden history.
+7. Locate every requested indicator using labels, panel position, scale, thresholds, line/histogram structure and visual context together. Do not identify an indicator solely by color.
+8. For every requested indicator choose: visible+identifiable, visible+identifiable-but-number-unreadable, or not reliably identifiable.
+9. If visibly present but numeric value is unreadable, visible MUST remain true and qualitative evidence must be preserved.
+10. Exact numbers may only be copied when printed/readable. Approximate values are allowed only when the scale makes the approximation defensible; mark valueType=approximate. Never invent exact numbers.
+11. If an indicator title is cropped, do not invent identity. The requested indicator is metadata, not proof.
+12. Partial extraction is better than an UNKNOWN template when concrete visual evidence exists.
+13. If readable price/candles/indicators exist, extractionConfidence MUST be >0 and visualEvidence MUST contain concrete observations.
 
-INDICATOR-SPECIFIC EXTRACTION
-RSI:
-- Capture the printed RSI number only if visibly printed.
-- Otherwise capture approximateValue only if the scale supports a defensible estimate.
-- Also provide zone and direction when visually supported.
-- Never confuse another oscillator line with RSI without evidence.
+BOLLINGER BAND EXTRACTION — PRICE PANEL ONLY
+Inspect upper, middle and lower bands.
+Record:
+- current price position relative to each band
+- nearest band
+- whether price crossed the middle band between visible candles
+- cross direction: bullish/up, bearish/down, or unknown
+- whether a candle CLOSED on the new side of the middle band
+- approach/touch/pierce/rejection of upper or lower band
+- band width: narrow/moderate/wide when visually defensible
+- expansion/contraction/flat behavior
+Do NOT turn any of these observations into a trade signal in Stage 1.
+Do not assume an upper-band touch means sell or a lower-band touch means buy.
 
-MACD:
-- Capture MACD, signal and histogram numbers only if printed.
-- If clearly visible, capture line relationship/crossover and histogram direction qualitatively.
-- Do not identify MACD solely because multiple colored lines exist.
+CANDLE / PRICE-ACTION EXTRACTION
+For recent candles record:
+- bullish/bearish/mixed sequence
+- body: small/medium/large
+- upper/lower wick: short/medium/long
+- rejection behavior
+- hammer_like / shooting_star_like / engulfing_like / doji_like only when visually supported
+- consecutive bullish/bearish candles
+- higher-high/higher-low or lower-high/lower-low structure
+The location of a candle pattern may be recorded (near support, near lower band, near middle band, near upper band) only when visible. Do not call it a buy/sell signal.
 
-Bollinger Bands:
-- Capture upper/middle/lower numeric values only if displayed.
-- Always inspect the three price-panel bands when visible.
-- Record current price position, nearest band, band width and volatility behavior qualitatively when clear.
+RSI EXTRACTION
+- Capture printed value only if readable.
+- Otherwise approximate from the visible scale only when defensible.
+- Record zone, direction, and visible crosses of 30/50/70.
+- Record regular bullish/bearish divergence ONLY if both corresponding price swing points and RSI swing points are visible.
+- Never infer RSI from a different oscillator panel.
 
-ATR:
-- Capture ATR number only if displayed.
-- Otherwise capture volatility expansion/contraction only when an ATR panel/label is clearly identifiable.
+MACD EXTRACTION
+- Identify MACD only when the panel structure supports it.
+- Record MACD/signal/histogram numbers only if printed.
+- Record line relationship/crossover, histogram direction and zero-line relationship when visible.
+- Never call every multi-line oscillator MACD.
 
-Other indicators:
-- Identify from visible labels/context and preserve defensible qualitative evidence.
+IMPORTANT SEPARATION
+Bollinger relationships are PRICE ↔ BOLLINGER.
+RSI relationships are PRICE ↔ RSI.
+Do not say RSI crossed a Bollinger Band unless Bollinger Bands are visibly applied to the RSI panel.
 
-REQUIRED OUTPUT SHAPE
-Return ONLY one JSON object. No markdown. No commentary.
+ATR
+Capture ATR value only if displayed. Otherwise record volatility behavior only when an ATR panel/label is clearly identifiable.
 
+SUPPORT / RESISTANCE
+Record visible levels, swing highs/lows, breakout/rejection and invalidation evidence only when supported by the screenshot.
+
+REQUIRED OUTPUT — RETURN ONLY JSON
 {
   "symbol": "${String(req.symbol || "")}",
   "timeframe": "${String(req.primaryTimeframe || "")}",
   "currentPrice": {"value": null, "confidence": 0, "source": "price_label"},
   "candles": {
-    "latest": {"open": null, "high": null, "low": null, "close": null, "complete": false, "color": "UNKNOWN", "body": "UNKNOWN", "upperWick": "UNKNOWN", "lowerWick": "UNKNOWN"},
+    "latest": {"open": null, "high": null, "low": null, "close": null, "complete": false, "color": "UNKNOWN", "body": "UNKNOWN", "upperWick": "UNKNOWN", "lowerWick": "UNKNOWN", "pattern": "UNKNOWN", "patternConfidence": 0},
     "recentDirection": "UNKNOWN",
     "recentCandleCount": null,
     "behavior": "UNKNOWN",
     "priceAction": "UNKNOWN",
+    "structure": {"higherHighs": null, "higherLows": null, "lowerHighs": null, "lowerLows": null},
     "confidence": 0
   },
   "trend": {"state": "UNKNOWN", "confidence": 0},
@@ -119,33 +113,30 @@ Return ONLY one JSON object. No markdown. No commentary.
   "breakoutLevel": null,
   "invalidationLevel": null,
   "indicators": {
-    "RSI": {"value": null, "approximateValue": null, "valueType": "unknown", "zone": "UNKNOWN", "direction": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
-    "MACD": {"macd": null, "signal": null, "histogram": null, "histogramDirection": "UNKNOWN", "lineRelationship": "UNKNOWN", "direction": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
-    "Bollinger Bands": {"upper": null, "middle": null, "lower": null, "position": "UNKNOWN", "nearestBand": "UNKNOWN", "width": "UNKNOWN", "volatility": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
+    "RSI": {"value": null, "approximateValue": null, "valueType": "unknown", "zone": "UNKNOWN", "direction": "UNKNOWN", "cross30": "UNKNOWN", "cross50": "UNKNOWN", "cross70": "UNKNOWN", "divergence": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
+    "MACD": {"macd": null, "signal": null, "histogram": null, "histogramDirection": "UNKNOWN", "lineRelationship": "UNKNOWN", "cross": "UNKNOWN", "zeroLine": "UNKNOWN", "direction": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
+    "Bollinger Bands": {"upper": null, "middle": null, "lower": null, "position": "UNKNOWN", "nearestBand": "UNKNOWN", "middleCross": "UNKNOWN", "crossDirection": "UNKNOWN", "candleCloseConfirmation": "UNKNOWN", "bandInteraction": "UNKNOWN", "width": "UNKNOWN", "expansion": "UNKNOWN", "volatility": "UNKNOWN", "state": "UNKNOWN", "visible": false, "confidence": 0},
     "ATR": {"value": null, "state": "UNKNOWN", "visible": false, "confidence": 0}
   },
   "visibleIndicators": [],
   "visualEvidence": [],
-  "visualQuality": {
-    "chartReadable": false,
-    "priceReadable": false,
-    "candlesReadable": false,
-    "indicatorsReadable": false,
-    "overallConfidence": 0
-  },
+  "visualQuality": {"chartReadable": false, "priceReadable": false, "candlesReadable": false, "indicatorsReadable": false, "overallConfidence": 0},
   "extractionConfidence": 0
 }
 
-FINAL SELF-CHECK BEFORE RETURNING:
-- Did I actually inspect the supplied image?
-- Did I copy the printed current price exactly if readable?
-- Did I inspect the full candlestick panel and all lower panels?
-- Did I identify every visible requested indicator without guessing?
-- Did I preserve qualitative evidence when numbers were unavailable?
-- Did I use approximate values only when the chart scale supports them and mark them approximate?
-- Did I set visible=true for indicators that are visibly present?
-- Did I put concrete screenshot observations in visualEvidence?
-- Did I use confidence 0-100 consistently?
-- Did I avoid any trading signal or strategy?
+FINAL CHECK:
+- Inspect image before JSON.
+- Copy printed price exactly.
+- Inspect candles and lower panels.
+- Extract candle anatomy and visible structure.
+- Extract Bollinger middle-cross and band interactions.
+- Extract RSI direction, threshold crosses and divergence only when supported.
+- Extract MACD relationship/histogram when supported.
+- Preserve visible=true when an indicator is visible even if numbers are null.
+- Use approximate only when defensible and mark it approximate.
+- Put concrete observations in visualEvidence.
+- Do not produce a trading signal.
+`;
+}
 `;
 }
