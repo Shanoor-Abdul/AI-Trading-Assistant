@@ -85,7 +85,7 @@ function indicatorDirection(indicator: any, kind: "rsi" | "macd" | "bb"): Direct
 
 function emaDirection(ema: any): Direction | null {
   if (!ema || typeof ema !== "object") return null;
-  const entries = Object.values(ema).filter((x: any) => x && typeof x === "object");
+  const entries = Object.values(ema).filter((x: any) => x && typeof x === "object") as any[];
   if (entries.length < 2) return null;
   const values = entries.map((x: any) => number(x.value)).filter((x): x is number => x !== null);
   if (values.length >= 2) {
@@ -175,18 +175,19 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const items: ScoreItem[] = [];
 
   add(items, { key: "trend", label: "Trend / market structure", direction: trendDirection(extraction), weight: 20, confidence: confidence(extraction?.trend?.confidence || extraction?.marketStructure?.confidence), evidence: `Trend/structure: ${extraction?.trend?.state || extraction?.marketStructure?.state}.` });
-  add(items, { key: "ema", label: "Moving-average alignment", direction: emaDirection(indicators.EMA), weight: 15, confidence: confidence(indicators.EMA?.confidence || Object.values(indicators.EMA || {})[0]?.confidence), evidence: "Visible EMA alignment supports the direction." });
+
+  const ema = indicators.EMA;
+  const emaEntries = ema && typeof ema === "object" ? Object.values(ema).filter((x: any) => x && typeof x === "object") as any[] : [];
+  const emaConfidence = emaEntries.length ? Math.max(...emaEntries.map((x: any) => confidence(x.confidence))) : 0;
+  add(items, { key: "ema", label: "Moving-average alignment", direction: emaDirection(ema), weight: 15, confidence: emaConfidence, evidence: "Visible EMA/MA alignment supports the direction." });
 
   const rsi = indicators.RSI;
   const rsiDir = rsiDirection(rsi);
-  let rsiWeight = 0;
   if (rsi && rsi.visible !== false) {
-    rsiWeight = 15;
+    let rsiWeight = 15;
     const rsiValue = number(rsi.value ?? rsi.approximateValue);
     const rsiConf = confidence(rsi.confidence);
-    if (rsiValue !== null && rsiValue >= 50 && rsiValue < 70 && rsiDir === "bullish") rsiWeight = 15;
-    else if (rsiValue !== null && rsiValue <= 50 && rsiValue > 30 && rsiDir === "bearish") rsiWeight = 15;
-    else if (rsiValue !== null && (rsiValue >= 70 || rsiValue <= 30)) rsiWeight = 8;
+    if (rsiValue !== null && (rsiValue >= 70 || rsiValue <= 30)) rsiWeight = 8;
     add(items, { key: "rsi", label: "RSI momentum", direction: rsiDir, weight: rsiWeight, confidence: rsiConf, evidence: rsiValue !== null ? `RSI ${rsiValue}${rsi.direction ? `, ${rsi.direction}` : ""}.` : `RSI ${rsi.direction || rsi.zone || "visible"}.` });
   }
 
@@ -202,15 +203,14 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
     let bbWeight = 10;
     const cross = text(bb.crossDirection || bb.middleCross);
     const close = text(bb.candleCloseConfirmation);
-    if (/up|bull/.test(cross) && /confirm|yes|above/.test(close)) bbWeight = 12;
-    if (/down|bear/.test(cross) && /confirm|yes|below/.test(close)) bbWeight = 12;
+    if ((/up|bull/.test(cross) && /confirm|yes|above/.test(close)) || (/down|bear/.test(cross) && /confirm|yes|below/.test(close))) bbWeight = 12;
     add(items, { key: "bb", label: "Bollinger position / middle-band cross", direction: bbDir, weight: bbWeight, confidence: confidence(bb.confidence), evidence: `Bollinger: ${bb.position || "position unknown"}; cross ${bb.middleCross || "unknown"}; width ${bb.width || "unknown"}.` });
   }
 
   const candles = extraction?.candles;
   add(items, { key: "candle", label: "Candlestick / price action", direction: candleDirection(candles), weight: 10, confidence: confidence(candles?.confidence), evidence: `Candles: ${candles?.latest?.pattern || candles?.recentDirection || candles?.priceAction || "visible"}.` });
   add(items, { key: "momentum", label: "Momentum", direction: momentumDirection(extraction), weight: 10, confidence: confidence(extraction?.momentum?.confidence), evidence: `Momentum: ${extraction?.momentum?.state || "visible"}.` });
-  add(items, { key: "levels", label: "Support / resistance", direction: levelDirection(extraction, price), weight: 10, confidence: Math.max(confidence(extraction?.supportLevels?.confidence), confidence(extraction?.resistanceLevels?.confidence), 50), evidence: "Price is interacting with a nearby extracted support/resistance level." });
+  add(items, { key: "levels", label: "Support / resistance", direction: levelDirection(extraction, price), weight: 10, confidence: 50, evidence: "Price is interacting with a nearby extracted support/resistance level." });
 
   const availableWeight = items.reduce((sum, item) => sum + item.weight, 0);
   const bullishPoints = items.filter(x => x.direction === "bullish").reduce((sum, x) => sum + x.weight * x.confidence / 100, 0);
@@ -225,7 +225,9 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const directionConfidence = Math.min(100, strongest * 0.65 + gap * 0.35);
   const confidenceScore = Math.round(quality * 0.45 + directionConfidence * 0.55);
 
-  const conflicts = items.filter(x => x.direction && ((x.direction === "bullish" && bearishPoints > 0) || (x.direction === "bearish" && bullishPoints > 0))).map(x => `${x.label} conflicts with other directional evidence.`);
+  const hasBull = bullishPoints > 0;
+  const hasBear = bearishPoints > 0;
+  const conflicts = items.filter(x => x.direction && ((x.direction === "bullish" && hasBear) || (x.direction === "bearish" && hasBull))).map(x => `${x.label} conflicts with other directional evidence.`);
   const hasMinimumEvidence = evidenceCount >= 3 && availableWeight >= 45;
 
   let signal: MobileSignalRulesResult["signal"] = "WAIT";
