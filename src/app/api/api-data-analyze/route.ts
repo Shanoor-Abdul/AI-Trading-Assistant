@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CCXTProvider } from "@/lib/providers/market/CCXTProvider";
+import { AlpacaProvider } from "@/lib/providers/market/AlpacaProvider";
 import { IndicatorEngine } from "@/lib/engines/IndicatorEngine";
 import { MarketStructureEngine } from "@/lib/engines/MarketStructureEngine";
 import { StrategyEngine } from "@/lib/strategy/StrategyEngine";
@@ -17,73 +18,100 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Trading symbol is required for API mode." }, { status: 400 });
     }
 
+    if (!body.activeConnectionId) {
+      return NextResponse.json({ error: "An active exchange connection is required for API mode." }, { status: 400 });
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    let exchangeName = "alpaca";
-    let apiKey = undefined;
-    let apiSecret = undefined;
-    let environment = undefined;
-    let passphrase = undefined;
-
-    if (body.activeConnectionId && user?.id) {
-      const { data: conn } = await supabase
-        .from("exchange_keys")
-        .select("*")
-        .eq("id", body.activeConnectionId)
-        .eq("user_id", user.id)
-        .single();
-      
-      if (conn) {
-        exchangeName = conn.exchange;
-        apiKey = conn.api_key;
-        apiSecret = conn.api_secret;
-        environment = conn.environment;
-        passphrase = conn.passphrase;
-      }
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 1. Fetch CCXT Data
-    const provider = new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
-    
-    // Fallback timeframes if not explicitly handled
+    const { data: conn, error: connectionError } = await supabase
+      .from("exchange_keys")
+      .select("*")
+      .eq("id", body.activeConnectionId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (connectionError || !conn) {
+      return NextResponse.json({ error: "Exchange connection not found." }, { status: 404 });
+    }
+
+    if (!conn.is_active) {
+      return NextResponse.json({ error: "Exchange connection is inactive." }, { status: 400 });
+    }
+
+    const exchangeName = String(conn.exchange).toLowerCase();
+    const apiKey = conn.api_key;
+    const apiSecret = conn.api_secret;
+    const environment = conn.environment;
+    const passphrase = conn.passphrase;
+
+    // API DATA MODE ONLY. No screenshots or visual extraction are used here.
+    const provider = exchangeName === "alpaca"
+      ? new AlpacaProvider(apiKey, apiSecret)
+      : new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
+
+    if (exchangeName === "alpaca") {
+      await (provider as AlpacaProvider).testConnection();
+    }
+
     const primaryTimeframe = body.timeframe || "5m";
-    const confirmationTimeframe = "15m";
-    const trendTimeframe = "1h";
 
     const [ohlcvResult, tickerResult] = await Promise.allSettled([
       provider.fetchOHLCV(body.symbol, primaryTimeframe, 100),
-      provider.fetchTicker(body.symbol)
+      provider.fetchTicker(body.symbol),
     ]);
 
     if (ohlcvResult.status === "rejected" || tickerResult.status === "rejected") {
-      throw new Error("Failed to fetch market data from the exchange.");
+      const reason = ohlcvResult.status === "rejected"
+        ? ohlcvResult.reason?.message
+        : tickerResult.reason?.message;
+      throw new Error(reason || "Failed to fetch market data from the exchange.");
     }
 
     const ohlcv = ohlcvResult.value;
     const ticker = tickerResult.value;
 
     if (!ohlcv || ohlcv.length < 50) {
-      return NextResponse.json({ 
-        error: `Insufficient historical data for ${body.symbol} on ${exchangeName}. Received ${ohlcv?.length || 0} candles, but at least 50 are required to calculate indicators like RSI and MACD. Try a different symbol like BTC/USD or a longer timeframe.` 
+      return NextResponse.json({
+        error: `Insufficient historical data for ${body.symbol} on ${exchangeName}. Received ${ohlcv?.length || 0} candles, but at least 50 are required.`
       }, { status: 400 });
     }
 
-    // 2. Deterministic Indicators
+    // Deterministic calculations happen in backend code. AI interprets them.
     const indData = IndicatorEngine.calculate(ohlcv);
-    const marketRegime = MarketStructureEngine.determineRegime(ohlcv, indData?.latest);
+    if (!indData?.latest) {
+      return NextResponse.json({ error: "Unable to calculate market indicators." }, { status: 400 });
+    }
+
+    const marketRegime = MarketStructureEngine.determineRegime(ohlcv, indData.latest);
     const swings = MarketStructureEngine.findSwings(ohlcv);
 
     const marketData = {
+      symbol: body.symbol,
+      timeframe: primaryTimeframe,
+      dataSource: "api",
       lastPrice: ticker.last,
-      recentCandles: ohlcv.slice(-5),
-      indicators: indData?.latest,
+      recentCandles: ohlcv.slice(-10),
+      indicators: indData.latest,
+      indicatorSeries: {
+        rsi: indData.series.rsi14.slice(-10),
+        macd: indData.series.macd.slice(-10),
+        bb: indData.series.bb.slice(-10),
+        atr: indData.series.atr.slice(-10),
+      },
       marketRegime,
-      swings
+      swings,
     };
 
-    // 3. Strategy Rules
-    const strategyStr = body.selectedStrategies ? body.selectedStrategies.join(", ") : body.strategy;
+    const strategyStr = body.selectedStrategies?.length
+      ? body.selectedStrategies.join(", ")
+      : body.strategy;
+
     const strategyRules = StrategyEngine.getStrategyRules(
       strategyStr as any,
       body.platform,
@@ -91,72 +119,129 @@ export async function POST(req: NextRequest) {
       "api"
     ).rules;
 
-    // 4. Send to AI
+    // Text-only AI reasoning. No imageBase64/screenshots are supplied.
     const analyzeReq = {
       ...body,
+      imageBase64: undefined,
+      screenshots: [],
+      macroTimeframeImage: undefined,
+      confirmationTimeframeImage: undefined,
+      structureTimeframeImage: undefined,
       isProgressive: false,
       marketDataMode: "api",
       marketData,
-      strategyRules
+      strategyRules,
     };
 
     const result = await analyze(analyzeReq as any);
 
-    // 5. Build Final Response
+    const marketProvider = exchangeName === "alpaca" ? "broker_api" : "ccxt";
+
     const finalResponse = {
       ...result,
       tradeDuration: body.tradeDuration,
       marketDataMode: "api",
-      marketProvider: "api",
+      marketProvider,
       exchange: exchangeName,
       marketDataStatus: "available",
       unifiedMarketData: {
+        ...(result.unifiedMarketData || {}),
         symbol: body.symbol,
         timeframe: primaryTimeframe,
-        currentPrice: { 
-          value: ticker.last, 
-          source: "api", 
-          confidence: 100 
+        currentPrice: {
+          value: ticker.last,
+          source: "api",
+          confidence: 100,
+        },
+        completedCandle: {
+          value: ohlcv[ohlcv.length - 2] || null,
+          source: "api",
+          confidence: 100,
+        },
+        currentIncompleteCandle: {
+          value: ohlcv[ohlcv.length - 1] || null,
+          source: "api",
+          confidence: 100,
+        },
+        volume: {
+          value: ticker.volume ?? ohlcv[ohlcv.length - 1]?.volume ?? null,
+          source: "api",
+          confidence: 100,
         },
         indicators: {
           ...(result.unifiedMarketData?.indicators || {}),
-          RAW_VALUES: indData?.latest
+          RSI: {
+            value: indData.latest.rsi ?? null,
+            source: "api",
+            confidence: 100,
+          },
+          MACD: {
+            value: indData.latest.macd ?? null,
+            source: "api",
+            confidence: 100,
+          },
+          BollingerBands: {
+            value: indData.latest.bb ?? null,
+            source: "api",
+            confidence: 100,
+          },
+          ATR: {
+            value: indData.latest.atr ?? null,
+            source: "api",
+            confidence: 100,
+          },
         },
-        marketStructure: { value: marketRegime.regime, source: "api", confidence: 100 },
-        trend: { value: marketRegime.trend, source: "api", confidence: 100 },
-        supportLevels: { value: swings.lows, source: "api", confidence: 100 },
-        resistanceLevels: { value: swings.highs, source: "api", confidence: 100 }
+        marketStructure: {
+          value: marketRegime.regime,
+          source: "api",
+          confidence: 100,
+        },
+        trend: {
+          value: marketRegime.trend,
+          source: "api",
+          confidence: 100,
+        },
+        supportLevels: {
+          value: swings.lows,
+          source: "api",
+          confidence: 100,
+        },
+        resistanceLevels: {
+          value: swings.highs,
+          source: "api",
+          confidence: 100,
+        },
       },
       analysisType: "api",
-      extractionOnly: false
+      extractionOnly: false,
     };
 
-    // Save to DB
-    if (user?.id) {
-      const { error: dbError } = await supabase.from("trade_analyses").insert({
+    if (user.id) {
+      await supabase.from("trade_analyses").insert({
         user_id: user.id,
         provider_version: body.provider || "default",
         symbol: body.symbol,
         timeframe: primaryTimeframe,
         market_data: marketData,
-        indicators: indData?.latest,
+        indicators: indData.latest,
         market_regime: marketRegime,
         signal: result.signal,
         confidence: result.confidence,
         reason: result.explanation,
         exchange: exchangeName,
-        market_provider: "ccxt",
+        market_provider: marketProvider,
         market_data_mode: "api",
         market_data_status: "available",
-        data_timestamp: new Date().toISOString()
+        data_timestamp: new Date().toISOString(),
       });
-      if (dbError) {
-        // Silently ignore DB errors as per user request to remove console logs
-      }
     }
 
     return NextResponse.json(finalResponse);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to analyze API data" }, { status: 500 });
+    return NextResponse.json({
+      error: error.message || "Failed to analyze API data",
+      analysisType: "api",
+      marketDataMode: "api",
+    }, { status: 500 });
   }
 }
