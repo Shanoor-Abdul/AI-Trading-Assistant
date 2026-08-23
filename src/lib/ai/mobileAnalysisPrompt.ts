@@ -2,9 +2,7 @@ import { UniversalAIRequest } from "./schema";
 
 /**
  * Mobile-web-only vision analysis prompt.
- *
- * IMPORTANT: This prompt is intentionally independent from the desktop
- * visual-only progressive flow and the API-data flow.
+ * Intentionally independent from desktop visual-only and API-data flows.
  */
 export function buildMobileAnalysisPrompt(req: UniversalAIRequest): string {
   const strategies = req.selectedStrategies?.length
@@ -30,101 +28,77 @@ USER SETTINGS
 - Selected strategies: ${strategies}
 - Requested/visible indicators: ${indicators}
 
-MANDATORY ANALYSIS PIPELINE
-1. IMAGE VALIDATION
-2. RAW CHART EXTRACTION
-3. PRICE/CANDLE EXTRACTION
-4. INDICATOR VALUE EXTRACTION
-5. MARKET STRUCTURE AND MOMENTUM
-6. STRATEGY APPLICATION
-7. BULLISH/BEARISH EVIDENCE
-8. CONFIRMATION / CONFLICT CHECK
-9. FINAL SIGNAL
+MANDATORY PIPELINE
+IMAGE VALIDATION -> RAW CHART EXTRACTION -> PRICE/CANDLE EXTRACTION -> INDICATOR VALUE EXTRACTION
+-> MARKET STRUCTURE/MOMENTUM -> STRATEGY APPLICATION -> EVIDENCE/CONFLUENCE
+-> CONFIRMATION/CONFLICT CHECK -> FINAL SIGNAL
 
 SINGLE-IMAGE RULE
-- This is exactly ONE screenshot.
-- Do not invent Frame 1/Frame 2/Frame 3/etc.
+- Exactly ONE screenshot is supplied.
+- Do not invent Frame 1/2/3/etc.
 - Do not perform temporal comparison with unavailable images.
 - Do not use previous AI output as evidence.
 - Do not infer missing historical values from assumptions.
 
-EXTRACTION RULES
+STRICT EXTRACTION RULES
 - Extract every value that is genuinely readable in the screenshot.
-- For an exact numeric value that is not visibly readable, use null.
-- NEVER estimate an exact RSI, MACD, ATR, EMA, Bollinger value, price, OHLC value,
-  support/resistance level, or other number merely from a line's visual position.
+- If an exact numeric value is not visibly readable, value MUST be null.
+- NEVER estimate exact RSI, MACD, ATR, EMA, Bollinger, price, OHLC,
+  support/resistance, or other numeric values from line position alone.
 - Qualitative evidence is allowed when numeric data is unavailable.
-- Example: RSI value=null with state="RISING" is valid when the RSI line is clearly rising
-  but the numeric value is not displayed.
-- If an indicator is not visible, set visible=false, value=null where applicable,
-  state="UNKNOWN", and confidence=0.
-- If an indicator is visible but only its qualitative behavior is readable,
-  describe that behavior and give an appropriate confidence.
+- Example: RSI value=null with state="RISING" when the RSI line is clearly rising
+  but its number is not displayed.
+- If an indicator is not visible: visible=false, value=null where applicable,
+  state="UNKNOWN", confidence=0.
+- If visible but only qualitative behavior is readable, describe it and assign appropriate confidence.
 - Never invent an indicator that is not visible.
 
 INDICATORS
-For each requested/visible indicator, extract as much as the screenshot supports:
-- RSI: exact value if displayed; otherwise state/direction/zone if visually reliable.
-- MACD: MACD line, signal line, histogram when readable; crossover and histogram direction.
-- Bollinger Bands: upper/middle/lower values when readable; price position relative to bands.
-- ATR: exact value only if displayed; otherwise volatility state if visually reliable.
+For each requested/visible indicator extract as much as the image supports:
+- RSI: exact value if displayed; otherwise state/direction/zone.
+- MACD: MACD, signal, histogram when readable; crossover and histogram direction.
+- Bollinger Bands: upper/middle/lower when readable; price position relative to bands.
+- ATR: exact value only if displayed; otherwise volatility state.
 - EMA/SMA: exact values only when displayed; otherwise relative price/MA relationship.
 - Volume: value and direction only when visible/readable.
 - Stochastic/VWAP/other indicators: same strict numeric rule.
 
 PRICE AND MARKET STRUCTURE
-Extract when readable:
-- current/last price
-- visible OHLC/candle information
-- candle direction and behavior
-- swing highs/lows
-- support/resistance
-- breakout/rejection behavior
-- trend direction
-- momentum
-- market regime
+Extract when readable: current price, OHLC/candles, candle behavior,
+swing highs/lows, support/resistance, breakout/rejection, trend, momentum, regime.
 
 STRATEGY RULES
-Apply the selected strategies to the extracted evidence.
-Do NOT select a signal because one indicator says Bullish/Bearish.
+Apply the selected strategies to extracted evidence.
+Do NOT choose a signal because one indicator says Bullish/Bearish.
 Do NOT use simple majority voting such as "3 indicators bullish = BUY".
-Evaluate confluence between:
-- price action
-- market structure
-- momentum
-- indicators
-- support/resistance
-- selected strategy rules
+Evaluate confluence between price action, market structure, momentum, indicators,
+support/resistance, and the selected strategy rules.
 
 SIGNAL RULES
-- BUY/STRONG_BUY only when the extracted evidence provides a defensible bullish setup.
-- SELL/STRONG_SELL only when the extracted evidence provides a defensible bearish setup.
-- WAIT when evidence conflicts, setup quality is weak, or entry confirmation is missing.
-- UNSURE when the screenshot is insufficient to make a reliable directional assessment.
-- Confidence must represent evidence quality, not certainty of future price movement.
-- WAIT can still have medium/high analytical confidence when the evidence clearly shows
-  that confirmation is missing.
-- Never manufacture a trade just because the user requested a signal.
+- BUY/STRONG_BUY only with defensible bullish evidence and confirmation.
+- SELL/STRONG_SELL only with defensible bearish evidence and confirmation.
+- WAIT when evidence conflicts, setup quality is weak, or confirmation is missing.
+- UNSURE when the screenshot is insufficient for reliable directional assessment.
+- Confidence represents evidence quality, not certainty of future price movement.
+- WAIT can have medium/high analytical confidence when evidence clearly shows missing confirmation.
+- Never manufacture a trade because the user requested a signal.
 
 RISK / PRICE LEVELS
-- entryPrice, stopLoss, and takeProfit must be null when the screenshot does not support
-  a defensible level.
+- entryPrice, stopLoss, takeProfit MUST be null when the image does not support a defensible level.
 - Never invent precise levels.
-- If levels are clearly visible, explain the evidence supporting them.
 
-OUTPUT REQUIREMENTS
-Return ONLY valid JSON. No markdown. No code fences. No commentary outside JSON.
-Populate actual observations from the supplied screenshot.
-Do not copy placeholder/default values from this instruction.
+OUTPUT
+Return ONLY valid JSON. No markdown, code fences, or commentary.
+Populate actual observations from the supplied screenshot. Do not copy defaults as if they were observations.
+Use these concrete enum examples as valid output values; choose the correct value for the actual evidence.
 
-The JSON MUST follow this structure and remain compatible with the existing UniversalAIResponse schema:
 {
-  "trend": "Bullish | Bearish | Sideways",
-  "signal": "STRONG_BUY | BUY | WAIT | UNSURE | NO_TRADE | SELL | STRONG_SELL",
+  "trend": "Sideways",
+  "signal": "WAIT",
   "confidence": 0,
-  "readiness": "NOT READY | FAIR | GOOD | VERY GOOD | READY | READY / COMPLETE | EXCELLENT",
-  "estimatedConfidence": "LOW | MEDIUM | HIGH",
-  "recommendedTimeframe": "${req.tradeDuration || req.primaryTimeframe || ""}",
+  "readiness": "NOT READY",
+  "estimatedConfidence": "LOW",
+  "recommendedTimeframe": ${JSON.stringify(req.tradeDuration || req.primaryTimeframe || "")},
   "entryPrice": null,
   "stopLoss": null,
   "takeProfit": null,
@@ -145,11 +119,11 @@ The JSON MUST follow this structure and remain compatible with the existing Univ
   "strategyConsensus": "Strategy conclusion",
   "strategyConflicts": [],
   "evidenceScore": 0,
-  "signalQuality": "EXCELLENT | GOOD | FAIR | POOR | AVOID",
+  "signalQuality": "AVOID",
   "bullishEvidence": [],
   "bearishEvidence": [],
   "invalidationConditions": [],
-  "confirmationStatus": "CONFIRMED | DEVELOPING | WEAKENING | INVALIDATED | REVERSING | UNCLEAR",
+  "confirmationStatus": "UNCLEAR",
   "unifiedMarketData": {
     "symbol": ${JSON.stringify(req.symbol || "")},
     "timeframe": ${JSON.stringify(req.primaryTimeframe || "")},
@@ -183,14 +157,8 @@ The JSON MUST follow this structure and remain compatible with the existing Univ
       "confirmationStatus": "UNCLEAR"
     },
     "evidenceGroups": {
-      "structure": [],
-      "candle": [],
-      "momentum": [],
-      "indicators": [],
-      "supportResistance": [],
-      "volatility": [],
-      "volume": [],
-      "mtf": []
+      "structure": [], "candle": [], "momentum": [], "indicators": [],
+      "supportResistance": [], "volatility": [], "volume": [], "mtf": []
     }
   }
 }
