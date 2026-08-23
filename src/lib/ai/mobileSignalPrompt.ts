@@ -5,19 +5,16 @@ import { UniversalAIRequest } from "./schema";
  * Receives structured extraction and applies strategy/confluence to produce the signal.
  */
 export function buildMobileSignalPrompt(req: UniversalAIRequest, extraction: unknown): string {
-  const strategies = req.selectedStrategies?.length
-    ? req.selectedStrategies.join(", ")
-    : "Auto (AI Selection)";
+  const strategies = req.selectedStrategies?.length ? req.selectedStrategies.join(", ") : "Auto (AI Selection)";
   const extractionJson = JSON.stringify(extraction);
 
   return `
 You are the MOBILE TRADING SIGNAL AI.
 
 This is STAGE 2 of a two-stage mobile trading pipeline.
-The screenshot was already processed by a separate extraction stage.
-Use ONLY the structured extraction below plus the user settings.
-Do not invent values and do not assume values that are absent/null.
-Do not use previous AI results, desktop visual-only data, progressive frame history, or API market data.
+The screenshot was already processed by a separate Vision extraction stage.
+You receive ONLY structured extracted evidence below plus user settings.
+Do not read pixels, do not invent missing values, and do not use previous AI results, desktop visual-only data, progressive frame history, or API market data.
 
 USER SETTINGS
 - Platform: ${req.platform || "Unknown"}
@@ -42,48 +39,74 @@ EXTRACTED EVIDENCE VALIDATION
 STRICT RULES
 1. The extraction JSON is the only market evidence available.
 2. Never turn a null numeric value into an estimated number.
-3. Do not treat one indicator as a signal by itself.
-4. Do not use simple majority voting such as "3 bullish indicators = BUY".
-5. Apply the selected strategy to price action, structure, momentum and indicator evidence together.
-6. BUY/STRONG_BUY requires defensible bullish confluence and confirmation.
-7. SELL/STRONG_SELL requires defensible bearish confluence and confirmation.
-8. WAIT is correct when evidence conflicts, setup quality is weak, or confirmation is missing.
-9. UNSURE is correct when the extracted evidence is insufficient or unreliable.
-10. Confidence means confidence in the analysis/evidence quality, NOT probability of winning.
-11. WAIT may have medium/high analytical confidence when evidence is clear but entry confirmation is absent.
-12. entryPrice, stopLoss and takeProfit MUST remain null unless the extracted evidence supports defensible levels.
-13. Never manufacture a trade merely because the user requested a signal.
-14. Do not return an empty reasoning or explanation.
-15. Do not return the default/template response with confidence 0 unless the extraction genuinely contains no usable evidence. If extraction is insufficient, explicitly explain why and use UNSURE.
-16. The final response MUST contain at least one concrete evidence item in bullishEvidence or bearishEvidence, or a concrete strategy conflict/invalidation condition explaining why no trade is justified.
-17. The final reasoning MUST mention the actual extracted evidence used for the decision. Do not write generic text such as "mixed signals" without identifying what was mixed.
-18. If the extraction contains a readable current price or indicator state, preserve that evidence in unifiedMarketData rather than dropping it.
+3. Preserve every useful extracted indicator observation in unifiedMarketData.indicators.
+4. If an indicator has visible=true but value=null, keep visible=true and use its qualitative state/position when provided.
+5. Never replace an extracted value with a guessed value.
+6. Do not use simple majority voting such as "3 bullish indicators = BUY".
+7. Apply the selected strategy to price action, structure, momentum and indicator evidence together.
+8. BUY/STRONG_BUY requires defensible bullish confluence and confirmation.
+9. SELL/STRONG_SELL requires defensible bearish confluence and confirmation.
+10. WAIT is correct when evidence conflicts, setup quality is weak, or confirmation is missing.
+11. UNSURE is correct when the extracted evidence itself is insufficient or unreliable.
+12. Confidence means confidence in the analysis/evidence quality, NOT probability of winning.
+13. WAIT may have medium/high analytical confidence when evidence is clear but entry confirmation is absent.
+14. entryPrice, stopLoss and takeProfit MUST remain null unless the extracted evidence supports defensible levels.
+15. Never manufacture a trade merely because the user requested a signal.
+16. reasoning MUST NOT be empty. It must reference concrete extracted evidence.
+17. explanation MUST NOT be empty. It must summarize why the final signal follows from the extracted evidence.
+18. bullishEvidence, bearishEvidence, or strategyConflicts/invalidationConditions MUST contain concrete evidence when the extraction contains usable evidence.
+19. If the extraction contains a readable current price, indicator state, candle behavior, trend, momentum, or structure, preserve it in unifiedMarketData.
+20. Do not output a default/template analysis with confidence 0 when usable extracted evidence exists.
 
-IMPORTANT TIMEFRAME RULE
-Evaluate the setup specifically for the requested trade duration (${req.tradeDuration || req.primaryTimeframe || "unknown"}).
-Do not claim a setup is suitable for the trade duration unless the extracted evidence supports that conclusion.
+OUTPUT CONTRACT
+Return ONLY one valid JSON object. No markdown and no commentary.
+The object MUST contain these top-level fields:
+trend, signal, confidence, readiness, reasoning, explanation, indicatorState, bullishEvidence, bearishEvidence, strategyConflicts, confirmationStatus, marketState, unifiedMarketData, invalidationConditions.
+
+The following is the required minimum shape. Populate it with the actual extracted evidence; do NOT copy the placeholder values blindly:
+{
+  "trend": "Bullish",
+  "signal": "WAIT",
+  "confidence": 50,
+  "readiness": "FAIR",
+  "reasoning": "Concrete extracted evidence supporting the decision.",
+  "explanation": "Concrete explanation based on the extracted evidence.",
+  "indicatorState": {},
+  "bullishEvidence": [],
+  "bearishEvidence": [],
+  "strategyConflicts": [],
+  "confirmationStatus": "DEVELOPING",
+  "marketState": "Concrete market state based on extraction.",
+  "invalidationConditions": [],
+  "unifiedMarketData": {
+    "symbol": "${String(req.symbol || "")}",
+    "timeframe": "${String(req.primaryTimeframe || "")}",
+    "currentPrice": {"value": null, "source": "visual", "confidence": 0},
+    "completedCandle": null,
+    "currentIncompleteCandle": null,
+    "volume": {"value": null, "source": "visual", "confidence": 0},
+    "bidAskSpread": {"value": null, "source": "visual", "confidence": 0},
+    "supportLevels": {"value": [], "source": "visual", "confidence": 0},
+    "resistanceLevels": {"value": [], "source": "visual", "confidence": 0},
+    "indicators": {},
+    "marketStructure": {"value": null, "source": "visual", "confidence": 0},
+    "trend": {"value": null, "source": "visual", "confidence": 0},
+    "momentum": {"value": null, "source": "visual", "confidence": 0}
+  }
+}
+
+IMPORTANT: The numeric values above are placeholders only. Replace them with extraction values or null. Never invent numbers.
 
 EXTRACTED MARKET EVIDENCE
 ${extractionJson}
 
-RETURN ONLY VALID JSON matching the application's UniversalAIResponse structure.
-Populate:
-- trend
-- signal
-- confidence
-- readiness
-- reasoning
-- explanation
-- indicatorState
-- bullishEvidence and/or bearishEvidence
-- strategyConsensus
-- strategyConflicts
-- confirmationStatus
-- marketState
-- unifiedMarketData
-- invalidationConditions
-
-All fields must be based only on the extracted evidence above.
-Do not add markdown or commentary.
+FINAL SELF-CHECK
+- Did I preserve the extracted current price if present?
+- Did I preserve visible indicators and their qualitative states?
+- Did I preserve candle/structure/trend evidence?
+- Did I provide concrete reasoning and explanation?
+- Did I provide at least one evidence/conflict/invalidation item when evidence exists?
+- Did I leave unsupported numeric levels null?
+- Is the signal based ONLY on the extraction JSON and settings?
 `;
 }
