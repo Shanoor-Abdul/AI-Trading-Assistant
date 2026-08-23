@@ -937,10 +937,13 @@ export default function Dashboard() {
         reqBody.tradeDuration = useTradingStore.getState().tradeDuration;
 
         // Grab immediate fresh snapshot for "now"
-        const currentImageBase64 = canvas.toDataURL("image/jpeg", 0.8);
-        const imgId = crypto.randomUUID();
-        await ImageStore.saveImage(imgId, currentImageBase64);
-        useTradingStore.getState().addObservation(imgId, currentImageBase64);
+        let currentImageBase64 = "";
+        if (canvasRef.current) {
+          currentImageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.8);
+          const imgId = crypto.randomUUID();
+          await ImageStore.saveImage(imgId, currentImageBase64);
+          useTradingStore.getState().addObservation(imgId, currentImageBase64);
+        }
 
         const obs = useTradingStore.getState().observations;
         if (obs.length > 0) {

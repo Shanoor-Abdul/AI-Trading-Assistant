@@ -68,8 +68,8 @@ export async function POST(req: NextRequest) {
 
     if (ohlcvResult.status === "rejected" || tickerResult.status === "rejected") {
       const reason = ohlcvResult.status === "rejected"
-        ? ohlcvResult.reason?.message
-        : tickerResult.reason?.message;
+        ? (ohlcvResult as any).reason?.message
+        : (tickerResult as any).reason?.message;
       throw new Error(reason || "Failed to fetch market data from the exchange.");
     }
 
@@ -192,22 +192,22 @@ export async function POST(req: NextRequest) {
           },
         },
         marketStructure: {
-          value: marketRegime.regime,
+          value: marketRegime,
           source: "api",
           confidence: 100,
         },
         trend: {
-          value: marketRegime.trend,
+          value: marketRegime,
           source: "api",
           confidence: 100,
         },
         supportLevels: {
-          value: swings.lows,
+          value: swings.swingLows,
           source: "api",
           confidence: 100,
         },
         resistanceLevels: {
-          value: swings.highs,
+          value: swings.swingHighs,
           source: "api",
           confidence: 100,
         },

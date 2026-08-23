@@ -28,7 +28,7 @@ describe("observation timing", () => {
   });
 
   it("keeps enough frames for one completed and one active batch", () => {
-    expect(PROGRESSIVE_BATCH_SIZE).toBe(20);
-    expect(calculateMaxObservationFrames()).toBe(40);
+    expect(PROGRESSIVE_BATCH_SIZE).toBe(5);
+    expect(calculateMaxObservationFrames("5m", "5m", 15)).toBe(40);
   });
 });
