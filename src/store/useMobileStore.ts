@@ -21,6 +21,7 @@ export interface MobileState {
   marketDataMode: "api" | "visual_only";
   visibleIndicators: string[];
   previewImageBase64: string | null;
+  previewImageId: string | null;
   isAnalyzing: boolean;
   analysisResult: TradingAnalysis | null;
   tradeHistory: TradeHistoryEntry[];
@@ -50,6 +51,7 @@ export const useMobileStore = create<MobileState>((set) => ({
   marketDataMode: "visual_only",
   visibleIndicators: [],
   previewImageBase64: null,
+  previewImageId: null,
   isAnalyzing: false,
   analysisResult: null,
   tradeHistory: [],
@@ -78,6 +80,7 @@ export const useMobileStore = create<MobileState>((set) => ({
 
   clearAnalysis: () => set({
     previewImageBase64: null,
+    previewImageId: null,
     visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
@@ -87,6 +90,7 @@ export const useMobileStore = create<MobileState>((set) => ({
 
   resetAll: () => set({
     previewImageBase64: null,
+    previewImageId: null,
     visualHistory: [],
     analysisResult: null,
     pendingUnsureRequest: false,
