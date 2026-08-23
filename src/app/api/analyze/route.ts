@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
 
   // Progressive requests intentionally use the Vision extractor. This route is
   // a thin router; it does not recursively call /api/analyze again.
-  if (body?.isProgressive || body?.marketDataMode === "api") {
+  if (body?.isProgressive || body?.marketDataMode === "api" || body?.imageBase64) {
     const forwardedRequest = new NextRequest(req.url, {
       method: "POST",
       headers: req.headers,
