@@ -24,47 +24,61 @@ USER CONTEXT
 - Trade duration: ${req.tradeDuration || "Unknown"}
 - Requested indicators: ${indicators}
 
+IMPORTANT: THE SCREENSHOT IS THE SOURCE OF TRUTH
+The user-provided settings tell you which indicators to look for, but they do NOT prove that an indicator is visible. Inspect the actual pixels.
+Never answer from the text prompt alone.
+
 CRITICAL EXTRACTION PROCEDURE
-1. Inspect the ENTIRE screenshot before writing JSON.
-2. Locate the price/candlestick panel first and read the current price label if it is visibly printed.
-3. Locate every indicator panel and overlay. Use the indicator name/label, axis labels, legend, controls, and visual structure to identify the indicator when possible.
-4. For every requested indicator, explicitly decide: visible and identifiable, visible but not numerically readable, or not visible.
-5. Extract numeric values ONLY when the number is actually printed/readable in the image. Never estimate a number from a line's pixel position.
-6. If a numeric value is unreadable, keep the numeric field null BUT preserve qualitative evidence such as rising/falling, above/below a threshold, crossover, histogram direction, price near upper/middle/lower band, or volatility expansion/contraction when visually defensible.
-7. If an indicator is clearly visible but its title is cropped/unreadable, record it only when its visual form and context make identification reliable. Otherwise use an evidence note without inventing its identity.
-8. Read the right-side price scale and any displayed price marker. If the current price is printed, capture it exactly as visible.
-9. Inspect recent candles individually. Capture the latest candle OHLC only when those values are displayed or reliably readable; otherwise describe candle body/wick behavior qualitatively.
-10. Extract visible support/resistance, swing high/low, breakout/rejection and market-structure evidence only when supported by the screenshot.
-11. Do NOT infer hidden candles, hidden indicator values, or historical data outside the screenshot.
-12. Do NOT calculate RSI/MACD/ATR/Bollinger values from pixels. Calculated values are forbidden unless the screenshot itself displays the value.
-13. The output is NOT allowed to be a copy of the example/template below. The template only defines the JSON shape.
-14. Before returning JSON, compare every populated field against the actual screenshot. Remove anything that is not visually supported.
-15. If the chart contains readable price/candles or visible indicators, extractionConfidence MUST be > 0 and visualEvidence MUST contain concrete observations.
-16. If a requested indicator is visible, its entry in indicators MUST have visible=true even when its numeric values are null.
-17. Never use visible=false merely because the exact numeric value is unreadable.
-18. Never use state="Neutral" just because a numeric value is unavailable. Use a visually supported state or UNKNOWN.
+1. Inspect the ENTIRE screenshot before writing JSON. Do not stop after finding the current price.
+2. First locate the main candlestick chart, then the right-side price axis/current-price marker, then every lower indicator panel.
+3. CURRENT PRICE HAS PRIORITY: if a current-price label/marker is printed (for example 247.98012), copy the digits exactly. Do not round, infer, or replace it with an approximate value.
+4. Read the right-side price scale and current-price marker together. If the printed marker is readable, currentPrice.value MUST contain that exact printed number and currentPrice.confidence should normally be 85-100.
+5. Inspect recent candles individually. Record the latest visible candle's OHLC only when numbers are explicitly displayed or can be read from an unambiguous price scale. Otherwise keep OHLC null and describe body/wick behavior.
+6. Locate every indicator overlay/panel. Use the user-requested indicator list, panel location, colors, line/histogram shape, axis labels, thresholds, and chart controls together to identify it.
+7. For EVERY requested indicator, explicitly choose one of:
+   A) visible + identifiable,
+   B) visible + identifiable but numeric value unreadable,
+   C) not visible / cannot be reliably identified.
+8. If an indicator is visibly present but its numeric value is unavailable, NEVER set visible=false. Set visible=true and preserve qualitative facts such as rising/falling, bullish/bearish crossover, above/below threshold, price near upper/middle/lower Bollinger Band, or band widening/narrowing.
+9. If an indicator's title is cropped, do not invent its identity. However, if the application settings explicitly request the indicator and the panel's visual characteristics are sufficient to identify it reliably, record it and state the evidence used.
+10. Numeric indicator values MUST be copied only when the number is actually printed/readable. Never calculate a number from pixels.
+11. Never estimate RSI/MACD/Bollinger/ATR from line position. Qualitative states are allowed when visually defensible.
+12. For Bollinger Bands, inspect the three band lines on the price panel. Record whether current price is near the upper/middle/lower band and whether bands are widening/narrowing.
+13. For RSI, inspect the oscillator panel and threshold/axis labels if present. If the exact RSI number is not printed, use only a qualitative zone/direction supported by the visible scale.
+14. For MACD, identify MACD only when the panel/visual structure supports it. Capture line relationship/crossover/histogram direction qualitatively when clear; do not call every three-line oscillator MACD.
+15. Do not infer hidden candles, hidden indicator values, or historical data outside the screenshot.
+16. Extract visible support/resistance, swing high/low, breakout/rejection and market-structure evidence only when supported by the screenshot.
+17. If the screenshot contains enough evidence for an observation, populate it even if another field is unavailable. Partial extraction is better than an UNKNOWN template.
+18. The JSON template below is SHAPE ONLY. NEVER copy its placeholder values into the answer just because they appear in the template.
+19. Before returning JSON, compare every populated field against the actual screenshot and remove unsupported claims.
+20. If readable price/candles/indicators exist, extractionConfidence MUST be greater than 0 and visualEvidence MUST contain concrete observations.
+21. If a requested indicator is visibly present, its entry MUST have visible=true even when all numeric fields are null.
+22. Never use state="Neutral" only because a number is unavailable. Use a visually supported state or UNKNOWN.
+23. Keep visualEvidence concise but concrete. Example: "Current price label reads 247.98012", "Price is below the upper Bollinger Band and above the middle band", "The oscillator lines are clustered around the mid/high zone".
+24. Do not manufacture exact OHLC, RSI, MACD, support/resistance, or signal values.
 
 INDICATOR-SPECIFIC EXTRACTION
 RSI:
-- Capture the printed RSI number only if visible.
-- Capture its approximate zone only when axis/threshold context is visible (for example above 70, below 30, or between them).
-- Capture direction from the line only when clearly visible.
+- Capture the printed RSI number only if visibly printed.
+- Otherwise capture zone/direction only when the axis/threshold context supports it.
+- Do not confuse another oscillator line with RSI without evidence.
 
 MACD:
-- Capture MACD, signal, and histogram numbers only if printed.
-- If the MACD panel is visible, capture line relationship/crossover and histogram direction qualitatively.
-- Do not call another oscillator MACD merely because it has multiple colored lines.
+- Capture MACD, signal and histogram numbers only if printed.
+- If clearly visible, capture line relationship/crossover and histogram direction qualitatively.
+- Do not identify MACD solely because multiple colored lines exist.
 
 Bollinger Bands:
 - Capture upper/middle/lower numeric values only if displayed.
-- Capture whether price is near/inside/outside the bands and whether the bands are widening/narrowing when visually clear.
+- Always inspect the three price-panel bands when visible.
+- Record current price position relative to the bands and band width behavior qualitatively when clear.
 
 ATR:
-- Capture the ATR number only if displayed.
+- Capture ATR number only if displayed.
 - Otherwise capture volatility expansion/contraction only when an ATR panel/label is clearly identifiable.
 
 Other indicators:
-- Apply the same rules: identify from visible labels/context, extract printed values, and preserve defensible qualitative state.
+- Identify from visible labels/context and preserve defensible qualitative evidence.
 
 REQUIRED OUTPUT SHAPE
 Return ONLY one JSON object. No markdown. No commentary.
@@ -100,11 +114,12 @@ Return ONLY one JSON object. No markdown. No commentary.
 
 FINAL SELF-CHECK BEFORE RETURNING:
 - Did I actually inspect the supplied image?
-- Did I capture the printed current price if readable?
+- Did I copy the printed current price exactly if readable?
+- Did I inspect the full candlestick panel and all lower panels?
 - Did I identify every visible requested indicator without guessing?
 - Did I preserve qualitative evidence when numbers were unavailable?
 - Did I set visible=true for indicators that are visibly present?
-- Did I put concrete observations in visualEvidence?
+- Did I put concrete screenshot observations in visualEvidence?
 - Did I avoid any trading signal or strategy?
 `;
 }
