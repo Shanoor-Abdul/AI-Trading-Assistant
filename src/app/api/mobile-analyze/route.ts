@@ -63,18 +63,18 @@ function hasExtractionEvidence(extraction: any): boolean {
     ),
   );
 
-  return Boolean(
-    extraction.currentPrice?.value != null ||
-    extraction.candles?.latest?.close != null ||
-    hasKnownState(extraction.trend?.state) ||
-    hasKnownState(extraction.momentum?.state) ||
-    hasKnownState(extraction.marketStructure?.state) ||
-    extraction.visualEvidence?.length > 0 ||
-    extraction.supportLevels?.length > 0 ||
-    extraction.resistanceLevels?.length > 0 ||
-    hasIndicatorEvidence ||
+  return [
+    extraction.currentPrice?.value != null,
+    extraction.candles?.latest?.close != null,
+    hasKnownState(extraction.trend?.state),
+    hasKnownState(extraction.momentum?.state),
+    hasKnownState(extraction.marketStructure?.state),
+    extraction.visualEvidence?.length > 0,
+    extraction.supportLevels?.length > 0,
+    extraction.resistanceLevels?.length > 0,
+    hasIndicatorEvidence,
     extraction.visibleIndicators?.length > 0,
-  );
+  ].some(Boolean);
 }
 
 function hasFinalAnalysisEvidence(validated: any): boolean {
@@ -94,23 +94,23 @@ function hasFinalAnalysisEvidence(validated: any): boolean {
     validated?.invalidationConditions?.length,
   );
 
-  const hasUnifiedEvidence = Boolean(
-    unified?.currentPrice?.value != null ||
-    unified?.completedCandle?.close != null ||
-    unified?.currentIncompleteCandle?.close != null ||
-    unified?.supportLevels?.value?.length ||
-    unified?.resistanceLevels?.value?.length ||
-    (unified?.indicators && Object.values(unified.indicators).some((indicator: any) =>
+  const hasUnifiedEvidence = [
+    unified?.currentPrice?.value != null,
+    unified?.completedCandle?.close != null,
+    unified?.currentIncompleteCandle?.close != null,
+    unified?.supportLevels?.value?.length > 0,
+    unified?.resistanceLevels?.value?.length > 0,
+    unified?.indicators && Object.values(unified.indicators).some((indicator: any) =>
       indicator && typeof indicator === "object" && (
         indicator.value != null ||
         indicator.visible === true ||
         (typeof indicator.state === "string" && indicator.state !== "UNKNOWN")
       ),
-    )),
-    typeof unified?.marketStructure?.value === "string" && unified.marketStructure.value.trim(),
-    typeof unified?.trend?.value === "string" && unified.trend.value.trim(),
-    typeof unified?.momentum?.value === "string" && unified.momentum.value.trim(),
-  );
+    ),
+    typeof unified?.marketStructure?.value === "string" && unified.marketStructure.value.trim().length > 0,
+    typeof unified?.trend?.value === "string" && unified.trend.value.trim().length > 0,
+    typeof unified?.momentum?.value === "string" && unified.momentum.value.trim().length > 0,
+  ].some(Boolean);
 
   return Boolean(usableText && (hasEvidenceArrays || hasUnifiedEvidence));
 }
