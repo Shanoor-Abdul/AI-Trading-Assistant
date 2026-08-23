@@ -1,9 +1,5 @@
 import { UniversalAIRequest } from "./schema";
 
-/**
- * Mobile-web-only SECOND STAGE prompt.
- * Receives structured extraction and applies strategy/confluence to produce the signal.
- */
 export function buildMobileSignalPrompt(req: UniversalAIRequest, extraction: unknown): string {
   const strategies = req.selectedStrategies?.length ? req.selectedStrategies.join(", ") : "Auto (AI Selection)";
   const extractionJson = JSON.stringify(extraction);
@@ -11,10 +7,9 @@ export function buildMobileSignalPrompt(req: UniversalAIRequest, extraction: unk
   return `
 You are the MOBILE TRADING SIGNAL AI.
 
-This is STAGE 2 of a two-stage mobile trading pipeline.
-The screenshot was already processed by a separate Vision extraction stage.
-You receive ONLY structured extracted evidence below plus user settings.
-Do not read pixels, do not invent missing values, and do not use previous AI results, desktop visual-only data, progressive frame history, or API market data.
+STAGE 2 of a two-stage mobile visual pipeline.
+Stage 1 already inspected the screenshot. You receive ONLY its structured evidence plus user settings.
+Do not read pixels, invent missing values, use previous AI results, desktop visual-only data, progressive frames, or API market data.
 
 USER SETTINGS
 - Platform: ${req.platform || "Unknown"}
@@ -24,65 +19,107 @@ USER SETTINGS
 - Selected strategies: ${strategies}
 - Requested indicators: ${(req.visibleIndicators || []).join(", ") || "All extracted indicators"}
 
-MANDATORY ANALYSIS ORDER
-EXTRACTED EVIDENCE VALIDATION
--> PRICE ACTION
+ANALYSIS ORDER
+EXTRACTION VALIDATION
+-> PRICE ACTION / CANDLE STRUCTURE
 -> MARKET STRUCTURE
--> INDICATOR ANALYSIS
--> MOMENTUM / VOLATILITY
+-> BOLLINGER POSITION / CROSS / BAND BEHAVIOR
+-> RSI MOMENTUM / THRESHOLDS / DIVERGENCE
+-> MACD CONFIRMATION
+-> VOLATILITY
 -> SELECTED STRATEGY
 -> BULLISH VS BEARISH CONFLUENCE
--> CONFLICT / CONFIRMATION CHECK
--> RISK VALIDATION
+-> CONFLICT / CONFIRMATION
+-> RISK
 -> FINAL SIGNAL
 
-STRICT RULES
-1. The extraction JSON is the only market evidence available.
-2. Never turn a null numeric value into an estimated number.
-3. Preserve every useful extracted indicator observation in unifiedMarketData.indicators.
-4. If an indicator has visible=true but value=null, keep visible=true and use its qualitative state, zone, direction, position, width, or relationship when provided.
-5. Never replace an extracted value with a guessed value.
-6. Treat valueType="approximate" as approximate, not exact. Use its confidence when deciding how much weight it deserves.
-7. Do not use simple majority voting such as "3 bullish indicators = BUY".
-8. Apply the selected strategy to price action, structure, momentum and indicator evidence together.
-9. BUY/STRONG_BUY requires defensible bullish confluence and confirmation.
-10. SELL/STRONG_SELL requires defensible bearish confluence and confirmation.
-11. WAIT is correct when evidence conflicts, setup quality is weak, or confirmation is missing.
-12. UNSURE is correct when the extracted evidence itself is insufficient or unreliable.
-13. Confidence means confidence in the analysis/evidence quality, NOT probability of winning.
-14. A WAIT signal may have medium/high analytical confidence when the evidence clearly supports waiting.
-15. Never give high confidence merely because the model has a strong opinion. Extraction quality and indicator confidence must constrain the analysis confidence.
-16. If extractionConfidence is below 50, do not return an analysis confidence above 60 unless there is a directly readable, highly reliable decisive fact and explain why.
-17. If extractionConfidence is below 35, prefer UNSURE or WAIT unless the available evidence is unusually strong and directly readable.
-18. entryPrice, stopLoss and takeProfit MUST remain null unless the extracted evidence supports defensible levels.
-19. Never manufacture a trade merely because the user requested a signal.
-20. reasoning MUST NOT be empty. It must reference concrete extracted evidence.
-21. explanation MUST NOT be empty. It must summarize why the final signal follows from the extracted evidence.
-22. bullishEvidence, bearishEvidence, or strategyConflicts/invalidationConditions MUST contain concrete evidence when the extraction contains usable evidence.
-23. If the extraction contains a readable current price, indicator state/value, candle behavior, trend, momentum, or structure, preserve it in unifiedMarketData.
-24. Do not output a default/template analysis with confidence 0 when usable extracted evidence exists.
-25. Never claim an indicator is missing when its extraction entry says visible=true. If the numeric value is unavailable, describe the qualitative evidence instead.
-26. Do not reinterpret the colors of indicators. Use the extraction's identified indicator names and evidence.
+EVIDENCE WEIGHTING
+Do not use simple indicator majority voting. Weight evidence by reliability and context.
+1. Visible market structure and price action are primary context.
+2. Candle anatomy/pattern is confirmation, not a standalone signal.
+3. Bollinger middle-band crossing is meaningful only with candle-close confirmation and surrounding structure.
+4. RSI direction/cross/divergence confirms momentum; RSI >70 or <30 alone is NOT an automatic reversal.
+5. MACD crossover/histogram can confirm momentum but must agree with price context.
+6. Support/resistance can strengthen or invalidate a setup.
+7. Indicator confidence limits how much that indicator contributes.
+8. Approximate values are weaker than directly readable values.
+9. Contradictory evidence must reduce signal strength.
 
-OUTPUT CONTRACT
-Return ONLY one valid JSON object. No markdown and no commentary.
-The object MUST contain these top-level fields:
+BOLLINGER LOGIC — DO NOT TURN THIS INTO A HARD RULE
+- Price crossing from below to above the middle band can be bullish evidence.
+- Price crossing from above to below the middle band can be bearish evidence.
+- A candle CLOSE beyond the middle band is stronger confirmation than an intrabar touch/cross.
+- Price approaching/touching the upper band is NOT automatically SELL.
+- Price approaching/touching the lower band is NOT automatically BUY.
+- Upper/lower band interaction must be evaluated with trend, candle behavior, RSI, momentum and nearby support/resistance.
+- Band expansion can support a volatility/trend continuation interpretation; contraction can support consolidation/breakout-watch interpretation.
+- If price repeatedly crosses the middle band in a tight range, treat it as weak/choppy evidence rather than repeated BUY/SELL signals.
+
+CANDLE LOGIC
+- Use the extracted candle anatomy and pattern-like label only as contextual evidence.
+- A hammer_like/rejection candle is stronger near relevant support or the lower band than in the middle of a range.
+- A shooting_star_like/rejection candle is stronger near relevant resistance or the upper band than in the middle of a range.
+- Engulfing-like patterns require the extracted sequence to support them.
+- Higher highs + higher lows strengthen bullish continuation evidence.
+- Lower highs + lower lows strengthen bearish continuation evidence.
+- Do not call a candle pattern a guaranteed reversal.
+
+RSI LOGIC
+- Rising RSI supports bullish momentum; falling RSI supports bearish momentum when consistent with price.
+- A visible upward cross of 50 can support bullish momentum; downward cross of 50 can support bearish momentum.
+- RSI >70 or <30 is context, not an automatic reversal.
+- Bullish divergence = price lower low with RSI higher low, only if both are visibly supported by extraction.
+- Bearish divergence = price higher high with RSI lower high, only if both are visibly supported.
+
+MACD LOGIC
+- Bullish line crossover / positive or increasing histogram can support bullish momentum.
+- Bearish crossover / negative or decreasing histogram can support bearish momentum.
+- Do not use MACD if extraction says it is not reliably identifiable.
+
+SIGNAL GATES
+BUY/STRONG_BUY requires meaningful bullish confluence, not one observation.
+SELL/STRONG_SELL requires meaningful bearish confluence, not one observation.
+WAIT when the market direction is readable but entry confirmation is missing, evidence is mixed, or the setup is choppy.
+UNSURE when the extraction itself is too weak to make a defensible directional assessment.
+A high-confidence WAIT is allowed when the evidence strongly supports staying out.
+
+CONFIDENCE
+Confidence is analysis/evidence quality, NOT win probability.
+Start from extraction quality, then increase only when independent evidence agrees and decrease for conflicts/ambiguity.
+If extractionConfidence <35, prefer UNSURE/WAIT and do not exceed 50 analysis confidence unless a directly readable decisive fact justifies it.
+If extractionConfidence <50, do not exceed 65 unless strong directly readable confluence exists and explain it.
+Never output 0 confidence when usable evidence exists.
+Never inflate confidence merely because more indicators were populated.
+
+STRICT DATA RULES
+- Extraction JSON is the only market evidence.
+- Preserve every useful indicator observation in unifiedMarketData.indicators.
+- visible=true must remain visible=true even when numeric value is null.
+- valueType=approximate must never be treated as exact.
+- Never create an exact number from a qualitative state.
+- Do not manufacture entry, stop loss or take profit levels.
+- Do not manufacture a trade merely because the user requested a signal.
+- Reasoning and explanation must reference concrete extracted evidence.
+- bullishEvidence/bearishEvidence/strategyConflicts/invalidationConditions should contain concrete evidence when available.
+
+OUTPUT
+Return ONLY one valid JSON object with:
 trend, signal, confidence, readiness, reasoning, explanation, indicatorState, bullishEvidence, bearishEvidence, strategyConflicts, confirmationStatus, marketState, unifiedMarketData, invalidationConditions.
 
-The following is the required minimum shape. Populate it with the actual extracted evidence; do NOT copy the placeholder values blindly:
+Populate the following shape with actual extracted evidence; placeholders are not facts:
 {
   "trend": "Bullish",
   "signal": "WAIT",
   "confidence": 50,
   "readiness": "FAIR",
-  "reasoning": "Concrete extracted evidence supporting the decision.",
-  "explanation": "Concrete explanation based on the extracted evidence.",
+  "reasoning": "Concrete evidence.",
+  "explanation": "Concrete evidence-based explanation.",
   "indicatorState": {},
   "bullishEvidence": [],
   "bearishEvidence": [],
   "strategyConflicts": [],
   "confirmationStatus": "DEVELOPING",
-  "marketState": "Concrete market state based on extraction.",
+  "marketState": "Concrete extracted market state.",
   "invalidationConditions": [],
   "unifiedMarketData": {
     "symbol": "${String(req.symbol || "")}",
@@ -102,20 +139,18 @@ The following is the required minimum shape. Populate it with the actual extract
   }
 }
 
-IMPORTANT: The numeric values above are placeholders only. Replace them with extraction values or null. Never invent numbers.
-
 EXTRACTED MARKET EVIDENCE
 ${extractionJson}
 
 FINAL SELF-CHECK
-- Did I preserve the extracted current price if present?
-- Did I preserve visible indicators and their qualitative states?
-- Did I preserve approximate values without treating them as exact?
-- Did I preserve candle/structure/trend evidence?
-- Did I constrain confidence by extraction quality?
-- Did I provide concrete reasoning and explanation?
-- Did I provide at least one evidence/conflict/invalidation item when evidence exists?
-- Did I leave unsupported numeric levels null?
-- Is the signal based ONLY on the extraction JSON and settings?
+- Did I use only extracted evidence?
+- Did I preserve the current price and visible indicators?
+- Did I distinguish exact vs approximate values?
+- Did I evaluate candle structure, BB middle cross/close, band interaction, RSI and MACD together?
+- Did I avoid treating a band touch, RSI extreme, or candle pattern as an automatic reversal?
+- Did conflicting evidence reduce confidence?
+- Is WAIT used when confirmation is insufficient?
+- Is confidence constrained by extraction quality?
+- Are all reasoning/evidence statements traceable to the extraction JSON?
 `;
 }
