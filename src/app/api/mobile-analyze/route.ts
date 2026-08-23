@@ -181,12 +181,18 @@ export async function POST(request: NextRequest) {
       isProgressive: false,
     });
 
+    // Keep the raw Stage-1 result in the response. This is intentional: it lets us
+    // verify whether pixels were actually extracted before Stage 2 reasons over them.
     if (!hasExtractionEvidence(extraction)) {
       return NextResponse.json(
         {
           error: "Mobile extraction returned no usable chart evidence.",
           code: "MOBILE_EXTRACTION_EMPTY",
           analysisType: "mobile_visual",
+          mobilePipeline: {
+            stages: ["image_extraction"],
+            extraction,
+          },
         },
         { status: 502 },
       );
@@ -211,6 +217,11 @@ export async function POST(request: NextRequest) {
           error: "Mobile signal analysis returned an empty or invalid analysis.",
           code: "MOBILE_ANALYSIS_EMPTY",
           analysisType: "mobile_visual",
+          mobilePipeline: {
+            stages: ["image_extraction", "evidence_analysis"],
+            extraction,
+            analysis: validated,
+          },
         },
         { status: 502 },
       );
