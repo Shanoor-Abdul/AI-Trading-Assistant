@@ -101,7 +101,11 @@ function rsiDirection(rsi: any): Direction | null {
   if (!rsi || rsi.visible === false) return null;
   const direct = indicatorDirection(rsi, "rsi");
   if (direct) return direct;
-  const value = number(rsi.value ?? rsi.approximateValue);
+
+  // Prefer the primary RSI value. Stage 1 sets `value` to the first/fast
+  // series when multiple RSI values are printed, but keep fallbacks for older
+  // extraction responses that only returned rsi1/rsi2/rsi3.
+  const value = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
   if (value !== null) {
     if (value > 50 && value < 70) return "bullish";
     if (value < 50 && value > 30) return "bearish";
@@ -185,10 +189,12 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const rsiDir = rsiDirection(rsi);
   if (rsi && rsi.visible !== false) {
     let rsiWeight = 15;
-    const rsiValue = number(rsi.value ?? rsi.approximateValue);
+    const rsiValue = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
     const rsiConf = confidence(rsi.confidence);
     if (rsiValue !== null && (rsiValue >= 70 || rsiValue <= 30)) rsiWeight = 8;
-    add(items, { key: "rsi", label: "RSI momentum", direction: rsiDir, weight: rsiWeight, confidence: rsiConf, evidence: rsiValue !== null ? `RSI ${rsiValue}${rsi.direction ? `, ${rsi.direction}` : ""}.` : `RSI ${rsi.direction || rsi.zone || "visible"}.` });
+    const multi = [rsi.rsi1, rsi.rsi2, rsi.rsi3].map(number).filter((x): x is number => x !== null);
+    const multiText = multi.length > 1 ? ` (${multi.map((v, index) => `RSI${index + 1} ${v}`).join(", ")})` : "";
+    add(items, { key: "rsi", label: "RSI momentum", direction: rsiDir, weight: rsiWeight, confidence: rsiConf, evidence: rsiValue !== null ? `RSI ${rsiValue}${multiText}${rsi.direction ? `, ${rsi.direction}` : ""}.` : `RSI ${rsi.direction || rsi.zone || "visible"}.` });
   }
 
   const macd = indicators.MACD;
@@ -204,7 +210,9 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
     const cross = text(bb.crossDirection || bb.middleCross);
     const close = text(bb.candleCloseConfirmation);
     if ((/up|bull/.test(cross) && /confirm|yes|above/.test(close)) || (/down|bear/.test(cross) && /confirm|yes|below/.test(close))) bbWeight = 12;
-    add(items, { key: "bb", label: "Bollinger position / middle-band cross", direction: bbDir, weight: bbWeight, confidence: confidence(bb.confidence), evidence: `Bollinger: ${bb.position || "position unknown"}; cross ${bb.middleCross || "unknown"}; width ${bb.width || "unknown"}.` });
+    const bbNumbers = [bb.upper, bb.middle, bb.lower].map(number).filter((x): x is number => x !== null);
+    const bbText = bbNumbers.length === 3 ? `; bands ${bbNumbers.join(" / ")}` : "";
+    add(items, { key: "bb", label: "Bollinger position / middle-band cross", direction: bbDir, weight: bbWeight, confidence: confidence(bb.confidence), evidence: `Bollinger: ${bb.position || "position unknown"}; cross ${bb.middleCross || "unknown"}; width ${bb.width || "unknown"}${bbText}.` });
   }
 
   const candles = extraction?.candles;
