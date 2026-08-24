@@ -24,7 +24,7 @@ export const CANDLE_PATTERN_CATALOG: CandlePatternDefinition[] = [
   { name: "Hanging Man", direction: "BEARISH", candles: 1, family: "single", context: "hammer-shaped candle after an advance; needs bearish confirmation" },
   { name: "Shooting Star", direction: "BEARISH", candles: 1, family: "single", context: "small body with long upper wick after an advance/near resistance" },
   { name: "Spinning Top", direction: "NEUTRAL", candles: 1, family: "single", context: "small body with meaningful upper and lower wicks" },
-  { name: "Marubozu", direction: "CONTEXT", candles: 1, family: "single", context: "very large body with little wick; direction follows candle color and context" },
+  { name: "Marubozu", direction: "NEUTRAL", candles: 1, family: "single", context: "very large body with little wick; direction follows candle color and context" },
   { name: "Bullish Marubozu", direction: "BULLISH", candles: 1, family: "single", context: "large bullish body with minimal wicks" },
   { name: "Bearish Marubozu", direction: "BEARISH", candles: 1, family: "single", context: "large bearish body with minimal wicks" },
   { name: "Bullish Engulfing", direction: "BULLISH", candles: 2, family: "two", context: "bullish candle body engulfs prior bearish body, usually after decline" },
