@@ -76,10 +76,11 @@ export async function POST(req: NextRequest) {
       message: "Connection successful",
     });
   } catch (err: any) {
+    console.error("Connection test error:", err);
     return NextResponse.json({
       success: false,
       connected: false,
-      error: "Connection failed: invalid credentials / permission / network / unsupported environment",
+      error: `Connection failed: ${err.message || "invalid credentials / permission / network / unsupported environment"}`,
     }, { status: 400 });
   }
 }
