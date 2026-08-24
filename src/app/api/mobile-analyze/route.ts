@@ -51,10 +51,11 @@ function hasExtractionEvidence(extraction: any): boolean {
     x.visible === true || x.value != null || x.approximateValue != null || x.macd != null || x.signal != null || x.histogram != null ||
     hasKnownState(x.state) || hasKnownState(x.position) || hasKnownState(x.zone) || hasKnownState(x.direction)
   ));
+  const patternEvidence = Array.isArray(extraction?.candles?.patternCandidates) && extraction.candles.patternCandidates.length > 0;
   return Boolean(
     extraction.currentPrice?.value != null || extraction.candles?.latest?.close != null ||
     hasKnownState(extraction.trend?.state) || hasKnownState(extraction.momentum?.state) || hasKnownState(extraction.marketStructure?.state) ||
-    extraction.visualEvidence?.length || extraction.supportLevels?.length || extraction.resistanceLevels?.length ||
+    extraction.visualEvidence?.length || extraction.supportLevels?.length || extraction.resistanceLevels?.length || patternEvidence ||
     extraction.visualQuality?.overallConfidence > 0 || normalizeConfidence(extraction.extractionConfidence) > 0 || indicatorEvidence
   );
 }
@@ -87,12 +88,6 @@ function indicatorConfidence(indicator: any): number {
   return normalizeConfidence(indicator.confidence);
 }
 
-/**
- * Normalize Stage-1 indicators into the exact shape expected by IndicatorSetSchema.
- * In particular EMA is a RECORD of named indicator observations, not a single
- * observation. This prevents responses such as { EMA: { confidence: 72 } } from
- * reaching Zod and producing "EMA.confidence expected object, received number".
- */
 function normalizeIndicators(raw: any): Record<string, any> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const output: Record<string, any> = {};
@@ -130,9 +125,27 @@ function normalizeIndicators(raw: any): Record<string, any> {
   return output;
 }
 
+function normalizePatternCandidates(raw: any): any[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((pattern: any) => {
+    if (!pattern || typeof pattern !== "object") return null;
+    const confidence = normalizeConfidence(pattern.confidence);
+    const candlesUsed = Number(pattern.candlesUsed);
+    return {
+      name: typeof pattern.name === "string" ? pattern.name : "UNKNOWN",
+      direction: typeof pattern.direction === "string" ? pattern.direction : "NEUTRAL",
+      candlesUsed: Number.isFinite(candlesUsed) ? candlesUsed : null,
+      confidence,
+      context: typeof pattern.context === "string" ? pattern.context : "",
+      evidence: Array.isArray(pattern.evidence) ? pattern.evidence.filter((x: any) => typeof x === "string" && x.trim()).slice(0, 6) : [],
+    };
+  }).filter(Boolean).slice(0, 3);
+}
+
 function mergeExtraction(result: any, extraction: any, req: any): any {
   const existing = result?.unifiedMarketData && typeof result.unifiedMarketData === "object" ? result.unifiedMarketData : {};
   const candle = extraction?.candles?.latest && typeof extraction.candles.latest === "object" ? extraction.candles.latest : null;
+  const patternCandidates = normalizePatternCandidates(extraction?.candles?.patternCandidates);
   const visualEvidence = Array.isArray(extraction?.visualEvidence) ? extraction.visualEvidence.filter((x: any) => typeof x === "string" && x.trim()) : [];
   const normalizedIndicators = normalizeIndicators(extraction?.indicators);
 
@@ -164,27 +177,49 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
     return facts;
   });
 
+  const patternEvidence = patternCandidates.flatMap((pattern: any) => {
+    const direction = pattern.direction === "BULLISH" ? "bullish" : pattern.direction === "BEARISH" ? "bearish" : "neutral";
+    return [`Candlestick pattern candidate: ${pattern.name} (${direction}, ${pattern.confidence}% recognition confidence).`, ...pattern.evidence.map((x: string) => `Pattern evidence: ${x}`)];
+  });
+
   const extractionConfidence = normalizeConfidence(extraction?.extractionConfidence);
   const visualQualityConfidence = normalizeConfidence(extraction?.visualQuality?.overallConfidence);
   const currentPriceConfidence = normalizeConfidence(extraction?.currentPrice?.confidence);
   const candleConfidence = normalizeConfidence(extraction?.candles?.confidence);
+  const patternConfidence = patternCandidates.length ? Math.max(...patternCandidates.map((pattern: any) => pattern.confidence)) : 0;
   const requestedIndicators = Array.isArray(req.visibleIndicators) ? req.visibleIndicators : [];
   const requestedIndicatorScores = requestedIndicators.map((name: string) => indicatorConfidence(normalizedIndicators[name])).filter((x: number) => x > 0);
   const indicatorScore = requestedIndicatorScores.length ? Math.round(requestedIndicatorScores.reduce((sum: number, score: number) => sum + score, 0) / requestedIndicatorScores.length) : 0;
   const evidenceScore = visualEvidence.length > 0 ? Math.min(100, 45 + visualEvidence.length * 8) : 0;
   const computedExtractionConfidence = extractionConfidence || Math.round(
-    [visualQualityConfidence, currentPriceConfidence, candleConfidence, indicatorScore, evidenceScore]
+    [visualQualityConfidence, currentPriceConfidence, candleConfidence, patternConfidence, indicatorScore, evidenceScore]
       .filter((x) => x > 0).reduce((sum, score, _, arr) => sum + score / arr.length, 0),
   );
+
+  const completedCandle = candle ? {
+    open: num(candle.open),
+    high: num(candle.high),
+    low: num(candle.low),
+    close: num(candle.close),
+    complete: candle.complete !== false,
+    color: candle.color ?? "UNKNOWN",
+    body: candle.body ?? "UNKNOWN",
+    upperWick: candle.upperWick ?? "UNKNOWN",
+    lowerWick: candle.lowerWick ?? "UNKNOWN",
+    pattern: candle.pattern ?? "UNKNOWN",
+    patternDirection: candle.patternDirection ?? "NEUTRAL",
+    patternFamily: candle.patternFamily ?? "UNKNOWN",
+    patternConfidence: normalizeConfidence(candle.patternConfidence),
+    patternContext: candle.patternContext ?? "UNKNOWN",
+    patternCandidates,
+  } : null;
 
   const unified = {
     symbol: extraction?.symbol || req.symbol || "",
     timeframe: extraction?.timeframe || req.primaryTimeframe || "",
     ...existing,
     currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, currentPriceConfidence),
-    completedCandle: existing.completedCandle ?? (candle ? { open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close), complete: candle.complete !== false } : null),
-    // IMPORTANT: Stage 1 is the source of truth for visual indicators. Do not
-    // preserve Stage-2's malformed EMA shape here.
+    completedCandle: existing.completedCandle ?? completedCandle,
     indicators: normalizedIndicators,
     supportLevels: existing.supportLevels?.value?.length ? existing.supportLevels : { value: levels(extraction?.supportLevels), source: "visual", confidence: 50 },
     resistanceLevels: existing.resistanceLevels?.value?.length ? existing.resistanceLevels : { value: levels(extraction?.resistanceLevels), source: "visual", confidence: 50 },
@@ -197,14 +232,15 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
     invalidationLevel: existing.invalidationLevel?.value != null ? existing.invalidationLevel : observation(extraction?.invalidationLevel, 50),
     extractionConfidence: computedExtractionConfidence,
     visualQuality: extraction?.visualQuality || null,
+    candlestickPatterns: patternCandidates,
     evidenceGroups: {
       ...(existing.evidenceGroups || {}),
       indicators: Array.from(new Set([...(existing.evidenceGroups?.indicators || []), ...indicatorEvidence])),
-      candle: Array.from(new Set([...(existing.evidenceGroups?.candle || []), ...(candle ? [extraction?.candles?.behavior || "Visible candle behavior extracted."] : [])])),
+      candle: Array.from(new Set([...(existing.evidenceGroups?.candle || []), ...(candle ? [extraction?.candles?.behavior || "Visible candle behavior extracted."] : []), ...patternEvidence])),
     },
   };
 
-  const evidence = [...visualEvidence, ...indicatorEvidence];
+  const evidence = [...visualEvidence, ...patternEvidence, ...indicatorEvidence];
   return {
     ...result,
     unifiedMarketData: unified,
