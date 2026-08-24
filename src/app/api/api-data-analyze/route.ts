@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     if (exchangeName === "alpaca") {
       await (provider as AlpacaProvider).testConnection();
     } else if (exchangeName === "coindcx" || exchangeName === "coincdx") {
-      await (provider as CoinDCXProvider).testConnection();
+      await (provider as any).testConnection();
     }
 
     const primaryTimeframe = body.timeframe || "5m";

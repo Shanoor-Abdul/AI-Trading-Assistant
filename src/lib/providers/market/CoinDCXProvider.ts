@@ -29,7 +29,7 @@ export class CoinDCXProvider implements MarketProvider {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      throw new Error(\CoinDCX API connection failed (\): \\);
+      throw new Error(`CoinDCX API connection failed (${response.status}): ${errorText}`);
     }
 
     return true;
@@ -38,7 +38,8 @@ export class CoinDCXProvider implements MarketProvider {
   async fetchOHLCV(symbol: string, timeframe: string, limit?: number): Promise<OHLCV[]> {
     const pair = symbol.replace('/', '_').toUpperCase(); 
     const interval = timeframe || '5m';
-    const res = await fetch(\https://public.coindcx.com/market_data/candles?pair=B-\&interval=\&limit=\\);
+    const limitParam = limit || 100;
+    const res = await fetch(`https://public.coindcx.com/market_data/candles?pair=B-${pair}&interval=${interval}&limit=${limitParam}`);
     if (!res.ok) throw new Error('Failed to fetch CoinDCX OHLCV');
     const data = await res.json();
     return data.map((c: any) => ({
@@ -56,7 +57,7 @@ export class CoinDCXProvider implements MarketProvider {
     const res = await fetch('https://api.coindcx.com/exchange/ticker');
     if (!res.ok) throw new Error('Failed to fetch CoinDCX ticker');
     const data = await res.json();
-    const ticker = data.find((t: any) => t.market === pair || t.market === \B-\\);
+    const ticker = data.find((t: any) => t.market === pair || t.market === `B-${pair}`);
     return {
       symbol,
       last: Number(ticker?.last_price || 0),
