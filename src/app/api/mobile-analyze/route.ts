@@ -112,7 +112,7 @@ function normalizeIndicators(raw: any): Record<string, any> {
           state: typeof emaValue.state === "string" ? emaValue.state : "UNKNOWN",
           visible: emaValue.visible === true,
           confidence: indicatorConfidence(emaValue),
-          source: emaValue.source === "api" || emaValue.source === "hybrid" ? emaValue.source : "visual",
+          source: (emaValue as Record<string, any>).source === "api" || (emaValue as Record<string, any>).source === "hybrid" ? (emaValue as Record<string, any>).source : "visual",
         };
       }
       output.EMA = emaEntries;
@@ -123,7 +123,7 @@ function normalizeIndicators(raw: any): Record<string, any> {
     output[name] = {
       ...value,
       confidence: indicatorConfidence(value),
-      source: value.source === "api" || value.source === "hybrid" ? value.source : "visual",
+      source: (value as Record<string, any>).source === "api" || (value as Record<string, any>).source === "hybrid" ? (value as Record<string, any>).source : "visual",
     };
   }
 
