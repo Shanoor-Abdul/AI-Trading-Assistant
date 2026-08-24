@@ -14,6 +14,43 @@ function displayValue(value: any): string | null {
   return typeof value === "number" ? String(value) : String(value);
 }
 
+function indicatorNumericFacts(name: string, value: any): string[] {
+  if (!value || typeof value !== "object") return [];
+  const facts: string[] = [];
+
+  if (name === "Bollinger Bands" || name === "BollingerBands") {
+    const upper = displayValue(value.upper);
+    const middle = displayValue(value.middle);
+    const lower = displayValue(value.lower);
+    if (upper != null) facts.push(`upper: ${upper}`);
+    if (middle != null) facts.push(`middle: ${middle}`);
+    if (lower != null) facts.push(`lower: ${lower}`);
+  }
+
+  if (name === "RSI") {
+    const values = Array.isArray(value.values) ? value.values : [];
+    values.forEach((item: any, index: number) => {
+      const numeric = displayValue(item?.value);
+      if (numeric != null) facts.push(`${item?.period || `RSI${index + 1}`}: ${numeric}`);
+    });
+    for (const key of ["rsi1", "rsi2", "rsi3"]) {
+      const numeric = displayValue(value[key]);
+      if (numeric != null && !facts.some((fact) => fact.startsWith(`${key}:`))) facts.push(`${key}: ${numeric}`);
+    }
+  }
+
+  if (name === "MACD") {
+    const macd = displayValue(value.macd);
+    const signal = displayValue(value.signal);
+    const histogram = displayValue(value.histogram);
+    if (macd != null) facts.push(`MACD: ${macd}`);
+    if (signal != null) facts.push(`signal: ${signal}`);
+    if (histogram != null) facts.push(`histogram: ${histogram}`);
+  }
+
+  return facts;
+}
+
 export function MobileResultCard() {
   const { analysisResult } = useMobileStore();
 
@@ -67,7 +104,6 @@ export function MobileResultCard() {
           <Progress value={analysisResult.confidence} className="h-1.5 bg-zinc-800" />
         </div>
 
-        {/* Stage 1 diagnostics are intentionally shown separately from the signal. */}
         {(extractedPrice != null || visibleIndicators.length > 0 || evidence.length > 0 || extractionConfidence > 0) && (
           <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800 space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -101,6 +137,7 @@ export function MobileResultCard() {
                   const direction = value?.direction && value.direction !== "UNKNOWN" ? value.direction : null;
                   const nearestBand = value?.nearestBand && value.nearestBand !== "UNKNOWN" ? value.nearestBand : null;
                   const width = value?.width && value.width !== "UNKNOWN" ? value.width : null;
+                  const numericFacts = indicatorNumericFacts(name, value);
                   const c = confidence(value?.confidence);
 
                   return (
@@ -110,6 +147,7 @@ export function MobileResultCard() {
                         <span className="text-zinc-500">{c}%</span>
                       </div>
                       <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1 text-[10px] text-zinc-400">
+                        {numericFacts.map((fact) => <span key={fact} className="text-cyan-300">{fact}</span>)}
                         {exact != null && <span>value: {exact}</span>}
                         {approximate != null && <span>approx: {approximate}</span>}
                         {state && <span>state: {state}</span>}
