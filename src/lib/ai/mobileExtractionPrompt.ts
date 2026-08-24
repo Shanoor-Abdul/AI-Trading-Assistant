@@ -1,4 +1,5 @@
 import { UniversalAIRequest } from "./schema";
+import { CANDLE_PATTERN_PROMPT_CATALOG } from "./candlestickPatterns";
 
 export function buildMobileExtractionPrompt(req: UniversalAIRequest): string {
   const indicators = req.visibleIndicators?.length ? req.visibleIndicators.join(", ") : "all clearly visible standard indicators";
@@ -34,14 +35,34 @@ MANDATORY EXTRACTION
 1. Inspect the ENTIRE screenshot before producing JSON.
 2. Locate the main price/candlestick panel, right price axis/current-price marker, indicator headers/legends, then every lower indicator panel.
 3. If a current-price label is printed, copy its digits EXACTLY. Never round or infer it.
-4. Inspect the latest 8-12 readable candles individually when possible: color, body size, upper/lower wick, relative strength, consecutive direction, rejection, and visible swing structure.
-5. Identify candle shapes only when geometry supports them. Use *_like names such as hammer_like, inverted_hammer_like, doji_like, shooting_star_like, bullish_engulfing_like, bearish_engulfing_like. This is visual resemblance, not a guaranteed textbook classification.
-6. Record higher highs/higher lows/lower highs/lower lows only from visible swing points.
-7. Identify every requested indicator using labels, panel position, scale, thresholds, line/histogram structure and visual context. Never identify an indicator solely by color.
-8. If an indicator is visibly present but its number is unreadable, visible MUST remain true and qualitative evidence must be preserved.
-9. Exact numbers may only be copied when printed/readable. Approximate values are allowed only when the scale makes the approximation defensible and MUST be marked valueType=approximate. Never invent exact numbers.
-10. Partial extraction is better than an UNKNOWN template when concrete visual evidence exists.
-11. Preserve ALL readable indicator values even when there are multiple values for the same indicator.
+4. Inspect at least the latest 12-20 readable candles individually when possible. Prefer 20+ when the screenshot makes them readable. Record color, body size, upper/lower wick, relative strength, consecutive direction, rejection, gaps, and visible swing structure.
+5. Identify candle shapes only when geometry supports them. Use the comprehensive pattern catalog below and return only patterns actually supported by the visible candle sequence.
+6. Identify multi-candle patterns by checking the required number of consecutive candles, not by looking at the last candle alone.
+7. Record higher highs/higher lows/lower highs/lower lows only from visible swing points.
+8. Identify every requested indicator using labels, panel position, scale, thresholds, line/histogram structure and visual context. Never identify an indicator solely by color.
+9. If an indicator is visibly present but its number is unreadable, visible MUST remain true and qualitative evidence must be preserved.
+10. Exact numbers may only be copied when printed/readable. Approximate values are allowed only when the scale makes the approximation defensible and MUST be marked valueType=approximate. Never invent exact numbers.
+11. Partial extraction is better than an UNKNOWN template when concrete visual evidence exists.
+12. Preserve ALL readable indicator values even when there are multiple values for the same indicator.
+13. A pattern is not a trading signal. Report its visual direction and confidence separately from any later Stage-2 decision.
+14. Do not force a pattern. If two patterns are plausible, return both as candidates and mark the primary pattern only when one is materially better supported.
+15. If the chart is too compressed to distinguish candle bodies/wicks, lower pattern confidence rather than guessing.
+
+CANDLESTICK PATTERN DETECTION
+Evaluate the newest readable sequence against EVERY applicable entry in this catalog. A classic pattern requires its defining geometry and, where relevant, context. Do not report a classic gap-based pattern unless the gap is actually visible.
+
+${CANDLE_PATTERN_PROMPT_CATALOG}
+
+PATTERN OUTPUT RULES
+- Return up to 3 best-supported pattern candidates, ordered by visual confidence.
+- Each candidate must include: name, direction, candlesUsed, confidence, context, evidence.
+- Use direction BULLISH, BEARISH, or NEUTRAL.
+- For a generic Marubozu, use the actual candle color in evidence; do not invent a bullish/bearish label if the color is unclear.
+- Prefer exact textbook names only when the geometry is clear. Otherwise use a *_like label (for example hammer_like or engulfing_like) and keep confidence below 75.
+- A single candle can satisfy more than one visual description, but do not report overlapping names as separate strong patterns unless the distinctions are meaningful.
+- Pattern confidence is recognition confidence, NOT probability that the next candle will move in that direction.
+- Context matters: reversal patterns are stronger after the required preceding trend and near visible support/resistance or Bollinger extremes; continuation patterns require a compatible prior move.
+- Never use the reference catalog to override what is actually visible in the screenshot.
 
 MOVING AVERAGES / EMA — ONLY IF ACTUALLY VISIBLE
 - If the chart visibly labels or clearly identifies one or more EMA/SMA lines, record their readable values/relationship.
@@ -57,7 +78,7 @@ BOLLINGER BANDS — EXACT NUMBERS ARE REQUIRED WHEN PRINTED
 - Stage 1 records evidence only; it never converts a band touch into BUY/SELL.
 
 CANDLES / PRICE ACTION
-Record recent bullish/bearish/mixed sequence, body and wick sizes, rejection, consecutive candles, candle pattern-like shapes, and visible HH/HL/LH/LL structure. Record pattern location when visible (support, lower/middle/upper band), but never call it a trade signal.
+Record recent bullish/bearish/mixed sequence, body and wick sizes, rejection, consecutive candles, candle pattern candidates, pattern context, and visible HH/HL/LH/LL structure. Record pattern location when visible (support, lower/middle/upper band), but never call it a trade signal.
 
 RSI — PRESERVE ALL PRINTED SERIES VALUES
 - Find the RSI header/legend and copy every printed RSI value exactly when readable.
@@ -80,7 +101,17 @@ RETURN ONLY JSON
   "symbol": "${String(req.symbol || "")}",
   "timeframe": "${String(req.primaryTimeframe || "")}",
   "currentPrice": {"value": null, "confidence": 0, "source": "price_label"},
-  "candles": {"latest": {"open": null, "high": null, "low": null, "close": null, "complete": false, "color": "UNKNOWN", "body": "UNKNOWN", "upperWick": "UNKNOWN", "lowerWick": "UNKNOWN", "pattern": "UNKNOWN", "patternConfidence": 0}, "recentDirection": "UNKNOWN", "recentCandleCount": null, "behavior": "UNKNOWN", "priceAction": "UNKNOWN", "structure": {"higherHighs": null, "higherLows": null, "lowerHighs": null, "lowerLows": null}, "confidence": 0},
+  "candles": {
+    "latest": {"open": null, "high": null, "low": null, "close": null, "complete": false, "color": "UNKNOWN", "body": "UNKNOWN", "upperWick": "UNKNOWN", "lowerWick": "UNKNOWN", "pattern": "UNKNOWN", "patternDirection": "NEUTRAL", "patternFamily": "UNKNOWN", "patternConfidence": 0},
+    "recentDirection": "UNKNOWN",
+    "recentCandleCount": null,
+    "behavior": "UNKNOWN",
+    "priceAction": "UNKNOWN",
+    "patternCandidates": [],
+    "patternContext": "UNKNOWN",
+    "structure": {"higherHighs": null, "higherLows": null, "lowerHighs": null, "lowerLows": null},
+    "confidence": 0
+  },
   "trend": {"state": "UNKNOWN", "confidence": 0},
   "momentum": {"state": "UNKNOWN", "confidence": 0},
   "marketStructure": {"state": "UNKNOWN", "confidence": 0},
@@ -103,7 +134,9 @@ FINAL CHECK BEFORE JSON:
 - Copy every readable BB upper/middle/lower number from the indicator header/legend.
 - Copy every readable RSI series value from the RSI header/legend.
 - Copy MACD numeric values when printed.
-- Inspect candles and lower panels.
+- Inspect at least 12-20 readable candles and use more when clearly available.
+- Test the newest sequence against the complete candlestick catalog.
+- Return up to 3 pattern candidates with confidence and evidence.
 - Extract candle anatomy and visible structure.
 - Extract Bollinger middle-cross/band interaction.
 - Extract RSI direction/threshold crosses/divergence when supported.
