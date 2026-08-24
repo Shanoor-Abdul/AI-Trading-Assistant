@@ -27,12 +27,6 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Estimate extraction quality from the actual evidence instead of trusting a
- * provider's repeated template confidence (for example 60%). Exact readable
- * price/indicator values and clearly visible panels therefore improve the
- * quality ceiling for the final signal.
- */
 function evidenceQuality(extraction: any, requestedIndicators: string[] = []): number {
   const scores: number[] = [];
   const price = extraction?.currentPrice;
@@ -68,11 +62,7 @@ function evidenceQuality(extraction: any, requestedIndicators: string[] = []): n
 
 /**
  * Server-side confidence for mobile analysis.
- *
  * Confidence is evidence/analysis quality, not probability of winning a trade.
- * It is deliberately calculated from the extracted values and confluence so
- * BUY, SELL and WAIT can receive different scores instead of converging on a
- * provider's default number.
  */
 export function calculateMobileSignalConfidence(input: {
   result: any;
@@ -88,15 +78,16 @@ export function calculateMobileSignalConfidence(input: {
   const modelTrend = directionFromText(input.result?.trend);
   const rulesTrend = directionFromText(rules.trend);
 
-  // Deterministically derive Entry / SL / TP from extracted chart structure.
-  // This runs after the server-side signal gate, so WAIT never receives a
-  // fabricated trade setup. The helper also enforces valid price geometry and
-  // a minimum 1.5R reward/risk ratio.
+  // Derive trade levels from extracted chart structure only after the server
+  // signal gate. WAIT never receives a fabricated setup. The helper requires
+  // valid price geometry and at least 1.5R reward/risk.
   const tradeLevels = calculateMobileTradeLevels(input.extraction, rules.signal);
-  if (tradeLevels.entryPrice !== null) input.result.entryPrice = tradeLevels.entryPrice;
-  if (tradeLevels.stopLoss !== null) input.result.stopLoss = tradeLevels.stopLoss;
-  if (tradeLevels.takeProfit !== null) input.result.takeProfit = tradeLevels.takeProfit;
-  if (tradeLevels.riskReward !== null) input.result.riskReward = tradeLevels.riskReward;
+  input.result.entryPrice = tradeLevels.entryPrice;
+  input.result.stopLoss = tradeLevels.stopLoss;
+  input.result.takeProfit = tradeLevels.takeProfit;
+  input.result.riskReward = tradeLevels.riskReward;
+  input.result.tradeLevelSource = tradeLevels.source;
+  input.result.tradeLevelConfidence = tradeLevels.confidence;
   if (tradeLevels.reason) {
     const existing = typeof input.result.explanation === "string" ? input.result.explanation.trim() : "";
     input.result.explanation = existing ? `${existing} ${tradeLevels.reason}` : tradeLevels.reason;
@@ -111,9 +102,6 @@ export function calculateMobileSignalConfidence(input: {
 
   if (modelTrend && rulesTrend && modelTrend !== rulesTrend) score -= 10;
 
-  // Evidence quality is the ceiling, but the ceiling now reflects the actual
-  // readable price/indicator/candle evidence rather than a repeated template
-  // confidence from the vision provider.
   const extractionCap = Math.min(100, quality + 5);
   score = Math.min(score, extractionCap);
 
