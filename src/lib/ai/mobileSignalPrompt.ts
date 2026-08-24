@@ -1,4 +1,5 @@
 import { UniversalAIRequest } from "./schema";
+import { CANDLE_PATTERN_PROMPT_CATALOG } from "./candlestickPatterns";
 
 export function buildMobileSignalPrompt(req: UniversalAIRequest, extraction: unknown): string {
   const strategies = req.selectedStrategies?.length ? req.selectedStrategies.join(", ") : "Auto (AI Selection)";
@@ -22,6 +23,7 @@ USER SETTINGS
 ANALYSIS ORDER
 EXTRACTION VALIDATION
 -> PRICE ACTION / CANDLE STRUCTURE
+-> CANDLE PATTERN CANDIDATES
 -> MARKET STRUCTURE
 -> MOVING-AVERAGE ALIGNMENT (ONLY IF EXTRACTED)
 -> BOLLINGER POSITION / CROSS / BAND BEHAVIOR
@@ -54,6 +56,20 @@ Otherwise use WAIT.
 If fewer than 3 independent categories are usable, do not manufacture a directional trade.
 The server independently recalculates confidence from the same evidence, so your confidence must describe evidence quality, not win probability.
 
+CANDLE PATTERN CONFLUENCE
+Stage 1 may return up to 3 pattern candidates. Treat them as evidence, not deterministic next-candle predictions.
+- A recognized pattern can contribute to the Candlestick / price-action category only when its confidence is meaningful and its required candle sequence is present.
+- Prefer the highest-confidence candidate, but use the surrounding context to confirm or weaken it.
+- Reversal patterns are stronger when the extracted prior trend, support/resistance, or Bollinger extreme agrees with the pattern.
+- Continuation patterns are stronger when trend/structure and momentum agree with the pattern direction.
+- A pattern with confidence below 60 should normally be weak evidence only.
+- If two high-confidence pattern candidates conflict, treat the candle evidence as mixed and reduce confidence.
+- Do not turn a pattern into BUY/SELL by itself. It must agree with at least two other independent categories.
+- Do not invent a textbook pattern when Stage 1 marked it *_like or when the required context is missing.
+
+REFERENCE CATALOG
+${CANDLE_PATTERN_PROMPT_CATALOG}
+
 EVIDENCE WEIGHTING
 1. Visible market structure and price action are primary context.
 2. Candle anatomy/pattern is confirmation, not a standalone signal.
@@ -76,13 +92,18 @@ BOLLINGER LOGIC — DO NOT TURN THIS INTO A HARD RULE
 - If price repeatedly crosses the middle band in a tight range, treat it as weak/choppy evidence rather than repeated BUY/SELL signals.
 
 CANDLE LOGIC
-- Use the extracted candle anatomy and pattern-like label only as contextual evidence.
-- A hammer_like/rejection candle is stronger near relevant support or the lower band than in the middle of a range.
-- A shooting_star_like/rejection candle is stronger near relevant resistance or the upper band than in the middle of a range.
-- Engulfing-like patterns require the extracted sequence to support them.
+- Use the extracted candle anatomy and pattern candidate(s) only as contextual evidence.
+- A hammer/hammer_like rejection candle is stronger near relevant support or the lower band than in the middle of a range.
+- A shooting star/shooting_star_like rejection candle is stronger near relevant resistance or the upper band than in the middle of a range.
+- Engulfing, Harami, Piercing Line, Dark Cloud Cover and kicker patterns require the extracted sequence to support them.
+- Three-candle and multi-candle patterns require all required candles to be visible/readable; never infer missing candles.
+- Morning Star is conventionally bullish; Evening Star is conventionally bearish. Do not reverse their directions because of a noisy screenshot.
+- Three White Soldiers and Three Inside/Outside Up support bullish continuation/reversal only when structure agrees.
+- Three Black Crows and Three Inside/Outside Down support bearish continuation/reversal only when structure agrees.
+- Doji, Spinning Top and Tri-Star are primarily indecision evidence unless context provides confirmation.
 - Higher highs + higher lows strengthen bullish continuation evidence.
 - Lower highs + lower lows strengthen bearish continuation evidence.
-- Do not call a candle pattern a guaranteed reversal.
+- Do not call a candle pattern a guaranteed reversal or guarantee the next candle.
 
 RSI LOGIC
 - Rising RSI supports bullish momentum; falling RSI supports bearish momentum when consistent with price.
@@ -120,6 +141,7 @@ Never output the same default confidence just because the signal is BUY, SELL, o
 STRICT DATA RULES
 - Extraction JSON is the only market evidence.
 - Preserve every useful indicator observation in unifiedMarketData.indicators.
+- Preserve candles.latest.pattern, patternDirection, patternFamily, patternConfidence and patternCandidates in the reasoning/evidence when available.
 - visible=true must remain visible=true even when numeric value is null.
 - valueType=approximate must never be treated as exact.
 - Never create an exact number from a qualitative state.
@@ -172,6 +194,8 @@ FINAL SELF-CHECK
 - Did I use only extracted evidence?
 - Did I preserve the current price and visible indicators?
 - Did I distinguish exact vs approximate values?
+- Did I inspect the candle pattern candidates before scoring the candle category?
+- Did I require the full candle sequence for multi-candle patterns?
 - Did I evaluate candle structure, BB middle cross/close, band interaction, RSI and MACD together?
 - Did I use EMA/MA only if it was actually extracted?
 - Did I avoid treating a band touch, RSI extreme, or candle pattern as an automatic reversal?
