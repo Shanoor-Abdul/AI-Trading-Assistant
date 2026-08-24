@@ -50,13 +50,23 @@ export async function POST(req: NextRequest) {
     const environment = conn.environment;
     const passphrase = conn.passphrase;
 
+    // Dynamically import CoinDCXProvider to avoid bundle issues if not used
+    const { CoinDCXProvider } = await import("@/lib/providers/market/CoinDCXProvider");
+
     // API DATA MODE ONLY. No screenshots or visual extraction are used here.
-    const provider = exchangeName === "alpaca"
-      ? new AlpacaProvider(apiKey, apiSecret)
-      : new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
+    let provider;
+    if (exchangeName === "alpaca") {
+      provider = new AlpacaProvider(apiKey, apiSecret);
+    } else if (exchangeName === "coindcx" || exchangeName === "coincdx") {
+      provider = new CoinDCXProvider(apiKey, apiSecret);
+    } else {
+      provider = new CCXTProvider(exchangeName, apiKey, apiSecret, passphrase, environment);
+    }
 
     if (exchangeName === "alpaca") {
       await (provider as AlpacaProvider).testConnection();
+    } else if (exchangeName === "coindcx" || exchangeName === "coincdx") {
+      await (provider as CoinDCXProvider).testConnection();
     }
 
     const primaryTimeframe = body.timeframe || "5m";

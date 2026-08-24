@@ -42,6 +42,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (exchange === "coindcx" || exchange === "coincdx") {
+      const { CoinDCXProvider } = await import("@/lib/providers/market/CoinDCXProvider");
+      const provider = new CoinDCXProvider(conn.api_key, conn.api_secret);
+      await provider.testConnection();
+
+      return NextResponse.json({
+        success: true,
+        connected: true,
+        exchange: "coindcx",
+        environment: conn.environment || "live",
+        message: "CoinDCX API connection successful",
+      });
+    }
+
     // Existing CCXT validation for all other exchanges.
     const { CCXTProvider } = await import("@/lib/providers/market/CCXTProvider");
     const provider = new CCXTProvider(
