@@ -1,5 +1,5 @@
 import { UniversalAIRequest } from "./schema";
-import { CANDLE_PATTERN_PROMPT_CATALOG } from "./candlestickPatterns";
+import { CANDLE_PATTERN_PROMPT_CATALOG, CANDLE_PATTERN_REFERENCE_POLICY } from "./candlestickPatterns";
 
 export function buildMobileExtractionPrompt(req: UniversalAIRequest): string {
   const indicators = req.visibleIndicators?.length ? req.visibleIndicators.join(", ") : "all clearly visible standard indicators";
@@ -53,11 +53,13 @@ Evaluate the newest readable sequence against EVERY applicable entry in this cat
 
 ${CANDLE_PATTERN_PROMPT_CATALOG}
 
+${CANDLE_PATTERN_REFERENCE_POLICY}
+
 PATTERN OUTPUT RULES
 - Return up to 3 best-supported pattern candidates, ordered by visual confidence.
 - Each candidate must include: name, direction, candlesUsed, confidence, context, evidence.
 - Use direction BULLISH, BEARISH, or NEUTRAL.
-- For a generic Marubozu, use the actual candle color in evidence; do not invent a bullish/bearish label if the color is unclear.
+- For a generic/bidirectional catalog entry such as Engulfing, Harami, Kicking, Tasuki Gap or Three-Line Strike, resolve the visible bullish/bearish variant from actual candle colors and context; do not copy a fixed direction.
 - Prefer exact textbook names only when the geometry is clear. Otherwise use a *_like label (for example hammer_like or engulfing_like) and keep confidence below 75.
 - A single candle can satisfy more than one visual description, but do not report overlapping names as separate strong patterns unless the distinctions are meaningful.
 - Pattern confidence is recognition confidence, NOT probability that the next candle will move in that direction.
