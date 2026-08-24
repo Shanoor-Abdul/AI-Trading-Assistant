@@ -1,4 +1,5 @@
 import { calculateMobileSignalRules } from "./mobileSignalRules";
+import { calculateMobileTradeLevels } from "./mobileTradeLevels";
 
 type Direction = "bullish" | "bearish";
 
@@ -46,9 +47,7 @@ function evidenceQuality(extraction: any, requestedIndicators: string[] = []): n
     const c = normalize(indicator.confidence);
     const hasNumeric = [indicator.value, indicator.upper, indicator.middle, indicator.lower, indicator.macd, indicator.signal, indicator.histogram, indicator.rsi1, indicator.rsi2, indicator.rsi3]
       .some((value) => numeric(value) !== null);
-    if (indicator.visible === true || c > 0 || hasNumeric) {
-      scores.push(Math.max(c, hasNumeric ? 80 : 55));
-    }
+    if (indicator.visible === true || c > 0 || hasNumeric) scores.push(Math.max(c, hasNumeric ? 80 : 55));
   }
 
   const candleConfidence = normalize(extraction?.candles?.confidence);
@@ -62,8 +61,6 @@ function evidenceQuality(extraction: any, requestedIndicators: string[] = []): n
 
   if (!scores.length) return normalize(extraction?.extractionConfidence) || 50;
 
-  // Use the evidence average, but allow a clearly populated extraction to
-  // overcome a stale provider-level extractionConfidence value.
   const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
   const explicit = normalize(extraction?.extractionConfidence);
   return Math.round(Math.max(average, explicit > 0 ? Math.min(explicit + 15, 100) : 0));
@@ -90,6 +87,20 @@ export function calculateMobileSignalConfidence(input: {
   const signal = text(input.result?.signal);
   const modelTrend = directionFromText(input.result?.trend);
   const rulesTrend = directionFromText(rules.trend);
+
+  // Deterministically derive Entry / SL / TP from extracted chart structure.
+  // This runs after the server-side signal gate, so WAIT never receives a
+  // fabricated trade setup. The helper also enforces valid price geometry and
+  // a minimum 1.5R reward/risk ratio.
+  const tradeLevels = calculateMobileTradeLevels(input.extraction, rules.signal);
+  if (tradeLevels.entryPrice !== null) input.result.entryPrice = tradeLevels.entryPrice;
+  if (tradeLevels.stopLoss !== null) input.result.stopLoss = tradeLevels.stopLoss;
+  if (tradeLevels.takeProfit !== null) input.result.takeProfit = tradeLevels.takeProfit;
+  if (tradeLevels.riskReward !== null) input.result.riskReward = tradeLevels.riskReward;
+  if (tradeLevels.reason) {
+    const existing = typeof input.result.explanation === "string" ? input.result.explanation.trim() : "";
+    input.result.explanation = existing ? `${existing} ${tradeLevels.reason}` : tradeLevels.reason;
+  }
 
   let score = rules.confidence;
 
