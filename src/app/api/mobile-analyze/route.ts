@@ -37,7 +37,6 @@ function hasKnownState(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0 && value.toUpperCase() !== "UNKNOWN";
 }
 
-/** Extraction prompts use 0-100. Accept 0-1 defensively so older model responses do not become 0.99%. */
 function normalizeConfidence(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -53,17 +52,10 @@ function hasExtractionEvidence(extraction: any): boolean {
     hasKnownState(x.state) || hasKnownState(x.position) || hasKnownState(x.zone) || hasKnownState(x.direction)
   ));
   return Boolean(
-    extraction.currentPrice?.value != null ||
-    extraction.candles?.latest?.close != null ||
-    hasKnownState(extraction.trend?.state) ||
-    hasKnownState(extraction.momentum?.state) ||
-    hasKnownState(extraction.marketStructure?.state) ||
-    extraction.visualEvidence?.length ||
-    extraction.supportLevels?.length ||
-    extraction.resistanceLevels?.length ||
-    extraction.visualQuality?.overallConfidence > 0 ||
-    normalizeConfidence(extraction.extractionConfidence) > 0 ||
-    indicatorEvidence
+    extraction.currentPrice?.value != null || extraction.candles?.latest?.close != null ||
+    hasKnownState(extraction.trend?.state) || hasKnownState(extraction.momentum?.state) || hasKnownState(extraction.marketStructure?.state) ||
+    extraction.visualEvidence?.length || extraction.supportLevels?.length || extraction.resistanceLevels?.length ||
+    extraction.visualQuality?.overallConfidence > 0 || normalizeConfidence(extraction.extractionConfidence) > 0 || indicatorEvidence
   );
 }
 
@@ -82,8 +74,7 @@ function levels(value: any): any[] {
   return value.map((x: any) => {
     const n = num(typeof x === "number" ? x : x?.value ?? x?.price);
     return n == null ? null : {
-      value: n,
-      price: n,
+      value: n, price: n,
       type: typeof x?.type === "string" ? x.type : undefined,
       strength: Number(x?.strength) || 0,
       confidence: normalizeConfidence(x?.confidence),
@@ -97,22 +88,65 @@ function indicatorConfidence(indicator: any): number {
 }
 
 /**
- * Stage 1 is authoritative for visual facts. Stage 2 is authoritative for the
- * explanation, while the deterministic confluence gate below is authoritative
- * for the final BUY/SELL/WAIT decision.
+ * Normalize Stage-1 indicators into the exact shape expected by IndicatorSetSchema.
+ * In particular EMA is a RECORD of named indicator observations, not a single
+ * observation. This prevents responses such as { EMA: { confidence: 72 } } from
+ * reaching Zod and producing "EMA.confidence expected object, received number".
  */
+function normalizeIndicators(raw: any): Record<string, any> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const output: Record<string, any> = {};
+
+  for (const [name, value] of Object.entries(raw)) {
+    if (name === "EMA") {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        output.EMA = {};
+        continue;
+      }
+      const emaEntries: Record<string, any> = {};
+      for (const [emaName, emaValue] of Object.entries(value as Record<string, any>)) {
+        if (!emaValue || typeof emaValue !== "object" || Array.isArray(emaValue)) continue;
+        emaEntries[emaName] = {
+          ...emaValue,
+          value: emaValue.value == null ? null : num(emaValue.value),
+          state: typeof emaValue.state === "string" ? emaValue.state : "UNKNOWN",
+          visible: emaValue.visible === true,
+          confidence: indicatorConfidence(emaValue),
+          source: emaValue.source === "api" || emaValue.source === "hybrid" ? emaValue.source : "visual",
+        };
+      }
+      output.EMA = emaEntries;
+      continue;
+    }
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    output[name] = {
+      ...value,
+      confidence: indicatorConfidence(value),
+      source: value.source === "api" || value.source === "hybrid" ? value.source : "visual",
+    };
+  }
+
+  return output;
+}
+
 function mergeExtraction(result: any, extraction: any, req: any): any {
   const existing = result?.unifiedMarketData && typeof result.unifiedMarketData === "object" ? result.unifiedMarketData : {};
   const candle = extraction?.candles?.latest && typeof extraction.candles.latest === "object" ? extraction.candles.latest : null;
   const visualEvidence = Array.isArray(extraction?.visualEvidence) ? extraction.visualEvidence.filter((x: any) => typeof x === "string" && x.trim()) : [];
-  const indicatorState = extraction?.indicators && typeof extraction.indicators === "object" ? extraction.indicators : {};
-  const normalizedIndicators = Object.fromEntries(
-    Object.entries(indicatorState).map(([name, x]: [string, any]) => [
-      name,
-      x && typeof x === "object" ? { ...x, confidence: indicatorConfidence(x) } : x,
-    ]),
-  );
+  const normalizedIndicators = normalizeIndicators(extraction?.indicators);
+
   const indicatorEvidence = Object.entries(normalizedIndicators).flatMap(([name, x]: [string, any]) => {
+    if (name === "EMA") {
+      return Object.entries(x || {}).flatMap(([emaName, ema]: [string, any]) => {
+        if (!ema || typeof ema !== "object") return [];
+        const facts: string[] = [];
+        if (ema.visible === true) facts.push(`${emaName} is visible.`);
+        if (hasKnownState(ema.state)) facts.push(`${emaName} state: ${ema.state}.`);
+        if (ema.value != null) facts.push(`${emaName} value: ${ema.value}.`);
+        return facts;
+      });
+    }
     if (!x || typeof x !== "object") return [];
     const facts: string[] = [];
     if (x.visible === true) facts.push(`${name} is visible.`);
@@ -136,14 +170,11 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
   const candleConfidence = normalizeConfidence(extraction?.candles?.confidence);
   const requestedIndicators = Array.isArray(req.visibleIndicators) ? req.visibleIndicators : [];
   const requestedIndicatorScores = requestedIndicators.map((name: string) => indicatorConfidence(normalizedIndicators[name])).filter((x: number) => x > 0);
-  const indicatorScore = requestedIndicatorScores.length
-    ? Math.round(requestedIndicatorScores.reduce((sum: number, score: number) => sum + score, 0) / requestedIndicatorScores.length)
-    : 0;
+  const indicatorScore = requestedIndicatorScores.length ? Math.round(requestedIndicatorScores.reduce((sum: number, score: number) => sum + score, 0) / requestedIndicatorScores.length) : 0;
   const evidenceScore = visualEvidence.length > 0 ? Math.min(100, 45 + visualEvidence.length * 8) : 0;
   const computedExtractionConfidence = extractionConfidence || Math.round(
     [visualQualityConfidence, currentPriceConfidence, candleConfidence, indicatorScore, evidenceScore]
-      .filter((x) => x > 0)
-      .reduce((sum, score, _, arr) => sum + score / arr.length, 0),
+      .filter((x) => x > 0).reduce((sum, score, _, arr) => sum + score / arr.length, 0),
   );
 
   const unified = {
@@ -151,10 +182,10 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
     timeframe: extraction?.timeframe || req.primaryTimeframe || "",
     ...existing,
     currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, currentPriceConfidence),
-    completedCandle: existing.completedCandle ?? (candle ? {
-      open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close), complete: candle.complete !== false,
-    } : null),
-    indicators: Object.keys(existing.indicators || {}).length ? existing.indicators : normalizedIndicators,
+    completedCandle: existing.completedCandle ?? (candle ? { open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close), complete: candle.complete !== false } : null),
+    // IMPORTANT: Stage 1 is the source of truth for visual indicators. Do not
+    // preserve Stage-2's malformed EMA shape here.
+    indicators: normalizedIndicators,
     supportLevels: existing.supportLevels?.value?.length ? existing.supportLevels : { value: levels(extraction?.supportLevels), source: "visual", confidence: 50 },
     resistanceLevels: existing.resistanceLevels?.value?.length ? existing.resistanceLevels : { value: levels(extraction?.resistanceLevels), source: "visual", confidence: 50 },
     marketStructure: existing.marketStructure?.value != null ? existing.marketStructure : { value: extraction?.marketStructure?.state ?? null, source: "visual", confidence: normalizeConfidence(extraction?.marketStructure?.confidence) },
@@ -189,11 +220,7 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
 function hasFinalEvidence(result: any): boolean {
   const u = result?.unifiedMarketData;
   const text = [result?.reasoning, result?.explanation, result?.marketState].some((x: any) => typeof x === "string" && x.trim() && x !== "No reasoning provided");
-  const data = Boolean(
-    u?.currentPrice?.value != null || u?.completedCandle?.close != null ||
-    (u?.indicators && Object.keys(u.indicators).length) || u?.trend?.value || u?.momentum?.value ||
-    u?.marketStructure?.value || u?.supportLevels?.value?.length || u?.resistanceLevels?.value?.length || u?.extractionConfidence > 0,
-  );
+  const data = Boolean(u?.currentPrice?.value != null || u?.completedCandle?.close != null || (u?.indicators && Object.keys(u.indicators).length) || u?.trend?.value || u?.momentum?.value || u?.marketStructure?.value || u?.supportLevels?.value?.length || u?.resistanceLevels?.value?.length || u?.extractionConfidence > 0);
   return text && data;
 }
 
@@ -218,19 +245,15 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: true, isProgressive: false,
     });
 
-    // Stage 1: image -> structured visual evidence.
     const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
     if (!hasExtractionEvidence(extraction)) {
       return NextResponse.json({ error: "Mobile extraction returned no usable chart evidence.", code: "MOBILE_EXTRACTION_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction"], extraction } }, { status: 502 });
     }
 
-    // Stage 2: structured evidence -> explanation and contextual analysis. Screenshot is not sent again.
     const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
     const stage2 = await callProvider(analysisRequest);
     const merged = mergeExtraction(stage2, extraction, baseRequest);
 
-    // Deterministic server-side gate: the LLM can explain the setup, but the final
-    // signal must satisfy the same weighted confluence rules every time.
     const signalRules = calculateMobileSignalRules(extraction);
     const gated = {
       ...merged,
@@ -243,19 +266,8 @@ export async function POST(request: NextRequest) {
       evidenceScore: Math.max(signalRules.bullishScore, signalRules.bearishScore),
     };
 
-    const signalConfidence = calculateMobileSignalConfidence({
-      result: gated,
-      extraction,
-      extractionConfidence: gated?.unifiedMarketData?.extractionConfidence,
-      requestedIndicators: baseRequest.visibleIndicators,
-    });
-    const mergedWithConfidence = {
-      ...gated,
-      confidence: signalConfidence,
-      dataConfidence: signalConfidence,
-      evidenceScore: Math.max(gated.evidenceScore || 0, signalConfidence),
-      confidenceSource: "server_evidence_confluence",
-    };
+    const signalConfidence = calculateMobileSignalConfidence({ result: gated, extraction, extractionConfidence: gated?.unifiedMarketData?.extractionConfidence, requestedIndicators: baseRequest.visibleIndicators });
+    const mergedWithConfidence = { ...gated, confidence: signalConfidence, dataConfidence: signalConfidence, evidenceScore: Math.max(gated.evidenceScore || 0, signalConfidence), confidenceSource: "server_evidence_confluence" };
     const validated = UniversalAIResponseSchema.parse(mergedWithConfidence);
     if (!hasFinalEvidence(validated)) {
       return NextResponse.json({ error: "Mobile signal analysis returned an empty or invalid analysis.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction", "evidence_analysis", "confluence_gate"], extraction, analysis: validated } }, { status: 502 });
@@ -272,14 +284,7 @@ export async function POST(request: NextRequest) {
         extractionConfidence: normalizeConfidence(gated?.unifiedMarketData?.extractionConfidence),
         signalConfidence,
         confidenceSource: "server_evidence_confluence",
-        confluence: {
-          signal: signalRules.signal,
-          trend: signalRules.trend,
-          bullishScore: signalRules.bullishScore,
-          bearishScore: signalRules.bearishScore,
-          availableWeight: signalRules.availableWeight,
-          evidenceCount: signalRules.evidenceCount,
-        },
+        confluence: { signal: signalRules.signal, trend: signalRules.trend, bullishScore: signalRules.bullishScore, bearishScore: signalRules.bearishScore, availableWeight: signalRules.availableWeight, evidenceCount: signalRules.evidenceCount },
       },
       timings: { totalMs: performance.now() - started },
     });
