@@ -1342,6 +1342,16 @@ export default function Dashboard() {
                         </SelectGroup>
                         <SelectGroup>
                           <SelectLabel className="text-zinc-500 mt-2">
+                            Anthropic (Native)
+                          </SelectLabel>
+                          {getModelsByProvider("anthropic").map((m) => (
+                            <SelectItem key={m.id} value={`anthropic:${m.id}`}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel className="text-zinc-500 mt-2">
                             OpenRouter
                           </SelectLabel>
                           {getModelsByProvider("openrouter").map((m) => (
@@ -1416,6 +1426,16 @@ export default function Dashboard() {
                         <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
                           <SelectGroup>
                             <SelectLabel className="text-zinc-500">
+                              Anthropic (Native)
+                            </SelectLabel>
+                            {getModelsByProvider("anthropic").map((m) => (
+                              <SelectItem key={m.id} value={`anthropic:${m.id}`}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel className="text-zinc-500 mt-2">
                               OpenRouter (Text Only)
                             </SelectLabel>
                             {getModelsByProvider("openrouter").map((m) => (
