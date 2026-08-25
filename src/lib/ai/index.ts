@@ -1,3 +1,4 @@
+import "../patch-fetch";
 import { analyze as analyzeGemini } from "./providers/gemini";
 import { analyze as analyzeOpenAI } from "./providers/openai";
 import { analyze as analyzeGroq } from "./providers/groq";
