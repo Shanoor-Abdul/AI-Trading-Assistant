@@ -1,4 +1,4 @@
-export type AIProvider = "gemini" | "groq" | "openai" | "openrouter" | "anthropic";
+export type AIProvider = "gemini" | "groq" | "openai" | "openrouter" | "anthropic" | "huggingface";
 
 export const AI_REQUEST_CONFIG = {
   maxOutputTokens: 6000,
@@ -33,6 +33,13 @@ export const AI_MODELS: AIModel[] = [
   { id: "nvidia/nemotron-nano-12b-v2-vl:free", name: "Nemotron Nano 12B VL", provider: "openrouter", isFree: true, vision: true },
   { id: "poolside/laguna-s-2.1:free", name: "Poolside Laguna S 2.1", provider: "openrouter", isFree: true, vision: false },
   { id: "stealth/ox-alpha", name: "Stealth OX Alpha (Free)", provider: "openrouter", isFree: true, vision: true },
+
+  // Hugging Face Inference Providers. isFree means usable with the account's
+  // introductory/free-tier inference credits; it does not mean unlimited or
+  // permanently free API inference.
+  { id: "Qwen/Qwen2.5-VL-7B-Instruct", name: "Qwen 2.5 VL 7B (HF Vision)", provider: "huggingface", isFree: true, vision: true },
+  { id: "Qwen/Qwen2.5-VL-3B-Instruct", name: "Qwen 2.5 VL 3B (HF Vision)", provider: "huggingface", isFree: true, vision: true },
+  { id: "zai-org/GLM-4.5V", name: "GLM-4.5V (HF Vision)", provider: "huggingface", isFree: true, vision: true },
 ];
 
 export const getModelsByProvider = (provider: AIProvider) =>
