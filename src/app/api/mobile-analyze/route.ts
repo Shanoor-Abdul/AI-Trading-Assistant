@@ -3,6 +3,7 @@ import { analyze as analyzeGemini } from "@/lib/ai/providers/gemini";
 import { analyze as analyzeOpenAI } from "@/lib/ai/providers/openai";
 import { analyze as analyzeGroq } from "@/lib/ai/providers/groq";
 import { analyze as analyzeOpenRouter } from "@/lib/ai/providers/openrouter";
+import { analyze as analyzeHuggingFace } from "@/lib/ai/providers/huggingface";
 import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/schema";
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
@@ -29,6 +30,7 @@ async function callProvider(req: any) {
     case "openai": return analyzeOpenAI(req);
     case "groq": return analyzeGroq(req);
     case "openrouter": return analyzeOpenRouter(req);
+    case "huggingface": return analyzeHuggingFace(req);
     default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
   }
 }
