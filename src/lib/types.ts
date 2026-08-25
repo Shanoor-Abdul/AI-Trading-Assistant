@@ -1,4 +1,4 @@
-export type AIProvider = "gemini" | "groq" | "openai" | "openrouter";
+export type AIProvider = "gemini" | "groq" | "openai" | "openrouter" | "anthropic";
 export type TradingMode = "MANUAL" | "PAPER" | "LIVE";
 
 export interface UnifiedDataPoint<T> {
