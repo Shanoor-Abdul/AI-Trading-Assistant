@@ -2,12 +2,13 @@ import { GoogleGenAI } from "@google/genai";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
+import { buildCandlestickReferenceInstruction } from "../candlestickKnowledge";
 import { normalizeResponse } from "../normalizeResponse";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
+  const prompt = buildUniversalPrompt(req) + buildPriceLevelInstruction(req) + buildCandlestickReferenceInstruction();
   const currentModel = req.model || "gemini-2.5-flash";
 
   try {
