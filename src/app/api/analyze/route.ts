@@ -288,7 +288,8 @@ async function fetchMarketData(
 
     marketData = {
       lastPrice: ticker.last,
-      recentCandles: ohlcv.slice(-5),
+      // Keep enough exact candle history for multi-candle pattern verification.
+      recentCandles: ohlcv.slice(-20),
       multiTimeframe: {} as Record<string, any>,
     };
 
