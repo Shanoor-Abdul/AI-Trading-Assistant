@@ -107,6 +107,13 @@ export const AI_MODELS: AIModel[] = [
     isFree: false,
     vision: true,
   },
+   {
+    id: "stealth/ox-alpha",
+    name: "stealth/ox-alpha",
+    provider: "openrouter",
+    isFree: true,
+    vision: false,
+  },
   {
     id: "openrouter/free",
     name: "OpenRouter Free Models Router",
@@ -138,6 +145,13 @@ export const AI_MODELS: AIModel[] = [
   {
     id: "poolside/laguna-s-2.1:free",
     name: "Poolside Laguna S 2.1",
+    provider: "openrouter",
+    isFree: true,
+    vision: false,
+  },
+  {
+    id: "stealth/ox-alpha",
+    name: "Stealth OX Alpha (Free)",
     provider: "openrouter",
     isFree: true,
     vision: false,
