@@ -154,7 +154,7 @@ export const AI_MODELS: AIModel[] = [
     name: "Stealth OX Alpha (Free)",
     provider: "openrouter",
     isFree: true,
-    vision: false,
+    vision: true,
   },
 ];
 
