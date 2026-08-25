@@ -42,6 +42,27 @@ function normalizeAIObservationStatus(result: UniversalAIResponse): UniversalAIR
   };
 }
 
+function buildExactCandleContext(marketData: any): string | undefined {
+  const candles = marketData?.recentCandles;
+  if (!Array.isArray(candles) || candles.length === 0) return undefined;
+
+  const rows = candles.map((c: any, index: number) => {
+    const open = Number(c.open);
+    const high = Number(c.high);
+    const low = Number(c.low);
+    const close = Number(c.close);
+    const volume = c.volume == null ? null : Number(c.volume);
+    const time = c.openTime ?? c.timestamp ?? null;
+    return `#${index + 1} time=${time ?? "NA"} O=${open} H=${high} L=${low} C=${close} V=${volume ?? "NA"}`;
+  });
+
+  return [
+    "EXACT RECENT OHLC CANDLES — USE THESE VALUES FOR CANDLESTICK PATTERN CHECKS:",
+    ...rows,
+    "The last row is the newest candle. Do not invent missing candles or prices.",
+  ].join("\n");
+}
+
 export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse> {
   const cap = PROVIDER_CAPABILITIES[req.provider];
   if (!cap) throw new Error(`Unknown AI Provider: ${req.provider}`);
@@ -63,6 +84,12 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     }
   }
 
+  const exactCandleContext = buildExactCandleContext(req.marketData);
+  const combinedStrategyRules = [
+    req.strategyRules,
+    exactCandleContext,
+  ].filter(Boolean).join("\n\n");
+
   const universalReq: UniversalAIRequest = {
     mode: req.marketDataMode === "visual_only" || !req.marketData ? "visual_only" : "api_data",
     provider: req.provider,
@@ -74,7 +101,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     trendTimeframe: req.trendTimeframe,
     tradeDuration: req.tradeDuration,
     selectedStrategies: req.selectedStrategies,
-    strategyRules: req.strategyRules,
+    strategyRules: combinedStrategyRules || undefined,
     visibleIndicators: req.visibleIndicators || [],
     marketData: req.marketData,
     previousAnalysis: req.previousData,
