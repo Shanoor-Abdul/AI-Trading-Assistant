@@ -86,7 +86,7 @@ export async function analyze(req: BaseAIRequest): Promise<any> {
     return normalizeResponse(textResponse, req.marketDataMode === 'api');
   } catch (error: any) {
     console.error("Anthropic JSON parsing failed. Retrying...", error);
-    textResponse = await doRequest(true, \Your previous response was not valid JSON or failed schema validation. Error: \. PLEASE return ONLY valid JSON matching the exact requested schema with no markdown wrapping or preamble.\);
+    textResponse = await doRequest(true, `Your previous response was not valid JSON or failed schema validation. Error: ${error?.message || String(error)}. PLEASE return ONLY valid JSON matching the exact requested schema with no markdown wrapping or preamble.`);
     return normalizeResponse(textResponse, req.marketDataMode === 'api');
   }
 }
