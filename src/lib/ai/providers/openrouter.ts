@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
+import { buildCandlestickReferenceInstruction } from "../candlestickKnowledge";
 import { normalizeResponse } from "../normalizeResponse";
 import { AI_REQUEST_CONFIG } from "@/config/models";
 
@@ -28,7 +29,7 @@ function hasMeaningfulProgressiveAnalysis(result: UniversalAIResponse): boolean 
 }
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
+  const prompt = (req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req))) + buildCandlestickReferenceInstruction();
   const currentModel = req.model || "qwen/qwen-2-vl-7b-instruct:free";
 
   try {

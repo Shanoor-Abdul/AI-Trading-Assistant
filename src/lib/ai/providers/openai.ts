@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
+import { buildCandlestickReferenceInstruction } from "../candlestickKnowledge";
 import { normalizeResponse } from "../normalizeResponse";
 
 const openai = new OpenAI({
@@ -9,7 +10,7 @@ const openai = new OpenAI({
 });
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
-  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
+  const prompt = (req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req))) + buildCandlestickReferenceInstruction();
   const currentModel = req.model || "gpt-4o";
 
   try {

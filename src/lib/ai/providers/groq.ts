@@ -3,6 +3,7 @@ import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildFastTextSignalPrompt } from "../fastTextPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
+import { buildCandlestickReferenceInstruction } from "../candlestickKnowledge";
 import { normalizeResponse } from "../normalizeResponse";
 import { AI_REQUEST_CONFIG } from "@/config/models";
 
@@ -17,9 +18,10 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   const currentModel = req.model || FAST_TEXT_MODEL;
   // If there are no images attached, this is a fast text-to-text reasoning pass
   const isFastText = !req.screenshot && (!req.screenshots || req.screenshots.length === 0);
-  const prompt = isFastText
+  const basePrompt = isFastText
     ? buildFastTextSignalPrompt(req)
     : buildUniversalPrompt(req) + buildPriceLevelInstruction(req);
+  const prompt = (req.promptOverride || basePrompt) + buildCandlestickReferenceInstruction();
 
   try {
     const messagesContent: any[] = [{ type: "text", text: prompt }];
