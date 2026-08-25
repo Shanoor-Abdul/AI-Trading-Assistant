@@ -29,10 +29,6 @@ function loadReference(): CandlestickReference[] {
   return cache;
 }
 
-/**
- * Full reference is supplied to the model, but instructions explicitly separate
- * textbook interpretation from empirical behavior.
- */
 export function buildCandlestickReference(): string {
   const rows = loadReference();
   return rows
@@ -42,4 +38,28 @@ export function buildCandlestickReference(): string {
       return `${p.name} | candles=${p.n} | bias=${p.bias} | class=${p.klass} | tested=${p.behavior} | rate=${p.rate}% | perfRank=${rank}/103 | freqRank=${freq}/103 | score=${p.score}/100 | theoryAgrees=${p.agrees ? "yes" : "no"} | logic=${p.logic}`;
     })
     .join("\n");
+}
+
+export function buildCandlestickReferenceInstruction(): string {
+  return `
+
+==================================================
+CANDLESTICK PATTERN KNOWLEDGE BASE — 98 PATTERNS
+==================================================
+Use the following supplied candlestick reference as a strict knowledge source.
+
+Rules:
+- Match patterns from actual candle geometry and visible/OHLC evidence; never invent a pattern because it is common.
+- The "bias" and "class" fields are the TRADITIONAL interpretation.
+- The "tested" and "rate" fields are EMPIRICAL reference behavior from the supplied dataset; they are not probabilities for this individual trade.
+- "score" is a normalized reliability reference, NOT a win probability.
+- If theoryAgrees=no, explicitly treat the traditional label and tested behavior as conflicting evidence rather than silently choosing one.
+- Rare patterns must not be promoted simply because their historical rate is high; frequency/rank and current context matter.
+- A candlestick pattern alone is never sufficient for a BUY/SELL decision. Require confluence with trend/market structure, momentum, support/resistance, volume when available, timeframe and trade duration.
+- If the chart does not provide enough candle history to verify a pattern, do not claim exact recognition; use an uncertainty/confirmation state.
+- Never expose hidden chain-of-thought. Return only the required response JSON.
+
+REFERENCE DATA:
+${buildCandlestickReference()}
+`;
 }
