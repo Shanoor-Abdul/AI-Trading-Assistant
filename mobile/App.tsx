@@ -66,7 +66,7 @@ export default function App() {
 
     store.setIsAnalyzing(true);
     try {
-      const response = await fetch("https://ai-all-trading-assistant.vercel.app/api/analyze", {
+      const response = await fetch("https://ai-all-trading-assistant.vercel.app/api/mobile-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -152,7 +152,7 @@ export default function App() {
 
       store.setIsAnalyzing(true);
       
-      const response = await fetch("https://ai-all-trading-assistant.vercel.app/api/analyze", {
+      const response = await fetch("https://ai-all-trading-assistant.vercel.app/api/mobile-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
