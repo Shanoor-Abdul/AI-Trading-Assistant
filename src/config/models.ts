@@ -1,4 +1,4 @@
-export type AIProvider = "gemini" | "groq" | "openai" | "openrouter";
+export type AIProvider = "gemini" | "groq" | "openai" | "openrouter" | "anthropic";
 
 export const AI_REQUEST_CONFIG = {
   // Progressive vision responses contain structured market evidence and can
@@ -16,6 +16,20 @@ export interface AIModel {
 }
 
 export const AI_MODELS: AIModel[] = [
+  {
+    id: "claude-3-5-sonnet-20241022",
+    name: "Claude 3.5 Sonnet (Native)",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "claude-3-5-haiku-20241022",
+    name: "Claude 3.5 Haiku (Native)",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
   {
     id: "gemini-3.5-flash-lite",
     name: "Gemini 3.5 Flash Lite (High Rate Limit)",

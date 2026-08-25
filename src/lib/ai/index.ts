@@ -2,6 +2,7 @@ import { analyze as analyzeGemini } from "./providers/gemini";
 import { analyze as analyzeOpenAI } from "./providers/openai";
 import { analyze as analyzeGroq } from "./providers/groq";
 import { analyze as analyzeOpenRouter } from "./providers/openrouter";
+import { analyze as analyzeAnthropic } from "./providers/anthropic";
 import { AnalyzeRequest } from "../types";
 import { UniversalAIRequest, UniversalAIResponse } from "./schema";
 import { buildProgressiveReasoningPrompt } from "./progressiveReasoningPrompt";
@@ -146,6 +147,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
             case "openai": fr = await analyzeOpenAI(frameReq as any); break;
             case "groq": fr = await analyzeGroq(frameReq as any); break;
             case "openrouter": fr = await analyzeOpenRouter(frameReq as any); break;
+            case "anthropic": fr = await analyzeAnthropic(frameReq as any); break;
             default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
           }
           extractedFrames.push(fr);
@@ -160,6 +162,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
         case "openai": result = await analyzeOpenAI(reasoningReq as any); break;
         case "groq": result = await analyzeGroq(reasoningReq as any); break;
         case "openrouter": result = await analyzeOpenRouter(reasoningReq as any); break;
+        case "anthropic": result = await analyzeAnthropic(reasoningReq as any); break;
         default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
       }
       } else {
@@ -171,6 +174,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
           case "openai": result = await analyzeOpenAI(universalReq); break;
           case "groq": result = await analyzeGroq(universalReq); break;
           case "openrouter": result = await analyzeOpenRouter(universalReq); break;
+          case "anthropic": result = await analyzeAnthropic(universalReq); break;
           default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
         }
       }
