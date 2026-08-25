@@ -21,7 +21,7 @@ function hasMeaningfulProgressiveAnalysis(result: UniversalAIResponse): boolean 
     unified?.currentPrice?.value != null ||
     unified?.completedCandle?.close != null ||
     unified?.currentIncompleteCandle?.close != null ||
-    unified?.indicators && Object.keys(unified.indicators).length > 0,
+    (unified?.indicators && Object.keys(unified.indicators).length > 0),
   );
 }
 
@@ -58,7 +58,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     throw new Error("HUGGINGFACE_API_KEY_MISSING: Set HF_TOKEN on the server.");
   }
 
-  const model = req.model || "Qwen/Qwen2.5-VL-3B-Instruct";
+  const model = req.model || "Qwen/Qwen2.5-VL-7B-Instruct";
   const configured = getModelById(model);
   if (!configured || configured.provider !== "huggingface" || !configured.vision) {
     throw new Error(`HUGGINGFACE_VISION_UNSUPPORTED: Model ${model} is not configured as a Hugging Face vision model.`);
@@ -71,8 +71,17 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   }
 
   try {
+    /*
+     * Do NOT use `${model}:fastest` here.
+     * `:fastest` asks the HF router to choose from the providers enabled for
+     * the user's account. That can fail even when the model exists on HF.
+     * Qwen2.5-VL-7B-Instruct currently exposes Featherless AI as its hosted
+     * Inference Provider, so route this model explicitly.
+     */
+    const providerModel = `${model}:featherless-ai`;
+
     const response = await client.chat.completions.create({
-      model: `${model}:fastest`,
+      model: providerModel,
       messages,
       max_tokens: Math.min(AI_REQUEST_CONFIG.maxOutputTokens || 6000, 4000),
       temperature: 0.05,
@@ -94,6 +103,14 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     throw new Error("AI_ANALYSIS_EMPTY: Hugging Face returned no usable progressive market evidence.");
   } catch (error: any) {
     const message = String(error?.message || error || "Hugging Face analysis failed");
+
+    if (/not supported by any provider|provider.*enabled|featherless/i.test(message)) {
+      throw new Error(
+        `HUGGINGFACE_PROVIDER_UNAVAILABLE: ${model} is currently routed through Featherless AI. ` +
+        `Enable Featherless AI for your Hugging Face account/token, then retry. Original error: ${message}`,
+      );
+    }
+
     console.warn(`Hugging Face model failed: ${model} - ${message}`);
     throw error;
   }
