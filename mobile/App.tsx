@@ -4,7 +4,7 @@ import { WebView } from "react-native-webview";
 import { captureRef } from "react-native-view-shot";
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useMobileTradingStore } from "./src/store/useMobileTradingStore";
-import { AI_MODELS, AVAILABLE_STRATEGIES, AVAILABLE_INDICATORS } from "./src/lib/types";
+import { AI_MODELS } from "../src/config/models";
 import { PLATFORMS, getPlatformOptions } from "./src/store/TradingPlatform";
 
 const INJECTED_JS = `
@@ -28,22 +28,6 @@ export default function App() {
   const [indicatorsModalVisible, setIndicatorsModalVisible] = useState(false);
   const [analysisModalVisible, setAnalysisModalVisible] = useState(false);
 
-  const AI_MODELS = [
-    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", isFree: true },
-    { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite", provider: "gemini", isFree: true },
-    { id: "llama-3.2-90b-vision-preview", name: "Llama 3.2 90B Vision", provider: "groq", isFree: true },
-    { id: "qwen/qwen-2-vl-7b-instruct:free", name: "Qwen 2 VL 7B (Best Free)", provider: "openrouter", isFree: true },
-    { id: "google/gemini-2.0-flash-lite-preview-02-05:free", name: "Gemini Flash Lite (OpenRouter)", provider: "openrouter", isFree: true },
-    { id: "google/gemma-4-31b-it:free", name: "Gemma 4 31B (OpenRouter)", provider: "openrouter", isFree: true },
-    { id: "google/gemma-4-26b-a4b-it:free", name: "Gemma 4 26B (OpenRouter)", provider: "openrouter", isFree: true },
-    { id: "nvidia/nemotron-nano-12b-v2-vl:free", name: "Nemotron Nano 12B VL", provider: "openrouter", isFree: true },
-    { id: "openrouter/free", name: "OpenRouter Free Router", provider: "openrouter", isFree: true },
-    { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", isFree: false },
-    { id: "gpt-4o", name: "GPT-4o", provider: "openai", isFree: false },
-    { id: "gpt-4.5-preview", name: "GPT-4.5 Preview", provider: "openai", isFree: false },
-    { id: "o1-mini", name: "o1 Mini", provider: "openai", isFree: false },
-    { id: "o1-preview", name: "o1 Preview", provider: "openai", isFree: false },
-  ];
   const AVAILABLE_STRATEGIES = ["Scalping", "Trend Following", "Breakout", "Mean Reversion", "SMC", "ICT", "Swing Trading", "Custom"];
   const AVAILABLE_INDICATORS = ["RSI", "MACD", "Bollinger Bands", "EMA 20", "EMA 50", "EMA 200", "Volume", "Stochastic", "VWAP", "ATR"];
 
