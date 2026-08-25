@@ -9,6 +9,10 @@ import { AI_REQUEST_CONFIG } from "@/config/models";
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY!,
   baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "Accept-Encoding": "identity",
+    "Connection": "keep-alive"
+  }
 });
 
 function hasMeaningfulProgressiveAnalysis(result: UniversalAIResponse): boolean {
