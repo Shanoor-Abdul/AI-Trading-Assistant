@@ -7,23 +7,28 @@ export interface AIProviderCapability {
   maxOutputTokens: number;
 }
 
+const UNSUPPORTED_CAPABILITY: AIProviderCapability = {
+  vision: false,
+  structuredOutput: false,
+  maxImageCount: 0,
+  maxOutputTokens: 2048,
+};
+
 export function getModelCapabilities(
   provider: string,
   model: string,
-): AIProviderCapability | null {
+): AIProviderCapability {
   const p = provider.trim().toLowerCase();
   const configuredModel = model ? getModelById(model) : undefined;
 
   // When a model is in the central registry, the provider must match exactly.
-  // This prevents requests such as provider=huggingface + an OpenRouter model
-  // from reaching the wrong adapter while preserving fallback support for
-  // provider-native/custom models that are not registered here.
+  // Return a non-vision capability instead of throwing so existing callers keep
+  // the same return type and the mobile route rejects the request before any AI call.
   if (configuredModel && configuredModel.provider !== p) {
-    return null;
+    return UNSUPPORTED_CAPABILITY;
   }
 
-  // The model registry is the single source of truth for vision support.
-  // Unknown models remain subject to provider-native capability checks below.
+  // The model registry is the single source of truth for configured vision support.
   if (configuredModel) {
     return {
       vision: configuredModel.vision,
@@ -65,24 +70,10 @@ export function getModelCapabilities(
     };
   }
 
-  if (p === "openrouter") {
-    // Unknown OpenRouter models are deliberately not assumed to support vision.
-    return {
-      vision: false,
-      structuredOutput: false,
-      maxImageCount: 0,
-      maxOutputTokens: 2048,
-    };
-  }
-
-  if (p === "huggingface") {
-    // Unknown HF models are deliberately not assumed to support vision.
-    return {
-      vision: false,
-      structuredOutput: false,
-      maxImageCount: 0,
-      maxOutputTokens: 2048,
-    };
+  // Unknown OpenRouter/Hugging Face models are deliberately not assumed to
+  // support vision. Registered vision models are handled above.
+  if (p === "openrouter" || p === "huggingface") {
+    return UNSUPPORTED_CAPABILITY;
   }
 
   if (p === "anthropic") {
@@ -95,12 +86,7 @@ export function getModelCapabilities(
     };
   }
 
-  return {
-    vision: false,
-    structuredOutput: false,
-    maxImageCount: 0,
-    maxOutputTokens: 2048,
-  };
+  return UNSUPPORTED_CAPABILITY;
 }
 
 export function isConfiguredVisionModel(provider: string, model: string): boolean {
