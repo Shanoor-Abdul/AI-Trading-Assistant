@@ -49,7 +49,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
 
     const response = await anthropic.messages.create({
       model: currentModel,
-      max_tokens: Math.min(AI_REQUEST_CONFIG.maxOutputTokens || 8192, 8192),
+      max_tokens: currentModel.includes("sonnet") || currentModel.includes("3-7") ? 16384 : 8192,
       messages,
     });
 

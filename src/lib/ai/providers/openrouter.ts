@@ -91,7 +91,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       return openai.chat.completions.create({
         model,
         messages: [{ role: "user", content: retry ? [...messagesContent, { type: "text", text: retryInstruction }] : messagesContent }],
-        max_tokens: Math.min(AI_REQUEST_CONFIG.maxOutputTokens || 6000, 4000),
+        max_tokens: model.includes("sonnet") ? 16384 : 8192,
         temperature: 0.05,
         response_format: { type: "json_object" },
       });
