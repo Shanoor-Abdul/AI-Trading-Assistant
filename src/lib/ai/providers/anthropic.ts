@@ -16,7 +16,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   }
 
   const prompt = (req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req))) + buildCandlestickReferenceInstruction();
-  const currentModel = req.model || "claude-sonnet-5";
+  const currentModel = req.model || "claude-opus-5";
 
   const content: any[] = [];
   if (req.screenshot) {
