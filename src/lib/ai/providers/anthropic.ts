@@ -15,7 +15,8 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     throw new Error("ANTHROPIC_API_KEY_MISSING: Set ANTHROPIC_API_KEY on the server.");
   }
 
-  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req)) + buildCandlestickReferenceInstruction();
+  const prompt = req.promptOverride ? req.promptOverride : (buildUniversalPrompt(req) + buildPriceLevelInstruction(req) + buildCandlestickReferenceInstruction());
+  console.log("[Anthropic] Using promptOverride:", Boolean(req.promptOverride));
   const currentModel = req.model || "claude-haiku-4-5-20251001";
 
   const content: any[] = [];
@@ -39,6 +40,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
 
   content.push({ type: "text", text: prompt });
 
+
   const doRequest = async (retry = false, retryInstruction = "") => {
     const messages: Anthropic.MessageParam[] = [{
       role: "user",
@@ -53,10 +55,10 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
 
     console.log(`[Anthropic Raw Response for ${currentModel}]:`, JSON.stringify(response, null, 2));
     try {
-      require('fs').writeFileSync('anthropic_debug.json', JSON.stringify(response, null, 2));
+      require('fs').writeFileSync(req.rawOutput ? 'anthropic_stage1_debug.json' : 'anthropic_stage2_debug.json', JSON.stringify(response, null, 2));
     } catch (e) {}
     
-    if (response.stop_reason === 'content_filter' || response.content.length === 0) {
+    if (String(response.stop_reason) === 'content_filter' || response.content.length === 0) {
        throw new Error("AI model refused to process the request due to content safety filters.");
     }
 

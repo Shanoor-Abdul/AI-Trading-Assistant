@@ -277,7 +277,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Mobile API Stage 1] Starting image extraction...`);
     const stage1Start = performance.now();
-    const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
+      let stage1Model = baseRequest.model;
+      if (baseRequest.provider === "anthropic") {
+        stage1Model = "claude-haiku-4-5-20251001";
+      } else if (baseRequest.provider === "openrouter") {
+        stage1Model = "anthropic/claude-3.5-haiku";
+      }
+      const extraction = await callProvider({ ...baseRequest, model: stage1Model, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
     const stage1Duration = ((performance.now() - stage1Start) / 1000).toFixed(2);
     console.log(`[Mobile API Stage 1] Finished in ${stage1Duration}s`);
     
