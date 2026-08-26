@@ -43,7 +43,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       content: retry ? [...content, { type: "text", text: retryInstruction }] as any : content,
     }];
 
-    const maxTokens = currentModel.includes("sonnet") || currentModel.includes("3-7") ? 16384 : 8192;
+    const maxTokens = 8192; // Safe limit for all Claude 3.5 models without beta headers
     const response = await anthropic.messages.create({
       model: currentModel,
       max_tokens: maxTokens,
