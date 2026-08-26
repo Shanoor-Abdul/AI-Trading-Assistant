@@ -113,7 +113,8 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
 
         if (req.rawOutput) {
           const match = text.match(/\{[\s\S]*\}/);
-          return (match ? JSON.parse(match[0]) : {}) as any;
+          if (!match) throw new Error("AI_JSON_PARSE_FAILED: OpenRouter returned no JSON object for extraction.");
+          return JSON.parse(match[0]) as any;
         }
 
         const result = normalizeResponse(text, { marketProvider: req.mode === "visual_only" ? "visual_only" : "unknown" });

@@ -51,11 +51,33 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       messages,
     });
 
+    console.log(`[Anthropic Raw Response for ${currentModel}]:`, JSON.stringify(response, null, 2));
+    try {
+      require('fs').writeFileSync('anthropic_debug.json', JSON.stringify(response, null, 2));
+    } catch (e) {}
+    
+    if (response.stop_reason === 'content_filter' || response.content.length === 0) {
+       throw new Error("AI model refused to process the request due to content safety filters.");
+    }
+
     const textBlocks = response.content.filter((block) => block.type === 'text');
-    return textBlocks.map((block: any) => block.text).join("\n") || "{}";
+    const text = textBlocks.map((block: any) => block.text).join("\n");
+    if (!text.trim()) {
+      throw new Error("AI model returned an empty text response.");
+    }
+    return text;
   };
 
-  let textResponse = await doRequest();
+  let textResponse;
+  try {
+    textResponse = await doRequest();
+  } catch (error: any) {
+    if (error.message.includes("content safety filters")) {
+      throw error;
+    }
+    console.error("Anthropic API failed. Retrying...", error);
+    textResponse = await doRequest(true, `Your previous response failed. PLEASE return ONLY valid JSON matching the exact requested schema.`);
+  }
 
   try {
     // Stage 1 is an extraction contract, not the final UniversalAIResponse.

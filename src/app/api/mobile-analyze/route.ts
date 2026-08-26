@@ -252,6 +252,8 @@ function hasFinalEvidence(result: any): boolean {
 
 export async function POST(request: NextRequest) {
   const started = performance.now();
+  console.log(`\n======================================================`);
+  console.log(`[Mobile API] Started mobile analysis at ${new Date().toISOString()}`);
   try {
     const body = await request.json();
     const rawImage = typeof body?.imageBase64 === "string" ? body.imageBase64.trim() : "";
@@ -260,6 +262,8 @@ export async function POST(request: NextRequest) {
 
     const provider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "gemini";
     const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
+    console.log(`[Mobile API] Request params: ${body.symbol} | ${body.timeframe} | Provider: ${provider} | Model: ${model}`);
+    
     const capabilities = getModelCapabilities(provider, model || "");
     if (!capabilities) return NextResponse.json({ error: `Unknown AI provider/model: ${provider}/${model || "default"}`, code: "MOBILE_MODEL_UNKNOWN", analysisType: "mobile_visual" }, { status: 400 });
     if (!capabilities.vision) return NextResponse.json({ error: `Selected AI model (${model || "default"}) does not support image analysis or provider/model do not match.`, code: "MOBILE_MODEL_NO_VISION", analysisType: "mobile_visual" }, { status: 400 });
@@ -271,13 +275,26 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: true, isProgressive: false,
     });
 
+    console.log(`[Mobile API Stage 1] Starting image extraction...`);
+    const stage1Start = performance.now();
     const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
+    const stage1Duration = ((performance.now() - stage1Start) / 1000).toFixed(2);
+    console.log(`[Mobile API Stage 1] Finished in ${stage1Duration}s`);
+    
+    console.log(`[Mobile API Stage 1 Raw Output]:\n`, JSON.stringify(extraction, null, 2));
+
     if (!hasExtractionEvidence(extraction)) {
+      console.log(`[Mobile API Stage 1] FAILED: No usable chart evidence extracted.`);
       return NextResponse.json({ error: "Mobile extraction returned no usable chart evidence.", code: "MOBILE_EXTRACTION_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction"], extraction } }, { status: 502 });
     }
 
+    console.log(`[Mobile API Stage 2] Starting analysis with extracted data...`);
+    const stage2Start = performance.now();
     const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
     const stage2 = await callProvider(analysisRequest);
+    const stage2Duration = ((performance.now() - stage2Start) / 1000).toFixed(2);
+    console.log(`[Mobile API Stage 2] Finished in ${stage2Duration}s`);
+
     const merged = mergeExtraction(stage2, extraction, baseRequest);
     const signalRules = calculateMobileSignalRules(extraction);
     const gated = {
@@ -293,8 +310,13 @@ export async function POST(request: NextRequest) {
     const mergedWithConfidence = { ...gated, confidence: signalConfidence, dataConfidence: signalConfidence, evidenceScore: Math.max(gated.evidenceScore || 0, signalConfidence), confidenceSource: "server_evidence_confluence" };
     const validated = UniversalAIResponseSchema.parse(mergedWithConfidence);
     if (!hasFinalEvidence(validated)) {
+      console.log(`[Mobile API Stage 2] FAILED: Analysis empty or invalid.`);
       return NextResponse.json({ error: "Mobile signal analysis returned an empty or invalid analysis.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction", "evidence_analysis", "confluence_gate"], extraction, analysis: validated } }, { status: 502 });
     }
+
+    const totalDuration = ((performance.now() - started) / 1000).toFixed(2);
+    console.log(`[Mobile API] Completed successfully in ${totalDuration}s`);
+    console.log(`======================================================\n`);
 
     return NextResponse.json({
       ...validated, analysisType: "mobile_visual", extractionOnly: false, source: "mobile_separate",
@@ -307,7 +329,9 @@ export async function POST(request: NextRequest) {
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {
-    console.error("[Mobile Analysis API Error]", error);
+    console.error(`\n[Mobile Analysis API Error]`, error);
+    if (error?.stack) console.error(`[Mobile Analysis API Stack]`, error.stack);
+    console.log(`======================================================\n`);
     return NextResponse.json({ error: error?.message || "Mobile chart analysis failed", code: "MOBILE_ANALYSIS_FAILED", analysisType: "mobile_visual" }, { status: 500 });
   }
 }

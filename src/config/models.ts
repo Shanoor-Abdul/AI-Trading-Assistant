@@ -17,7 +17,8 @@ export interface AIModel {
 // exposes models explicitly marked vision=true.
 // isFree is a UI/account-tier hint; it does not mean unlimited inference.
 export const AI_MODELS: AIModel[] = [
-  { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic", isFree: false, vision: true },
+  { id: "claude-sonnet-5", name: "Claude Sonnet 5 (Native)", provider: "anthropic", isFree: false, vision: true },
+  { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "openrouter", isFree: false, vision: true },
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic", isFree: false, vision: true },
   { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet (Native)", provider: "anthropic", isFree: false, vision: true },
   { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku (Native)", provider: "anthropic", isFree: false, vision: true },
