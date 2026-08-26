@@ -17,6 +17,49 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
+    id: "anthropic/claude-3-haiku",
+    name: "Claude 3 Haiku",
+    provider: "openrouter",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "anthropic/claude-3-5-sonnet",
+    name: "Claude 3.5 Sonnet",
+    provider: "openrouter",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "google/gemini-flash-1.5",
+    name: "Gemini 1.5 Flash",
+    provider: "openrouter",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "google/gemini-2.0-flash-lite-preview-02-05:free",
+    name: "Gemini 2.0 Flash Lite (Free)",
+    provider: "openrouter",
+    isFree: true,
+    vision: true,
+  },
+  {
+    id: "meta-llama/llama-3-8b-instruct:free",
+    name: "Llama 3 8B (Free)",
+    provider: "openrouter",
+    isFree: true,
+    vision: true, 
+  },
+  {
+    id: "qwen/qwen-2-7b-instruct:free",
+    name: "Qwen 2 7B (Free)",
+    provider: "openrouter",
+    isFree: true,
+    vision: true, 
+  },
+
+  {
     id: "claude-sonnet-5",
     name: "Claude Sonnet 5 (Native)",
     provider: "anthropic",
