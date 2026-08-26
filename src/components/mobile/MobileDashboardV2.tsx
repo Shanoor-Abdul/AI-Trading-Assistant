@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { MobileResultCard } from "@/components/mobile/MobileResultCard";
 import { MobileHistory } from "@/components/mobile/MobileHistory";
-import { getModelsByProvider } from "@/config/models";
+import { getVisionModelsByProvider } from "@/config/models";
 import { LogoutButton } from "@/components/LogoutButton";
 import { MobileMultiSelect } from "@/components/mobile/MobileMultiSelect";
 
@@ -35,16 +35,21 @@ export default function MobileDashboardV2() {
       img.onload = async () => {
         let width = img.width;
         let height = img.height;
-        const MAX_SIZE = 1920;
-        if (width > height && width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-        else if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+        // Keep enough resolution for small candle bodies, wicks and indicator labels.
+        // Do not upscale screenshots that are already smaller than this limit.
+        const MAX_SIZE = 2560;
+        const JPEG_QUALITY = 0.9;
+        if (width > height && width > MAX_SIZE) { height = Math.round(height * MAX_SIZE / width); width = MAX_SIZE; }
+        else if (height >= width && height > MAX_SIZE) { width = Math.round(width * MAX_SIZE / height); height = MAX_SIZE; }
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        ctx.drawImage(img, 0, 0, width, height);
-        const base64 = canvas.toDataURL("image/jpeg", 0.7);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
         const imageId = crypto.randomUUID();
         await ImageStore.saveImage(imageId, base64);
         setField("previewImageBase64", base64);
@@ -95,7 +100,7 @@ export default function MobileDashboardV2() {
   const renderModelGroup = (provider: "gemini" | "groq" | "openai" | "openrouter" | "huggingface" | "anthropic", label: string) => (
     <SelectGroup>
       <SelectLabel className="text-zinc-500 text-xs mt-2">{label}</SelectLabel>
-      {getModelsByProvider(provider).map((model) => (
+      {getVisionModelsByProvider(provider).map((model) => (
         <SelectItem key={model.id} value={`${provider}:${model.id}`}>
           {model.name}
         </SelectItem>
