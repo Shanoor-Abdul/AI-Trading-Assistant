@@ -4,11 +4,10 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   btn.innerText = "Extracting Chart Data...";
   btn.disabled = true;
 
-  // 1. Ask content script to scrape the DOM
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.tabs.sendMessage(tabs[0].id, { action: "SCRAPE_DATA" }, async (response) => {
       if (!response || response.error) {
-        alert("Failed to read chart data from page.");
+        alert("Failed to read chart data from page. Did you refresh the broker page?");
         btn.innerText = "Analyze & Auto-Trade";
         btn.disabled = false;
         return;
@@ -21,7 +20,6 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
       const model = document.getElementById("model").value;
 
       try {
-        // 2. Send the extracted text data to our local backend
         const apiRes = await fetch("http://localhost:3000/api/mobile-analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -34,29 +32,41 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
             platform: "Binany",
             selectedStrategies: ["Mean Reversion", "Trend Following"],
             visibleIndicators: ["MACD", "RSI", "Bollinger Bands"],
-            extractedTextData: response.data // Custom field we will add to backend
+            extractedTextData: response.data 
           })
         });
 
         const result = await apiRes.json();
         
-        // 3. Display result
         const resultDiv = document.getElementById("result");
         const signalText = document.getElementById("signalText");
         const reasoningText = document.getElementById("reasoningText");
         
         resultDiv.style.display = "block";
+
+        if (result.error) {
+           signalText.innerText = "API Error";
+           signalText.className = "signal sell";
+           reasoningText.innerText = result.error + (result.code ? " (" + result.code + ")" : "");
+           return;
+        }
+
         signalText.innerText = result.signal + " (Conf: " + result.confidence + "%)";
         signalText.className = "signal " + (result.signal === "BUY" ? "buy" : result.signal === "SELL" ? "sell" : "wait");
         reasoningText.innerText = result.reasoning;
 
-        // 4. Auto-click the button on the broker page if BUY or SELL
         if (result.signal === "BUY" || result.signal === "SELL") {
            chrome.tabs.sendMessage(tabs[0].id, { action: "AUTO_TRADE", signal: result.signal });
         }
 
       } catch (err) {
-        alert("API Error: " + err.message);
+        const resultDiv = document.getElementById("result");
+        const signalText = document.getElementById("signalText");
+        const reasoningText = document.getElementById("reasoningText");
+        resultDiv.style.display = "block";
+        signalText.innerText = "Network Error";
+        signalText.className = "signal sell";
+        reasoningText.innerText = err.message + " (Is your Next.js local server running on port 3000?)";
       } finally {
         btn.innerText = "Analyze & Auto-Trade";
         btn.disabled = false;
