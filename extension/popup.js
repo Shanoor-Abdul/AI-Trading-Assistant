@@ -31,7 +31,9 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const indSelect = document.getElementById("indicators");
   const visibleIndicators = Array.from(indSelect.selectedOptions).map(opt => opt.value);
   const selectedStrategies = [document.getElementById("strategies").value];
-  const model = document.getElementById("model").value;
+  const modelSelect = document.getElementById("model");
+  const model = modelSelect.value;
+  const provider = modelSelect.options[modelSelect.selectedIndex].getAttribute("data-provider") || "openrouter";
 
   btn.innerText = isCaptureMode ? "Capturing Image..." : "Scraping Text...";
 
@@ -68,7 +70,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
         symbol,
         timeframe,
         tradeDuration: tradeDuration,
-        provider: "openrouter",
+        provider: provider,
         model: model,
         platform: "Binany",
         selectedStrategies: selectedStrategies.length ? selectedStrategies : ["Auto"],

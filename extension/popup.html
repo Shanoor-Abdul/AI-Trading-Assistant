@@ -69,28 +69,21 @@
     <option value="Scalping">Scalping</option>
   </select>
 
-  <label>AI Model</label>
+    <label>AI Model</label>
   <select id="model">
     <optgroup label="OpenRouter (Free)">
-      <option value="openrouter/free">OpenRouter Free Models Router</option>
-      <option value="google/gemini-2.0-flash-lite-preview-02-05:free">Gemini 2.0 Flash Lite (Free)</option>
-      <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
-      <option value="qwen/qwen-2-7b-instruct:free">Qwen 2 7B (Free)</option>
+      <option value="openrouter/free" data-provider="openrouter">OpenRouter Free Models</option>
+      <option value="google/gemini-2.0-flash-lite-preview-02-05:free" data-provider="openrouter">Gemini 2.0 Flash Lite (Free)</option>
+      <option value="meta-llama/llama-3-8b-instruct:free" data-provider="openrouter">Llama 3 8B (Free)</option>
+    </optgroup>
+    <optgroup label="Anthropic (Native API Key)">
+      <option value="claude-3-5-sonnet-20241022" data-provider="anthropic">Claude 3.5 Sonnet (Native)</option>
+      <option value="claude-3-5-haiku-20241022" data-provider="anthropic">Claude 3.5 Haiku (Native)</option>
     </optgroup>
     <optgroup label="OpenRouter (Pro)">
-      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-      <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-    </optgroup>
-    <optgroup label="Anthropic">
-      <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-    </optgroup>
-    <optgroup label="OpenAI">
-      <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-      <option value="openai/gpt-4o">GPT-4o</option>
-    </optgroup>
-    <optgroup label="Google">
-      <option value="google/gemini-flash-1.5">Gemini 1.5 Flash</option>
+      <option value="openai/gpt-4o-mini" data-provider="openrouter">GPT-4o Mini</option>
+      <option value="openai/gpt-4o" data-provider="openrouter">GPT-4o</option>
+      <option value="google/gemini-flash-1.5" data-provider="openrouter">Gemini 1.5 Flash</option>
     </optgroup>
   </select>
 
