@@ -3,20 +3,20 @@ import { UniversalAIRequest, UniversalAIResponse } from "../schema";
 import { buildUniversalPrompt } from "../universalPrompt";
 import { buildPriceLevelInstruction } from "../priceLevelPrompt";
 import { buildCandlestickReferenceInstruction } from "../candlestickKnowledge";
-import { normalizeResponse } from "../normalizeResponse";
+import { normalizeResponse, extractJSON } from "../normalizeResponse";
 import { AI_REQUEST_CONFIG } from '@/config/models';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
 });
 
-export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
+export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse | any> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY_MISSING: Set ANTHROPIC_API_KEY on the server.");
   }
 
-  const prompt = (req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req))) + buildCandlestickReferenceInstruction();
-  const currentModel = req.model || "claude-opus-5";
+  const prompt = req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req)) + buildCandlestickReferenceInstruction();
+  const currentModel = req.model || "claude-haiku-4-5-20251001";
 
   const content: any[] = [];
   if (req.screenshot) {
@@ -58,13 +58,17 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   let textResponse = await doRequest();
 
   try {
-    const res = normalizeResponse(textResponse);
-    if (req.rawOutput) return res;
-    return res;
+    // Stage 1 is an extraction contract, not the final UniversalAIResponse.
+    // Preserve the complete extraction object so mobile-analyze can consume
+    // currentPrice, candles, indicators, BB/RSI/MACD and pattern candidates.
+    if (req.rawOutput) return extractJSON(textResponse);
+
+    return normalizeResponse(textResponse);
   } catch (error: any) {
     console.error("Anthropic JSON parsing failed. Retrying...", error);
-    textResponse = await doRequest(true, `Your previous response was not valid JSON or failed schema validation. Error: ${error?.message || String(error)}. PLEASE return ONLY valid JSON matching the exact requested schema with no markdown wrapping or preamble.`);
-    const res = normalizeResponse(textResponse);
-    return res;
+    textResponse = await doRequest(true, `Your previous response was not valid JSON or failed the requested schema. Error: ${error?.message || String(error)}. PLEASE return ONLY valid JSON matching the exact requested schema with no markdown wrapping or preamble.`);
+
+    if (req.rawOutput) return extractJSON(textResponse);
+    return normalizeResponse(textResponse);
   }
 }
