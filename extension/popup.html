@@ -16,6 +16,10 @@
     optgroup { font-weight: bold; color: #93c5fd; background: #09090b; }
     option { color: #fff; }
     
+    .levels { margin-bottom: 12px; background: #27272a; padding: 8px; border-radius: 4px; display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; display: none; }
+    .level-item { display: flex; flex-direction: column; }
+    .level-label { font-size: 10px; color: #a1a1aa; font-weight: normal; margin-bottom: 2px; }
+
     .toggle-container { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; background: #18181b; padding: 10px; border-radius: 6px; border: 1px solid #3f3f46; }
     .toggle-label { font-size: 13px; font-weight: bold; color: #fff; margin: 0;}
     .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
@@ -90,6 +94,11 @@
 
   <div id="result">
     <div id="signalText" class="signal"></div>
+    <div id="levelsDiv" class="levels">
+      <div class="level-item"><span class="level-label">ENTRY</span><span id="entryVal">--</span></div>
+      <div class="level-item"><span class="level-label">TARGET</span><span id="targetVal">--</span></div>
+      <div class="level-item"><span class="level-label">STOP LOSS</span><span id="slVal">--</span></div>
+    </div>
     <div id="reasoningText"></div>
     <div id="actionText" style="margin-top: 10px; font-size: 11px; color: #93c5fd; font-style: italic;"></div>
   </div>

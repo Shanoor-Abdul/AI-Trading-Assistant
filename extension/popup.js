@@ -4,14 +4,23 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   btn.disabled = true;
 
   // Clear previous results immediately
+
+  // Clear previous results immediately
   const resultDiv = document.getElementById("result");
   const signalText = document.getElementById("signalText");
   const reasoningText = document.getElementById("reasoningText");
   const actionText = document.getElementById("actionText");
+  const levelsDiv = document.getElementById("levelsDiv");
+  const entryVal = document.getElementById("entryVal");
+  const targetVal = document.getElementById("targetVal");
+  const slVal = document.getElementById("slVal");
+  
   resultDiv.style.display = "none";
+  levelsDiv.style.display = "none";
   signalText.innerText = "";
   reasoningText.innerText = "";
   actionText.innerText = "";
+
 
 
   const isCaptureMode = document.getElementById("captureModeToggle").checked;
@@ -83,10 +92,19 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
        return;
     }
 
+
     const conf = result.confidence || 0;
     signalText.innerText = result.signal + " (Conf: " + conf + "%)";
     signalText.className = "signal " + (result.signal === "BUY" ? "buy" : result.signal === "SELL" ? "sell" : "wait");
     reasoningText.innerText = result.reasoning;
+    
+    if (result.entryPrice || result.takeProfit || result.stopLoss) {
+       levelsDiv.style.display = "flex";
+       entryVal.innerText = result.entryPrice || "--";
+       targetVal.innerText = result.takeProfit || "--";
+       slVal.innerText = result.stopLoss || "--";
+    }
+
 
     // --- STEP 4: AUTO-TRADE VALIDATION ---
     if (result.signal === "BUY" || result.signal === "SELL") {
