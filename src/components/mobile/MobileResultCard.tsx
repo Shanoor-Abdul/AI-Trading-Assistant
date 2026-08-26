@@ -11,7 +11,19 @@ function confidence(value: unknown): number {
 
 function displayValue(value: any): string | null {
   if (value === null || value === undefined || value === "") return null;
-  return typeof value === "number" ? String(value) : String(value);
+  if (typeof value === "object") {
+    // Mobile extraction now uses observation objects such as
+    // { type, value, confidence }. Never pass those objects directly to JSX.
+    if ("value" in value) return displayValue(value.value);
+    if ("state" in value) return displayValue(value.state);
+    if ("label" in value) return displayValue(value.label);
+    return null;
+  }
+  return String(value);
+}
+
+function textValue(value: any, fallback = "UNKNOWN"): string {
+  return displayValue(value) ?? fallback;
 }
 
 function indicatorNumericFacts(name: string, value: any): string[] {
@@ -30,7 +42,7 @@ function indicatorNumericFacts(name: string, value: any): string[] {
   if (name === "RSI") {
     const values = Array.isArray(value.values) ? value.values : [];
     values.forEach((item: any, index: number) => {
-      const numeric = displayValue(item?.value);
+      const numeric = displayValue(item?.value ?? item);
       if (numeric != null) facts.push(`${item?.period || `RSI${index + 1}`}: ${numeric}`);
     });
     for (const key of ["rsi1", "rsi2", "rsi3"]) {
@@ -61,12 +73,15 @@ export function MobileResultCard() {
   const indicators = unified.indicators || {};
   const extraction = result.mobilePipeline?.extraction || {};
   const evidence = Array.isArray(extraction.visualEvidence) ? extraction.visualEvidence : [];
-  const extractedPrice = unified.currentPrice?.value ?? extraction.currentPrice?.value ?? null;
+  const extractedPrice = displayValue(unified.currentPrice) ?? displayValue(extraction.currentPrice);
   const priceConfidence = confidence(unified.currentPrice?.confidence ?? extraction.currentPrice?.confidence);
   const extractionConfidence = confidence(
     result.mobilePipeline?.extractionConfidence ?? unified.extractionConfidence ?? extraction.extractionConfidence,
   );
   const visibleIndicators = Object.entries(indicators).filter(([, value]: any) => value?.visible === true);
+  const trend = textValue(result.trend, "UNKNOWN");
+  const signal = textValue(result.signal, "WAIT");
+  const resultConfidence = confidence(result.confidence);
 
   return (
     <Card className="glass-card border-none mt-4 animate-in fade-in-0 slide-in-from-bottom-4">
@@ -78,20 +93,20 @@ export function MobileResultCard() {
           <div>
             <div className="text-xs text-zinc-400 mb-1">Trend</div>
             <div className="flex items-center gap-2 font-bold">
-              {analysisResult.trend === 'Bullish' ? <TrendingUp className="text-green-400 w-4 h-4" /> :
-               analysisResult.trend === 'Bearish' ? <TrendingDown className="text-red-400 w-4 h-4" /> :
+              {trend === "Bullish" ? <TrendingUp className="text-green-400 w-4 h-4" /> :
+               trend === "Bearish" ? <TrendingDown className="text-red-400 w-4 h-4" /> :
                <Minus className="text-zinc-400 w-4 h-4" />}
-              {analysisResult.trend}
+              {trend}
             </div>
           </div>
           <div className="text-right">
             <div className="text-xs text-zinc-400 mb-1">Signal</div>
             <div className={`text-xl font-black ${
-              analysisResult.signal === 'BUY' || analysisResult.signal === 'STRONG_BUY' ? 'text-green-500' :
-              analysisResult.signal === 'SELL' || analysisResult.signal === 'STRONG_SELL' ? 'text-red-500' :
-              analysisResult.signal === 'UNSURE' ? 'text-orange-500' : 'text-yellow-500'
+              signal === "BUY" || signal === "STRONG_BUY" ? "text-green-500" :
+              signal === "SELL" || signal === "STRONG_SELL" ? "text-red-500" :
+              signal === "UNSURE" ? "text-orange-500" : "text-yellow-500"
             }`}>
-              {analysisResult.signal}
+              {signal}
             </div>
           </div>
         </div>
@@ -99,9 +114,9 @@ export function MobileResultCard() {
         <div>
           <div className="flex justify-between items-center mb-1">
             <span className="text-xs text-zinc-400">Analysis Confidence</span>
-            <span className="text-xs font-mono">{analysisResult.confidence}%</span>
+            <span className="text-xs font-mono">{resultConfidence}%</span>
           </div>
-          <Progress value={analysisResult.confidence} className="h-1.5 bg-zinc-800" />
+          <Progress value={resultConfidence} className="h-1.5 bg-zinc-800" />
         </div>
 
         {(extractedPrice != null || visibleIndicators.length > 0 || evidence.length > 0 || extractionConfidence > 0) && (
@@ -111,9 +126,7 @@ export function MobileResultCard() {
                 <ScanSearch className="w-4 h-4 text-cyan-400" />
                 Visual Extraction
               </div>
-              <span className="text-[11px] font-mono text-cyan-300">
-                {extractionConfidence}% quality
-              </span>
+              <span className="text-[11px] font-mono text-cyan-300">{extractionConfidence}% quality</span>
             </div>
 
             {extractedPrice != null && (
@@ -131,19 +144,19 @@ export function MobileResultCard() {
                 {visibleIndicators.map(([name, value]: any) => {
                   const exact = displayValue(value?.value);
                   const approximate = displayValue(value?.approximateValue);
-                  const state = value?.state && value.state !== "UNKNOWN" ? value.state : null;
-                  const zone = value?.zone && value.zone !== "UNKNOWN" ? value.zone : null;
-                  const position = value?.position && value.position !== "UNKNOWN" ? value.position : null;
-                  const direction = value?.direction && value.direction !== "UNKNOWN" ? value.direction : null;
-                  const nearestBand = value?.nearestBand && value.nearestBand !== "UNKNOWN" ? value.nearestBand : null;
-                  const width = value?.width && value.width !== "UNKNOWN" ? value.width : null;
+                  const state = value?.state && value.state !== "UNKNOWN" ? displayValue(value.state) : null;
+                  const zone = value?.zone && value.zone !== "UNKNOWN" ? displayValue(value.zone) : null;
+                  const position = value?.position && value.position !== "UNKNOWN" ? displayValue(value.position) : null;
+                  const direction = value?.direction && value.direction !== "UNKNOWN" ? displayValue(value.direction) : null;
+                  const nearestBand = value?.nearestBand && value.nearestBand !== "UNKNOWN" ? displayValue(value.nearestBand) : null;
+                  const width = value?.width && value.width !== "UNKNOWN" ? displayValue(value.width) : null;
                   const numericFacts = indicatorNumericFacts(name, value);
                   const c = confidence(value?.confidence);
 
                   return (
                     <div key={name} className="rounded-md border border-zinc-800 bg-black/20 p-2">
                       <div className="flex justify-between gap-2 text-[11px]">
-                        <span className="font-medium text-zinc-200">{name}</span>
+                        <span className="font-medium text-zinc-200">{String(name)}</span>
                         <span className="text-zinc-500">{c}%</span>
                       </div>
                       <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1 text-[10px] text-zinc-400">
@@ -156,8 +169,8 @@ export function MobileResultCard() {
                         {position && <span>position: {position}</span>}
                         {nearestBand && <span>nearest: {nearestBand}</span>}
                         {width && <span>width: {width}</span>}
-                        {value?.lineRelationship && value.lineRelationship !== "UNKNOWN" && <span>lines: {value.lineRelationship}</span>}
-                        {value?.histogramDirection && value.histogramDirection !== "UNKNOWN" && <span>histogram: {value.histogramDirection}</span>}
+                        {displayValue(value?.lineRelationship) && displayValue(value.lineRelationship) !== "UNKNOWN" && <span>lines: {displayValue(value.lineRelationship)}</span>}
+                        {displayValue(value?.histogramDirection) && displayValue(value.histogramDirection) !== "UNKNOWN" && <span>histogram: {displayValue(value.histogramDirection)}</span>}
                       </div>
                     </div>
                   );
@@ -167,35 +180,27 @@ export function MobileResultCard() {
 
             {evidence.length > 0 && (
               <ul className="space-y-1 text-[11px] text-zinc-300">
-                {evidence.slice(0, 8).map((item: any, index: number) => (
-                  <li key={`${index}-${item}`} className="leading-relaxed">• {item}</li>
-                ))}
+                {evidence.slice(0, 8).map((item: any, index: number) => {
+                  const text = displayValue(item);
+                  return text ? <li key={`${index}-${text}`} className="leading-relaxed">• {text}</li> : null;
+                })}
               </ul>
             )}
           </div>
         )}
 
-        {(analysisResult.signal === 'BUY' || analysisResult.signal === 'SELL' || analysisResult.signal === 'STRONG_BUY' || analysisResult.signal === 'STRONG_SELL') && (
+        {(signal === "BUY" || signal === "SELL" || signal === "STRONG_BUY" || signal === "STRONG_SELL") && (
           <div className="grid grid-cols-3 gap-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
-            <div>
-              <div className="text-[10px] text-zinc-500">Entry</div>
-              <div className="font-mono text-sm text-zinc-200">{analysisResult.entryPrice || "-"}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-zinc-500">Target (TP)</div>
-              <div className="font-mono text-sm text-green-400">{analysisResult.takeProfit || "-"}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-zinc-500">Stop Loss (SL)</div>
-              <div className="font-mono text-sm text-red-400">{analysisResult.stopLoss || "-"}</div>
-            </div>
+            <div><div className="text-[10px] text-zinc-500">Entry</div><div className="font-mono text-sm text-zinc-200">{displayValue(result.entryPrice) || "-"}</div></div>
+            <div><div className="text-[10px] text-zinc-500">Target (TP)</div><div className="font-mono text-sm text-green-400">{displayValue(result.takeProfit) || "-"}</div></div>
+            <div><div className="text-[10px] text-zinc-500">Stop Loss (SL)</div><div className="font-mono text-sm text-red-400">{displayValue(result.stopLoss) || "-"}</div></div>
           </div>
         )}
 
         <div>
           <div className="text-xs text-zinc-400 mb-1">Reasoning</div>
           <p className="text-xs text-zinc-300 bg-black/40 p-3 rounded-md border border-white/5 leading-relaxed">
-            {analysisResult.explanation}
+            {textValue(result.explanation, "No explanation provided")}
           </p>
         </div>
       </CardContent>
