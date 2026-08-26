@@ -17,13 +17,8 @@ export interface AIModel {
 // exposes models explicitly marked vision=true.
 // isFree is a UI/account-tier hint; it does not mean unlimited inference.
 export const AI_MODELS: AIModel[] = [
-  {
-  id: "claude-sonnet-5",
-  name: "Claude Sonnet 5",
-  provider: "anthropic",
-  isFree: false,
-  vision: true,
-},
+  { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic", isFree: false, vision: true },
+  { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic", isFree: false, vision: true },
   { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet (Native)", provider: "anthropic", isFree: false, vision: true },
   { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku (Native)", provider: "anthropic", isFree: false, vision: true },
   { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite (High Rate Limit)", provider: "gemini", isFree: true, vision: true },
@@ -49,18 +44,10 @@ export const AI_MODELS: AIModel[] = [
   { id: "zai-org/GLM-4.5V", name: "GLM-4.5V (HF Vision)", provider: "huggingface", isFree: true, vision: true },
 ];
 
-export const getModelsByProvider = (provider: AIProvider) =>
-  AI_MODELS.filter((model) => model.provider === provider);
-
-export const getVisionModelsByProvider = (provider: AIProvider) =>
-  AI_MODELS.filter((model) => model.provider === provider && model.vision);
-
-export const getModelById = (id: string) =>
-  AI_MODELS.find((model) => model.id === id);
-
+export const getModelsByProvider = (provider: AIProvider) => AI_MODELS.filter((model) => model.provider === provider);
+export const getVisionModelsByProvider = (provider: AIProvider) => AI_MODELS.filter((model) => model.provider === provider && model.vision);
+export const getModelById = (id: string) => AI_MODELS.find((model) => model.id === id);
 export const getModelForProvider = (provider: string, model: string) => {
   const normalizedProvider = provider.trim().toLowerCase();
-  return AI_MODELS.find(
-    (item) => item.id === model && item.provider === normalizedProvider,
-  );
+  return AI_MODELS.find((item) => item.id === model && item.provider === normalizedProvider);
 };
