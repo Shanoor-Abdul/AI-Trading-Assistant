@@ -28,6 +28,10 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const symbol = document.getElementById("symbol").value;
   const timeframe = document.getElementById("timeframe").value;
   const tradeDuration = document.getElementById("tradeDuration").value;
+  const indicatorsRaw = document.getElementById("indicators").value;
+  const strategiesRaw = document.getElementById("strategies").value;
+  const visibleIndicators = indicatorsRaw.split(",").map(s => s.trim()).filter(Boolean);
+  const selectedStrategies = strategiesRaw.split(",").map(s => s.trim()).filter(Boolean);
   const model = document.getElementById("model").value;
 
   btn.innerText = isCaptureMode ? "Capturing Image..." : "Scraping Text...";
@@ -68,8 +72,8 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
         provider: "openrouter",
         model: model,
         platform: "Binany",
-        selectedStrategies: ["Mean Reversion", "Trend Following"],
-        visibleIndicators: ["MACD", "RSI", "Bollinger Bands"],
+        selectedStrategies: selectedStrategies.length ? selectedStrategies : ["Auto"],
+        visibleIndicators: visibleIndicators,
         imageBase64: payloadBase64,       // Will be null if Text Mode
         extractedTextData: payloadText    // Will be null if Capture Mode
       })
