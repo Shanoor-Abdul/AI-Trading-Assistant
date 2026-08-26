@@ -17,6 +17,27 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
+    id: "claude-sonnet-5",
+    name: "Claude 5 Sonnet",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "claude-opus-5",
+    name: "Claude 5 Opus",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "claude-fable-5",
+    name: "Claude 5 Fable",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
     id: "anthropic/claude-3-haiku",
     name: "Claude 3 Haiku",
     provider: "openrouter",
