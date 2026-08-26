@@ -24,7 +24,7 @@ export const AI_MODELS: AIModel[] = [
     vision: true,
   },
   {
-    id: "anthropic/claude-3-5-sonnet",
+    id: "anthropic/claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet",
     provider: "openrouter",
     isFree: false,
