@@ -3,6 +3,7 @@ import { analyze as analyzeGemini } from "@/lib/ai/providers/gemini";
 import { analyze as analyzeOpenAI } from "@/lib/ai/providers/openai";
 import { analyze as analyzeGroq } from "@/lib/ai/providers/groq";
 import { analyze as analyzeOpenRouter } from "@/lib/ai/providers/openrouter";
+import { analyze as analyzeAnthropic } from "@/lib/ai/providers/anthropic";
 import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/schema";
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
@@ -29,6 +30,7 @@ async function callProvider(req: any) {
     case "openai": return analyzeOpenAI(req);
     case "groq": return analyzeGroq(req);
     case "openrouter": return analyzeOpenRouter(req);
+      case "anthropic": return analyzeAnthropic(req);
     default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
   }
 }
@@ -242,50 +244,61 @@ export async function POST(request: NextRequest) {
     const baseRequest = UniversalAIRequestSchema.parse({
       mode: "visual_only", provider, model, platform: String(body.platform || "Unknown"), symbol: String(body.symbol), primaryTimeframe: String(body.timeframe), tradeDuration: String(body.tradeDuration),
       selectedStrategies: Array.isArray(body.selectedStrategies) ? body.selectedStrategies : ["Auto (AI Selection)"],
-      visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: true, isProgressive: false,
+      visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: false, isProgressive: false,
     });
 
-    const extraction = await callProvider({ ...baseRequest, promptOverride: buildMobileExtractionPrompt(baseRequest), rawOutput: true, isProgressive: false });
-    if (!hasExtractionEvidence(extraction)) {
-      return NextResponse.json({ error: "Mobile extraction returned no usable chart evidence.", code: "MOBILE_EXTRACTION_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction"], extraction } }, { status: 502 });
-    }
+    const combinedPrompt = `You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
+They are considering a trade with a ${body.tradeDuration} duration.
+Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
+Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
 
-    const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
-    const stage2 = await callProvider(analysisRequest);
-    const merged = mergeExtraction(stage2, extraction, baseRequest);
+First, carefully extract all visible data from the chart image:
+1. The exact current price of the asset.
+2. Indicator values (e.g., RSI value, MACD lines/histogram, Bollinger Bands position).
+3. Any visible support or resistance levels.
+4. Trend direction and structure.
 
-    const signalRules = calculateMobileSignalRules(extraction);
-    const gated = {
-      ...merged,
-      trend: signalRules.trend,
-      signal: signalRules.signal,
-      bullishEvidence: Array.from(new Set([...(merged?.bullishEvidence || []), ...signalRules.bullishEvidence])).slice(0, 10),
-      bearishEvidence: Array.from(new Set([...(merged?.bearishEvidence || []), ...signalRules.bearishEvidence])).slice(0, 10),
-      strategyConflicts: Array.from(new Set([...(merged?.strategyConflicts || []), ...signalRules.conflicts])).slice(0, 10),
-      strategyConsensus: signalRules.signal === "WAIT" ? "Insufficient confluence" : "Weighted confluence aligned",
-      evidenceScore: Math.max(signalRules.bullishScore, signalRules.bearishScore),
+Then, based ONLY on the data you extracted, provide a highly accurate trading signal.
+
+Output your final analysis strictly as a JSON object matching this exact structure (and absolutely no markdown formatting outside of the JSON block):
+{
+  "trend": "Bullish", "Bearish", or "Sideways",
+  "signal": "BUY", "SELL", or "WAIT",
+  "marketState": "Brief description of current market context",
+  "entryPrice": number (suggested entry price),
+  "takeProfit": number,
+  "stopLoss": number,
+  "confidence": number (0-100),
+  "reasoning": "Detailed explanation of why this trade was chosen based on the extracted values and indicators",
+  "explanation": "A short summary for the user"
+}
+`;
+
+    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: combinedPrompt, rawOutput: false, isProgressive: false });
+    
+    // Ensure all required fields exist
+    const finalData = {
+      trend: finalAnalysis.trend || "Sideways",
+      signal: finalAnalysis.signal || "WAIT",
+      marketState: finalAnalysis.marketState || "Unknown",
+      entryPrice: finalAnalysis.entryPrice || finalAnalysis.entry || null,
+      takeProfit: finalAnalysis.takeProfit || null,
+      stopLoss: finalAnalysis.stopLoss || null,
+      confidence: finalAnalysis.confidence || 0,
+      reasoning: finalAnalysis.reasoning || "No reasoning provided",
+      explanation: finalAnalysis.explanation || "No explanation provided",
+      unifiedMarketData: {
+        currentPrice: { value: finalAnalysis.entryPrice || finalAnalysis.entry || 0, confidence: 90 },
+      }
     };
 
-    const signalConfidence = calculateMobileSignalConfidence({ result: gated, extraction, extractionConfidence: gated?.unifiedMarketData?.extractionConfidence, requestedIndicators: baseRequest.visibleIndicators });
-    const mergedWithConfidence = { ...gated, confidence: signalConfidence, dataConfidence: signalConfidence, evidenceScore: Math.max(gated.evidenceScore || 0, signalConfidence), confidenceSource: "server_evidence_confluence" };
-    const validated = UniversalAIResponseSchema.parse(mergedWithConfidence);
-    if (!hasFinalEvidence(validated)) {
-      return NextResponse.json({ error: "Mobile signal analysis returned an empty or invalid analysis.", code: "MOBILE_ANALYSIS_EMPTY", analysisType: "mobile_visual", mobilePipeline: { stages: ["image_extraction", "evidence_analysis", "confluence_gate"], extraction, analysis: validated } }, { status: 502 });
-    }
+    const validated = UniversalAIResponseSchema.parse(finalData);
 
     return NextResponse.json({
       ...validated,
       analysisType: "mobile_visual",
       extractionOnly: false,
-      source: "mobile_separate",
-      mobilePipeline: {
-        stages: ["image_extraction", "evidence_analysis", "confluence_gate"],
-        extraction,
-        extractionConfidence: normalizeConfidence(gated?.unifiedMarketData?.extractionConfidence),
-        signalConfidence,
-        confidenceSource: "server_evidence_confluence",
-        confluence: { signal: signalRules.signal, trend: signalRules.trend, bullishScore: signalRules.bullishScore, bearishScore: signalRules.bearishScore, availableWeight: signalRules.availableWeight, evidenceCount: signalRules.evidenceCount },
-      },
+      source: "mobile_single_prompt",
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {

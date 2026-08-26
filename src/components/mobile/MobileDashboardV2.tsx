@@ -338,6 +338,14 @@ export default function MobileDashboardV2() {
                       </SelectItem>
                     ))}
                   </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel className="text-zinc-500 text-xs mt-2">Anthropic</SelectLabel>
+                      {getModelsByProvider("anthropic").map((model) => (
+                        <SelectItem key={model.id} value={`anthropic:${model.id}`}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   <SelectGroup>
                     <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
                     {getModelsByProvider("openrouter").map((model) => (
