@@ -81,7 +81,7 @@ export const AI_MODELS: AIModel[] = [
     vision: true,
   },
   {
-    id: "claude-3-5-sonnet-20241022",
+    id: "claude-3-5-sonnet-20240620",
     name: "Claude 3.5 Sonnet (Native)",
     provider: "anthropic",
     isFree: false,
