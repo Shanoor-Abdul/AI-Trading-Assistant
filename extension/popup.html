@@ -15,6 +15,16 @@
     .wait { color: #eab308; }
     optgroup { font-weight: bold; color: #93c5fd; background: #09090b; }
     option { color: #fff; }
+    
+    /* Toggle Switch CSS */
+    .toggle-container { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; background: #18181b; padding: 10px; border-radius: 6px; border: 1px solid #3f3f46; }
+    .toggle-label { font-size: 13px; font-weight: bold; color: #fff; margin: 0;}
+    .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3f3f46; transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #22c55e; }
+    input:checked + .slider:before { transform: translateX(14px); }
   </style>
 </head>
 <body>
@@ -28,6 +38,10 @@
     <option value="1m">1 Minute</option>
     <option value="5m" selected>5 Minutes</option>
     <option value="15m">15 Minutes</option>
+  </select>
+
+  <label>AI Model</label>
+  <select id="model">
     <optgroup label="OpenRouter (Free)">
       <option value="google/gemini-2.0-flash-lite-preview-02-05:free">Gemini 2.0 Flash Lite (Free)</option>
       <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
@@ -37,10 +51,6 @@
       <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
       <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
     </optgroup>
-  </select>
-
-  <label>AI Model</label>
-  <select id="model">
     <optgroup label="Anthropic">
       <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
       <option value="anthropic/claude-3-5-sonnet">Claude 3.5 Sonnet</option>
@@ -52,22 +62,25 @@
     <optgroup label="Google">
       <option value="google/gemini-flash-1.5">Gemini 1.5 Flash</option>
     </optgroup>
-    <optgroup label="OpenRouter (Free)">
-      <option value="google/gemini-2.0-flash-lite-preview-02-05:free">Gemini 2.0 Flash Lite (Free)</option>
-      <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
-      <option value="qwen/qwen-2-7b-instruct:free">Qwen 2 7B (Free)</option>
-    </optgroup>
-    <optgroup label="OpenRouter (Pro)">
-      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-      <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-    </optgroup>
   </select>
 
-  <button id="analyzeBtn">Analyze & Auto-Trade</button>
+  <div class="toggle-container">
+    <div>
+      <p class="toggle-label">Auto-Execute Trade</p>
+      <span style="font-size: 10px; color: #a1a1aa;">Requires >85% Confidence</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="autoTradeToggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <button id="analyzeBtn">Analyze Chart</button>
 
   <div id="result">
     <div id="signalText" class="signal"></div>
     <div id="reasoningText"></div>
+    <div id="actionText" style="margin-top: 10px; font-size: 11px; color: #93c5fd; font-style: italic;"></div>
   </div>
 
   <script src="popup.js"></script>

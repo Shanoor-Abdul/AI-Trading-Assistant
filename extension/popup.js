@@ -5,11 +5,10 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   btn.disabled = true;
 
   try {
-    // 1. Instantly capture the visible screen (no manual screenshot needed!)
     chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 80 }, async (dataUrl) => {
       if (chrome.runtime.lastError || !dataUrl) {
         alert("Failed to capture screen: " + (chrome.runtime.lastError?.message || "Unknown error"));
-        btn.innerText = "Analyze & Auto-Trade";
+        btn.innerText = "Analyze Chart";
         btn.disabled = false;
         return;
       }
@@ -19,8 +18,8 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
       const symbol = document.getElementById("symbol").value;
       const timeframe = document.getElementById("timeframe").value;
       const model = document.getElementById("model").value;
+      const isAutoTradeOn = document.getElementById("autoTradeToggle").checked;
 
-      // 2. Send the automated screenshot to our local backend
       const apiRes = await fetch("http://localhost:3000/api/mobile-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -33,7 +32,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
           platform: "Binany",
           selectedStrategies: ["Mean Reversion", "Trend Following"],
           visibleIndicators: ["MACD", "RSI", "Bollinger Bands"],
-          imageBase64: dataUrl // Send the captured image automatically!
+          imageBase64: dataUrl 
         })
       });
 
@@ -42,8 +41,10 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
       const resultDiv = document.getElementById("result");
       const signalText = document.getElementById("signalText");
       const reasoningText = document.getElementById("reasoningText");
+      const actionText = document.getElementById("actionText");
       
       resultDiv.style.display = "block";
+      actionText.innerText = "";
 
       if (result.error) {
          signalText.innerText = "API Error";
@@ -52,16 +53,30 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
          return;
       }
 
-      signalText.innerText = result.signal + " (Conf: " + result.confidence + "%)";
+      const conf = result.confidence || 0;
+      signalText.innerText = result.signal + " (Conf: " + conf + "%)";
       signalText.className = "signal " + (result.signal === "BUY" ? "buy" : result.signal === "SELL" ? "sell" : "wait");
       reasoningText.innerText = result.reasoning;
 
-      // 3. Auto-click the button on the broker page
+      // Auto-Trade Validation Logic
       if (result.signal === "BUY" || result.signal === "SELL") {
-         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            chrome.tabs.sendMessage(tabs[0].id, { action: "AUTO_TRADE", signal: result.signal });
-         });
+         if (isAutoTradeOn) {
+            if (conf >= 85) {
+               actionText.innerText = "? Auto-trade executed! Confidence (" + conf + "%) meets the 85% requirement.";
+               actionText.style.color = "#4ade80"; // green
+               chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                  chrome.tabs.sendMessage(tabs[0].id, { action: "AUTO_TRADE", signal: result.signal });
+               });
+            } else {
+               actionText.innerText = "? Auto-trade skipped: Confidence (" + conf + "%) is below the 85% minimum threshold.";
+               actionText.style.color = "#facc15"; // yellow
+            }
+         } else {
+            actionText.innerText = "? Auto-Trade is OFF. Manual execution required.";
+            actionText.style.color = "#94a3b8"; // gray
+         }
       }
+
     });
 
   } catch (err) {
@@ -73,9 +88,8 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
     signalText.className = "signal sell";
     reasoningText.innerText = err.message;
   } finally {
-    // Reset button after 3 seconds
     setTimeout(() => {
-        btn.innerText = "Analyze & Auto-Trade";
+        btn.innerText = "Analyze Chart";
         btn.disabled = false;
     }, 3000);
   }
