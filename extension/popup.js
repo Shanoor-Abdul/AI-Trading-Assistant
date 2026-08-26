@@ -3,6 +3,17 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const btn = document.getElementById("analyzeBtn");
   btn.disabled = true;
 
+  // Clear previous results immediately
+  const resultDiv = document.getElementById("result");
+  const signalText = document.getElementById("signalText");
+  const reasoningText = document.getElementById("reasoningText");
+  const actionText = document.getElementById("actionText");
+  resultDiv.style.display = "none";
+  signalText.innerText = "";
+  reasoningText.innerText = "";
+  actionText.innerText = "";
+
+
   const isCaptureMode = document.getElementById("captureModeToggle").checked;
   const isAutoTradeOn = document.getElementById("autoTradeToggle").checked;
   const symbol = document.getElementById("symbol").value;
@@ -20,7 +31,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
       payloadBase64 = await new Promise((resolve, reject) => {
         chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 80 }, (dataUrl) => {
           if (chrome.runtime.lastError || !dataUrl) reject(new Error(chrome.runtime.lastError?.message || "Failed to capture image"));
-          else resolve(dataUrl);
+          else { console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); resolve(dataUrl); }
         });
       });
     } else {
