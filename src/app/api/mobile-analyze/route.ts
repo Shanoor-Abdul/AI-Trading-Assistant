@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const rawImage = typeof body?.imageBase64 === "string" ? body.imageBase64.trim() : "";
-    if (!rawImage) return NextResponse.json({ error: "A chart screenshot is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
+    if (!rawImage && !body?.extractedTextData) return NextResponse.json({ error: "A chart screenshot or text data is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
     if (!body?.symbol || !body?.timeframe || !body?.tradeDuration) return NextResponse.json({ error: "symbol, timeframe and tradeDuration are required.", code: "MOBILE_SETTINGS_MISSING", analysisType: "mobile_visual" }, { status: 400 });
 
     const provider = typeof body.provider === "string" ? body.provider : "gemini";
@@ -247,7 +247,24 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: false, isProgressive: false,
     });
 
-    const combinedPrompt = `You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
+        const combinedPrompt = body?.extractedTextData ? 
+`You are an expert AI trading assistant. The user is trading ${body.symbol} on the ${body.timeframe} timeframe.
+They are considering a trade with a ${body.tradeDuration} duration.
+Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
+Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
+
+The browser extension has scraped the following live text/data directly from the broker screen:
+======
+${body.extractedTextData}
+======
+
+Carefully read the scraped text to find:
+1. The exact current price of the asset.
+2. Indicator values (RSI, MACD, Bollinger Bands).
+
+Based ONLY on this data, provide a highly accurate trading signal.`
+:
+`You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
 They are considering a trade with a ${body.tradeDuration} duration.
 Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
 Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
@@ -258,7 +275,10 @@ First, carefully extract all visible data from the chart image:
 3. Any visible support or resistance levels.
 4. Trend direction and structure.
 
-Then, based ONLY on the data you extracted, provide a highly accurate trading signal.
+Then, based ONLY on the data you extracted, provide a highly accurate trading signal.`
+;
+
+    const finalPrompt = combinedPrompt + `
 
 Output your final analysis strictly as a JSON object matching this exact structure (and absolutely no markdown formatting outside of the JSON block):
 {
@@ -274,7 +294,7 @@ Output your final analysis strictly as a JSON object matching this exact structu
 }
 `;
 
-    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: combinedPrompt, rawOutput: false, isProgressive: false });
+    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt, rawOutput: false, isProgressive: false });
     
     // Ensure all required fields exist
     const finalData = {
