@@ -2,7 +2,7 @@
 <html>
 <head>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 16px; margin: 0; background: #09090b; color: #fff; height: 100vh; box-sizing: border-box;}
+    body { font-family: system-ui, sans-serif; padding: 16px; margin: 0; background: #09090b; color: #fff; min-height: 100vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;}
     h2 { margin-top: 0; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 8px; }
     label { display: block; margin-top: 10px; font-size: 12px; color: #a1a1aa; }
     select, input, button { width: 100%; padding: 8px; margin-top: 4px; background: #18181b; border: 1px solid #3f3f46; color: white; border-radius: 4px; box-sizing: border-box;}
@@ -50,11 +50,24 @@
     <option value="15m">15 Minutes</option>
   </select>
 
-  <label>Visible Indicators (comma separated)</label>
-  <input type="text" id="indicators" value="RSI, MACD, Bollinger Bands" />
+  <label>Visible Indicators (Ctrl+Click to multi-select)</label>
+  <select id="indicators" multiple size="4">
+    <option value="RSI" selected>RSI</option>
+    <option value="MACD" selected>MACD</option>
+    <option value="Bollinger Bands" selected>Bollinger Bands</option>
+    <option value="Moving Averages">Moving Averages</option>
+    <option value="Stochastic">Stochastic</option>
+    <option value="Parabolic SAR">Parabolic SAR</option>
+  </select>
 
-  <label>Trading Strategy (comma separated)</label>
-  <input type="text" id="strategies" value="Mean Reversion, Trend Following" />
+  <label>Trading Strategy</label>
+  <select id="strategies">
+    <option value="Mean Reversion">Mean Reversion</option>
+    <option value="Trend Following" selected>Trend Following</option>
+    <option value="Breakout">Breakout</option>
+    <option value="Price Action">Price Action</option>
+    <option value="Scalping">Scalping</option>
+  </select>
 
   <label>AI Model</label>
   <select id="model">

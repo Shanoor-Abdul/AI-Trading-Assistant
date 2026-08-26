@@ -28,10 +28,9 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const symbol = document.getElementById("symbol").value;
   const timeframe = document.getElementById("timeframe").value;
   const tradeDuration = document.getElementById("tradeDuration").value;
-  const indicatorsRaw = document.getElementById("indicators").value;
-  const strategiesRaw = document.getElementById("strategies").value;
-  const visibleIndicators = indicatorsRaw.split(",").map(s => s.trim()).filter(Boolean);
-  const selectedStrategies = strategiesRaw.split(",").map(s => s.trim()).filter(Boolean);
+  const indSelect = document.getElementById("indicators");
+  const visibleIndicators = Array.from(indSelect.selectedOptions).map(opt => opt.value);
+  const selectedStrategies = [document.getElementById("strategies").value];
   const model = document.getElementById("model").value;
 
   btn.innerText = isCaptureMode ? "Capturing Image..." : "Scraping Text...";
