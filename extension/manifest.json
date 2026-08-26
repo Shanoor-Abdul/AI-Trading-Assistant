@@ -6,13 +6,14 @@
   "description": "Auto-reads broker charts and connects to AI for real-time signals.",
   "permissions": [
     "activeTab",
+    "tabs",
     "scripting",
     "storage",
     "sidePanel"
   ],
   "host_permissions": [
-    "http://localhost:3000/*",
-    "https://*/*"
+    "<all_urls>",
+    "http://localhost:3000/*"
   ],
   "side_panel": {
     "default_path": "popup.html"
