@@ -11,20 +11,19 @@ const anthropic = new Anthropic({
 });
 
 export async function analyze(req: UniversalAIRequest): Promise<UniversalAIResponse> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY_MISSING: Set ANTHROPIC_API_KEY on the server.");
+  }
+
   const prompt = (req.promptOverride || (buildUniversalPrompt(req) + buildPriceLevelInstruction(req))) + buildCandlestickReferenceInstruction();
-  const currentModel = req.model || "claude-3-5-sonnet-20241022";
+  const currentModel = req.model || "claude-sonnet-5";
 
   const content: any[] = [];
-  
   if (req.screenshot) {
     const cleanBase64 = req.screenshot.base64.replace(/^data:image\/\w+;base64,/, '');
     content.push({
       type: "image",
-      source: {
-        type: "base64",
-        media_type: req.screenshot.mimeType || "image/jpeg",
-        data: cleanBase64
-      }
+      source: { type: "base64", media_type: req.screenshot.mimeType || "image/jpeg", data: cleanBase64 },
     });
   }
 
@@ -33,41 +32,31 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       const cleanBase64 = shot.base64.replace(/^data:image\/\w+;base64,/, '');
       content.push({
         type: "image",
-        source: {
-          type: "base64",
-          media_type: shot.mimeType || "image/jpeg",
-          data: cleanBase64
-        }
+        source: { type: "base64", media_type: shot.mimeType || "image/jpeg", data: cleanBase64 },
       });
     }
   }
-  
+
   content.push({ type: "text", text: prompt });
 
   const doRequest = async (retry = false, retryInstruction = "") => {
-    const messages: Anthropic.MessageParam[] = [
-      { 
-        role: "user", 
-        content: retry ? [...content, { type: "text", text: retryInstruction }] as any : content 
-      }
-    ];
+    const messages: Anthropic.MessageParam[] = [{
+      role: "user",
+      content: retry ? [...content, { type: "text", text: retryInstruction }] as any : content,
+    }];
 
     const response = await anthropic.messages.create({
       model: currentModel,
       max_tokens: Math.min(AI_REQUEST_CONFIG.maxOutputTokens || 8192, 8192),
-      temperature: 0.1,
-      messages: messages,
+      messages,
     });
 
-    const block = response.content[0];
-    if (block.type === 'text') {
-      return block.text;
-    }
-    return "{}";
+    const textBlocks = response.content.filter((block) => block.type === 'text');
+    return textBlocks.map((block: any) => block.text).join("\n") || "{}";
   };
 
   let textResponse = await doRequest();
-  
+
   try {
     const res = normalizeResponse(textResponse);
     if (req.rawOutput) return res;
