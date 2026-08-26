@@ -4,6 +4,7 @@ import { analyze as analyzeOpenAI } from "@/lib/ai/providers/openai";
 import { analyze as analyzeGroq } from "@/lib/ai/providers/groq";
 import { analyze as analyzeOpenRouter } from "@/lib/ai/providers/openrouter";
 import { analyze as analyzeHuggingFace } from "@/lib/ai/providers/huggingface";
+import { analyze as analyzeAnthropic } from "@/lib/ai/providers/anthropic";
 import { UniversalAIRequestSchema, UniversalAIResponseSchema } from "@/lib/ai/schema";
 import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
@@ -31,6 +32,7 @@ async function callProvider(req: any) {
     case "groq": return analyzeGroq(req);
     case "openrouter": return analyzeOpenRouter(req);
     case "huggingface": return analyzeHuggingFace(req);
+    case "anthropic": return analyzeAnthropic(req);
     default: throw new Error(`AI_PROVIDER_UNAVAILABLE: ${req.provider}`);
   }
 }
@@ -199,30 +201,18 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
   );
 
   const completedCandle = candle ? {
-    open: num(candle.open),
-    high: num(candle.high),
-    low: num(candle.low),
-    close: num(candle.close),
-    complete: candle.complete !== false,
-    color: candle.color ?? "UNKNOWN",
-    body: candle.body ?? "UNKNOWN",
-    upperWick: candle.upperWick ?? "UNKNOWN",
-    lowerWick: candle.lowerWick ?? "UNKNOWN",
-    pattern: candle.pattern ?? "UNKNOWN",
-    patternDirection: candle.patternDirection ?? "NEUTRAL",
-    patternFamily: candle.patternFamily ?? "UNKNOWN",
-    patternConfidence: normalizeConfidence(candle.patternConfidence),
-    patternContext: candle.patternContext ?? "UNKNOWN",
-    patternCandidates,
+    open: num(candle.open), high: num(candle.high), low: num(candle.low), close: num(candle.close),
+    complete: candle.complete !== false, color: candle.color ?? "UNKNOWN", body: candle.body ?? "UNKNOWN",
+    upperWick: candle.upperWick ?? "UNKNOWN", lowerWick: candle.lowerWick ?? "UNKNOWN",
+    pattern: candle.pattern ?? "UNKNOWN", patternDirection: candle.patternDirection ?? "NEUTRAL",
+    patternFamily: candle.patternFamily ?? "UNKNOWN", patternConfidence: normalizeConfidence(candle.patternConfidence),
+    patternContext: candle.patternContext ?? "UNKNOWN", patternCandidates,
   } : null;
 
   const unified = {
-    symbol: extraction?.symbol || req.symbol || "",
-    timeframe: extraction?.timeframe || req.primaryTimeframe || "",
-    ...existing,
+    symbol: extraction?.symbol || req.symbol || "", timeframe: extraction?.timeframe || req.primaryTimeframe || "", ...existing,
     currentPrice: existing.currentPrice?.value != null ? existing.currentPrice : observation(extraction?.currentPrice?.value, currentPriceConfidence),
-    completedCandle: existing.completedCandle ?? completedCandle,
-    indicators: normalizedIndicators,
+    completedCandle: existing.completedCandle ?? completedCandle, indicators: normalizedIndicators,
     supportLevels: existing.supportLevels?.value?.length ? existing.supportLevels : { value: levels(extraction?.supportLevels), source: "visual", confidence: 50 },
     resistanceLevels: existing.resistanceLevels?.value?.length ? existing.resistanceLevels : { value: levels(extraction?.resistanceLevels), source: "visual", confidence: 50 },
     marketStructure: existing.marketStructure?.value != null ? existing.marketStructure : { value: extraction?.marketStructure?.state ?? null, source: "visual", confidence: normalizeConfidence(extraction?.marketStructure?.confidence) },
@@ -232,8 +222,7 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
     swingLow: existing.swingLow?.value != null ? existing.swingLow : observation(extraction?.swingLow, 50),
     breakoutLevel: existing.breakoutLevel?.value != null ? existing.breakoutLevel : observation(extraction?.breakoutLevel, 50),
     invalidationLevel: existing.invalidationLevel?.value != null ? existing.invalidationLevel : observation(extraction?.invalidationLevel, 50),
-    extractionConfidence: computedExtractionConfidence,
-    visualQuality: extraction?.visualQuality || null,
+    extractionConfidence: computedExtractionConfidence, visualQuality: extraction?.visualQuality || null,
     candlestickPatterns: patternCandidates,
     evidenceGroups: {
       ...(existing.evidenceGroups || {}),
@@ -244,8 +233,7 @@ function mergeExtraction(result: any, extraction: any, req: any): any {
 
   const evidence = [...visualEvidence, ...patternEvidence, ...indicatorEvidence];
   return {
-    ...result,
-    unifiedMarketData: unified,
+    ...result, unifiedMarketData: unified,
     requestedIndicators: result?.requestedIndicators?.length ? result.requestedIndicators : (req.visibleIndicators || []),
     reasoning: result?.reasoning && result.reasoning !== "No reasoning provided" ? result.reasoning : `Visual evidence extracted: ${evidence.slice(0, 8).join("; ")}`,
     explanation: result?.explanation || `Mobile chart analysis based on extracted visual evidence: ${evidence.slice(0, 8).join("; ")}`,
@@ -270,11 +258,11 @@ export async function POST(request: NextRequest) {
     if (!rawImage) return NextResponse.json({ error: "A chart screenshot is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
     if (!body?.symbol || !body?.timeframe || !body?.tradeDuration) return NextResponse.json({ error: "symbol, timeframe and tradeDuration are required.", code: "MOBILE_SETTINGS_MISSING", analysisType: "mobile_visual" }, { status: 400 });
 
-    const provider = typeof body.provider === "string" ? body.provider : "gemini";
-    const model = typeof body.model === "string" && body.model.trim() ? body.model : undefined;
+    const provider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "gemini";
+    const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
     const capabilities = getModelCapabilities(provider, model || "");
     if (!capabilities) return NextResponse.json({ error: `Unknown AI provider/model: ${provider}/${model || "default"}`, code: "MOBILE_MODEL_UNKNOWN", analysisType: "mobile_visual" }, { status: 400 });
-    if (!capabilities.vision) return NextResponse.json({ error: `Selected AI model (${model || "default"}) does not support image analysis.`, code: "MOBILE_MODEL_NO_VISION", analysisType: "mobile_visual" }, { status: 400 });
+    if (!capabilities.vision) return NextResponse.json({ error: `Selected AI model (${model || "default"}) does not support image analysis or provider/model do not match.`, code: "MOBILE_MODEL_NO_VISION", analysisType: "mobile_visual" }, { status: 400 });
 
     const image = getMimeAndBase64(rawImage);
     const baseRequest = UniversalAIRequestSchema.parse({
@@ -291,12 +279,9 @@ export async function POST(request: NextRequest) {
     const analysisRequest = UniversalAIRequestSchema.parse({ ...baseRequest, screenshot: undefined, promptOverride: buildMobileSignalPrompt(baseRequest, extraction), rawOutput: false, isProgressive: false });
     const stage2 = await callProvider(analysisRequest);
     const merged = mergeExtraction(stage2, extraction, baseRequest);
-
     const signalRules = calculateMobileSignalRules(extraction);
     const gated = {
-      ...merged,
-      trend: signalRules.trend,
-      signal: signalRules.signal,
+      ...merged, trend: signalRules.trend, signal: signalRules.signal,
       bullishEvidence: Array.from(new Set([...(merged?.bullishEvidence || []), ...signalRules.bullishEvidence])).slice(0, 10),
       bearishEvidence: Array.from(new Set([...(merged?.bearishEvidence || []), ...signalRules.bearishEvidence])).slice(0, 10),
       strategyConflicts: Array.from(new Set([...(merged?.strategyConflicts || []), ...signalRules.conflicts])).slice(0, 10),
@@ -312,15 +297,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      ...validated,
-      analysisType: "mobile_visual",
-      extractionOnly: false,
-      source: "mobile_separate",
+      ...validated, analysisType: "mobile_visual", extractionOnly: false, source: "mobile_separate",
       mobilePipeline: {
-        stages: ["image_extraction", "evidence_analysis", "confluence_gate"],
-        extraction,
-        extractionConfidence: normalizeConfidence(gated?.unifiedMarketData?.extractionConfidence),
-        signalConfidence,
+        stages: ["image_extraction", "evidence_analysis", "confluence_gate"], extraction,
+        extractionConfidence: normalizeConfidence(gated?.unifiedMarketData?.extractionConfidence), signalConfidence,
         confidenceSource: "server_evidence_confluence",
         confluence: { signal: signalRules.signal, trend: signalRules.trend, bullishScore: signalRules.bullishScore, bearishScore: signalRules.bearishScore, availableWeight: signalRules.availableWeight, evidenceCount: signalRules.evidenceCount },
       },
