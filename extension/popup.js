@@ -27,6 +27,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const isAutoTradeOn = document.getElementById("autoTradeToggle").checked;
   const symbol = document.getElementById("symbol").value;
   const timeframe = document.getElementById("timeframe").value;
+  const tradeDuration = document.getElementById("tradeDuration").value;
   const model = document.getElementById("model").value;
 
   btn.innerText = isCaptureMode ? "Capturing Image..." : "Scraping Text...";
@@ -63,7 +64,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
       body: JSON.stringify({
         symbol,
         timeframe,
-        tradeDuration: timeframe,
+        tradeDuration: tradeDuration,
         provider: "openrouter",
         model: model,
         platform: "Binany",
