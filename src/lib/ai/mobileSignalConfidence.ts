@@ -105,7 +105,7 @@ export function calculateMobileSignalConfidence(input: {
   const extractionCap = Math.min(100, quality + 5);
   score = Math.min(score, extractionCap);
 
-  if (rules.evidenceCount < 3 || rules.availableWeight < 45) score = Math.min(score, 55);
+  if (rules.evidenceCount < 2 || rules.availableWeight < 30) score = Math.min(score, 55); // Relaxed for Binary Options
 
   return Math.max(1, Math.min(100, Math.round(score)));
 }

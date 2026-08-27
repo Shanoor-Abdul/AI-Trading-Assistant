@@ -115,18 +115,44 @@ Apply the USER SELECTED STRATEGY only after extracting and weighing the evidence
 MANDATORY RULE: Never treat a previous AI-generated trend/signal as evidence. Only raw frame observations and extracted market evidence may be used as evidence for the final analysis.
 
 ==================================================
-7. CONFIDENCE, RISK & FINAL SIGNAL
+7. CONFIDENCE, RISK & FINAL SIGNAL (DYNAMIC TRADE DURATION LOGIC)
 ==================================================
 
 Possible Signals: BUY, SELL, WAIT, NO_TRADE, UNSURE.
 
-WAIT is the correct answer if:
-- Evidence is bearish but entry confirmation is missing.
-- Evidence is conflicting or showing reversal.
+CRITICAL DURATION-BASED INSTRUCTIONS:
+The user has requested a trade duration of: ${req.tradeDuration}.
 
-WAIT does NOT automatically mean low confidence. If bearish evidence is strong but entry confirmation is missing, signal WAIT with medium/high analytical confidence.
+IF TRADE DURATION IS SHORT-TERM (1m, 5m, 15m):
+- You MUST evaluate the chart as a High-Frequency/Binary Options trader.
+- Be highly aggressive in identifying short-term Mean Reversion and Bounce setups.
+- BOUNCE SETUPS: If price pulls back to touch the Middle Bollinger Band, EMA, or local Support/Resistance, and candlestick bodies get smaller, this is a HIGH PROBABILITY BOUNCE. Issue a BUY/SELL signal immediately. Do NOT require long-term trend confirmation.
+- EXTREMES: If price touches the Upper/Lower Bollinger Band and RSI is Overbought/Oversold, expect an immediate reversal. Issue a BUY/SELL signal.
+- In these short timeframes, do NOT issue a WAIT signal just because indicators are slightly mixed, as long as the immediate price action supports a bounce.
 
-Confidence must reflect the strength of the available extracted evidence.
+IF TRADE DURATION IS LONG-TERM (30m, 1h, 4h, etc.):
+- Evaluate the chart as a conservative swing trader.
+- Require strict trend confirmation and multi-indicator alignment before issuing a BUY/SELL signal.
+- Use WAIT if direction is clear but confirmation is missing.
+
+Confidence must reflect the probability of the trade winning strictly within the requested ${req.tradeDuration} window.
+
+==================================================
+
+Possible Signals: BUY, SELL, WAIT, NO_TRADE, UNSURE.
+
+CRITICAL INSTRUCTION FOR BINARY OPTIONS (1m-15m duration):
+Do NOT evaluate the chart like a long-term Forex trader. In Binary Options, we trade short-term 1 to 5-minute price reactions.
+You MUST be aggressive in finding Mean Reversion and short-term Bounce setups:
+- BOUNCE SETUPS: If price rallies and pulls back to the Middle Bollinger Band, EMA, or Support/Resistance, and candles get smaller (loss of momentum), this is a HIGH PROBABILITY BOUNCE. Issue a BUY (if bouncing up) or SELL (if bouncing down) signal. Do NOT say WAIT just because momentum slowed down.
+- EXTREMES: If price touches the Upper/Lower Bollinger Band and RSI is Overbought/Oversold, expect an immediate short-term reversal. Issue a BUY/SELL signal.
+- Do NOT say WAIT just because indicators are "mixed" if there is a clear Support/Resistance bounce happening.
+
+WAIT is ONLY the correct answer if:
+- Price is floating in the middle of nowhere with absolutely no Support, Resistance, or Moving Average nearby.
+- The chart is completely flat and dead (no volatility).
+
+Confidence must reflect the strength of the immediate short-term bounce or continuation probability.
 
 ==================================================
 CONTEXT & REQUIREMENTS

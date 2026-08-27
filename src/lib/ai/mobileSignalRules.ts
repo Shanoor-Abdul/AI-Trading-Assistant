@@ -230,7 +230,7 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const strongest = Math.max(bullishScore, bearishScore);
   const weakest = Math.min(bullishScore, bearishScore);
   const gap = strongest - weakest;
-  const directionConfidence = Math.min(100, strongest * 0.65 + gap * 0.35);
+  const directionConfidence = Math.min(100, strongest * 0.85 + gap * 0.15); // Binary Options: favor the strongest signal rather than penalizing heavily for mixed indicators
   const confidenceScore = Math.round(quality * 0.45 + directionConfidence * 0.55);
 
   const hasBull = bullishPoints > 0;
@@ -239,8 +239,8 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const hasMinimumEvidence = evidenceCount >= 3 && availableWeight >= 45;
 
   let signal: MobileSignalRulesResult["signal"] = "WAIT";
-  if (hasMinimumEvidence && bullishScore >= 70 && bullishScore - bearishScore >= 15) signal = bullishScore >= 85 && gap >= 20 ? "STRONG_BUY" : "BUY";
-  if (hasMinimumEvidence && bearishScore >= 70 && bearishScore - bullishScore >= 15) signal = bearishScore >= 85 && gap >= 20 ? "STRONG_SELL" : "SELL";
+  if (hasMinimumEvidence && bullishScore >= 60 && bullishScore - bearishScore >= 10) signal = bullishScore >= 80 && gap >= 15 ? "STRONG_BUY" : "BUY";
+  if (hasMinimumEvidence && bearishScore >= 60 && bearishScore - bullishScore >= 10) signal = bearishScore >= 80 && gap >= 15 ? "STRONG_SELL" : "SELL";
 
   const trend = bullishScore >= 55 && bullishScore > bearishScore + 10 ? "Bullish" : bearishScore >= 55 && bearishScore > bullishScore + 10 ? "Bearish" : "Sideways";
 

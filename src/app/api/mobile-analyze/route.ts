@@ -1,3 +1,5 @@
+import { buildStage1Prompt } from '@/lib/ai/prompts/stage1Extraction';
+import { buildStage2Prompt } from '@/lib/ai/prompts/stage2Reasoning';
 import { NextRequest, NextResponse } from "next/server";
 import { analyze as analyzeGemini } from "@/lib/ai/providers/gemini";
 import { analyze as analyzeOpenAI } from "@/lib/ai/providers/openai";
@@ -238,77 +240,75 @@ export async function POST(request: NextRequest) {
     const model = typeof body.model === "string" && body.model.trim() ? body.model : undefined;
     const capabilities = getModelCapabilities(provider, model || "");
     if (!capabilities) return NextResponse.json({ error: `Unknown AI provider/model: ${provider}/${model || "default"}`, code: "MOBILE_MODEL_UNKNOWN", analysisType: "mobile_visual" }, { status: 400 });
-    if (!capabilities.vision) return NextResponse.json({ error: `Selected AI model (${model || "default"}) does not support image analysis.`, code: "MOBILE_MODEL_NO_VISION", analysisType: "mobile_visual" }, { status: 400 });
-
-    const image = getMimeAndBase64(rawImage);
-    const baseRequest = UniversalAIRequestSchema.parse({
+    
+    // Stage 1: Extraction
+    const image = rawImage ? getMimeAndBase64(rawImage) : undefined;
+    const baseRequest1 = UniversalAIRequestSchema.parse({
       mode: "visual_only", provider, model, platform: String(body.platform || "Unknown"), symbol: String(body.symbol), primaryTimeframe: String(body.timeframe), tradeDuration: String(body.tradeDuration),
       selectedStrategies: Array.isArray(body.selectedStrategies) ? body.selectedStrategies : ["Auto (AI Selection)"],
-      visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: false, isProgressive: false,
+      visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: true, isProgressive: false,
     });
 
-        const combinedPrompt = body?.extractedTextData ? 
-`You are an expert AI trading assistant. The user is trading ${body.symbol} on the ${body.timeframe} timeframe.
-They are considering a trade with a ${body.tradeDuration} duration.
-Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
+    const stage1Prompt = buildStage1Prompt(baseRequest1, body.extractedTextData);
 
-The browser extension has scraped the following live text/data directly from the broker screen:
-======
-${body.extractedTextData}
-======
-
-Carefully read the scraped text to find:
-1. The exact current price of the asset.
-2. Indicator values (RSI, MACD, Bollinger Bands).
-
-Based ONLY on this data, provide a highly accurate trading signal.`
-:
-`You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
-They are considering a trade with a ${body.tradeDuration} duration.
-Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
-
-First, carefully extract all visible data from the chart image:
-1. The exact current price of the asset.
-2. Indicator values (e.g., RSI value, MACD lines/histogram, Bollinger Bands position).
-3. Any visible support or resistance levels.
-4. Trend direction and structure.
-
-Then, based ONLY on the data you extracted, provide a highly accurate trading signal.`
-;
-
-    const finalPrompt = combinedPrompt + `
-
-Output your final analysis strictly as a JSON object matching this exact structure (and absolutely no markdown formatting outside of the JSON block):
-{
-  "trend": "Bullish", "Bearish", or "Sideways",
-  "signal": "BUY", "SELL", or "WAIT",
-  "marketState": "Brief description of current market context",
-  "entryPrice": number (suggested entry price),
-  "takeProfit": number,
-  "stopLoss": number,
-  "confidence": number (0-100),
-  "reasoning": "Detailed explanation of why this trade was chosen based on the extracted values and indicators",
-  "explanation": "A short summary for the user"
-}
-`;
-
-    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt, rawOutput: false, isProgressive: false });
+    // Execute Stage 1
+    const stage1Raw = await callProvider({ ...baseRequest1, promptOverride: stage1Prompt, rawOutput: true });
     
-    // Ensure all required fields exist
+    // Parse and Validate Stage 1 output
+    let stage1Data;
+    try {
+      // Find JSON block in raw output
+      const jsonMatch = typeof stage1Raw === "string" ? stage1Raw.match(/{[\s\S]*}/) : null;
+      const jsonString = jsonMatch ? jsonMatch[0] : (typeof stage1Raw === "string" ? stage1Raw : JSON.stringify(stage1Raw));
+      stage1Data = JSON.parse(jsonString);
+    } catch(e) {
+      stage1Data = { currentPrice: null, indicators: {}, visualObservations: ["Failed to parse Stage 1 JSON"] };
+    }
+    
+    // Server Validation (Sanity Checks)
+    if (stage1Data.indicators?.RSI?.value !== null && stage1Data.indicators?.RSI?.value !== undefined) {
+        if (stage1Data.indicators.RSI.value < 0 || stage1Data.indicators.RSI.value > 100) {
+            stage1Data.indicators.RSI.value = null; // Kill hallucinated RSI
+        }
+    }
+
+    // Stage 2: Reasoning (Text Only)
+    // Create request without screenshot so it runs as text-only
+    const baseRequest2 = UniversalAIRequestSchema.parse({
+      mode: "visual_only", provider, model, platform: String(body.platform || "Unknown"), symbol: String(body.symbol), primaryTimeframe: String(body.timeframe), tradeDuration: String(body.tradeDuration),
+      selectedStrategies: Array.isArray(body.selectedStrategies) ? body.selectedStrategies : ["Auto (AI Selection)"],
+      visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], promptOverride: "", rawOutput: true, isProgressive: false,
+    });
+    
+    const stage2Prompt = buildStage2Prompt(baseRequest2, stage1Data);
+
+    // Execute Stage 2 (Notice: no screenshot attached so it runs faster as text-only if provider supports it)
+    const stage2Raw = await callProvider({ ...baseRequest2, promptOverride: stage2Prompt, rawOutput: true });
+    
+    let stage2Data;
+    try {
+      const jsonMatch2 = typeof stage2Raw === "string" ? stage2Raw.match(/{[\s\S]*}/) : null;
+      const jsonString2 = jsonMatch2 ? jsonMatch2[0] : (typeof stage2Raw === "string" ? stage2Raw : JSON.stringify(stage2Raw));
+      stage2Data = JSON.parse(jsonString2);
+    } catch(e) {
+      stage2Data = { setupState: "NO_SETUP", direction: "NEUTRAL", signal: "WAIT", confidence: 0, reasoning: "Failed to parse Stage 2 JSON." };
+    }
+
+    // Map to UniversalAIResponseSchema to satisfy the frontend UI
     const finalData = {
-      trend: finalAnalysis.trend || "Sideways",
-      signal: finalAnalysis.signal || "WAIT",
-      marketState: finalAnalysis.marketState || "Unknown",
-      entryPrice: finalAnalysis.entryPrice || finalAnalysis.entry || null,
-      takeProfit: finalAnalysis.takeProfit || null,
-      stopLoss: finalAnalysis.stopLoss || null,
-      confidence: finalAnalysis.confidence || 0,
-      reasoning: finalAnalysis.reasoning || "No reasoning provided",
-      explanation: finalAnalysis.explanation || "No explanation provided",
+      trend: stage2Data.direction === "BULLISH" ? "Bullish" : (stage2Data.direction === "BEARISH" ? "Bearish" : "Sideways"),
+      signal: stage2Data.signal || "WAIT",
+      marketState: `State: ${stage2Data.setupState}. Trigger: ${stage2Data.entryTrigger}`,
+      entryPrice: stage2Data.entryPrice || stage1Data.currentPrice || null,
+      takeProfit: stage2Data.takeProfit || null,
+      stopLoss: stage2Data.stopLoss || null,
+      confidence: stage2Data.confidence || 0,
+      reasoning: stage2Data.reasoning || "No reasoning provided",
+      explanation: `Next Move: ${stage2Data.nextMove?.primary || stage2Data.setupState}. ${stage2Data.reasoning}`,
+      invalidationConditions: stage2Data.invalidationConditions || [],
       unifiedMarketData: {
-        currentPrice: { value: finalAnalysis.entryPrice || finalAnalysis.entry || 0, confidence: 90 },
+        currentPrice: { value: stage1Data.currentPrice || 0, confidence: 90 },
+        indicators: stage1Data.indicators || {}
       }
     };
 
@@ -318,7 +318,7 @@ Output your final analysis strictly as a JSON object matching this exact structu
       ...validated,
       analysisType: "mobile_visual",
       extractionOnly: false,
-      source: "mobile_single_prompt",
+      source: "mobile_two_stage_pipeline",
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {

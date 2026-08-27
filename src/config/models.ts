@@ -202,10 +202,17 @@ export const AI_MODELS: AIModel[] = [
   },
   {
     id: "google/gemma-4-31b-it:free",
-    name: "Gemma 4 31B (Text Only)",
+    name: "Gemma 4 31B",
     provider: "openrouter",
     isFree: true,
-    vision: false,
+    vision: true,
+  },
+  {
+    id: "google/gemma-4-26b-a4b-it:free",
+    name: "Gemma 4 26B",
+    provider: "openrouter",
+    isFree: true,
+    vision: true,
   },
   {
     id: "qwen/qwen3.8-27b",

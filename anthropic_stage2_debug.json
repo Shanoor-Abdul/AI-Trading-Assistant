@@ -1,0 +1,30 @@
+{
+  "model": "claude-sonnet-5",
+  "id": "msg_011CeTXoRcrtd6jZvCwduyvc",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "```json\n{\n  \"trend\": \"Bullish\",\n  \"signal\": \"BUY\",\n  \"marketState\": \"Price is in a strong uptrend, trading above all Bollinger Bands (upper band 0.71969), with expanding green candles and momentum accelerating near session highs.\",\n  \"entryPrice\": 0.71968,\n  \"takeProfit\": 0.72010,\n  \"stopLoss\": 0.71940,\n  \"confidence\": 74,\n  \"reasoning\": \"Price has broken above the Bollinger Band upper line (0.71969) and MID (0.71933), indicating strong bullish momentum. RSI values (78.79, 75.90, 58.30) show overbought conditions on shorter RSI but still trending upward, suggesting continuation rather than reversal. MACD histogram is turning positive (green bars increasing), confirming bullish momentum building. The moving averages (orange, purple, blue) are all sloping upward and price is trading above them, consistent with a strong trend-following setup. Candlestick structure shows consecutive bullish candles with higher highs and higher lows, reinforcing trend continuation.\",\n  \"explanation\": \"Price is riding the upper Bollinger Band in a strong uptrend with rising MACD and RSI momentum — a short-term bullish continuation (BUY/HIGHER) is favored for the next 5 minutes.\"\n}\n```"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 2077,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 452,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global"
+  }
+}
