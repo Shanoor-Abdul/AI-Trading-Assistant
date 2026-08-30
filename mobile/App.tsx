@@ -30,10 +30,7 @@ export default function App() {
 
   const AI_MODELS = [
       { id: "claude-sonnet-5", name: "Claude Sonnet 5 (Native)", provider: "anthropic", isFree: false },
-      { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "openrouter", isFree: false },
       { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic", isFree: false },
-      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet (Native)", provider: "anthropic", isFree: false },
-      { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku (Native)", provider: "anthropic", isFree: false },
 
     
     { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", isFree: true },

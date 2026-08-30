@@ -296,9 +296,9 @@ Then, based ONLY on the data you extracted, provide a highly accurate trading si
 
 CRITICAL RULE FOR ANALYSIS AND SCORING:
 1. You must STRICTLY follow the visible chart indicators (RSI, MACD, Bollinger Bands, Moving Averages / SMA) and the exact rules of the selected trading strategy.
-2. Only generate a BUY or SELL signal if the indicators and the strategy perfectly align to confirm a high-probability trade.
-3. You must be extremely strict and conservative with your "confidence" score. Do NOT award 85% or higher unless the indicators are perfectly aligned and confirming the strategy.
-4. If there is any contradiction in the indicators (e.g. MACD histogram shrinking while trend is down), your maximum allowed confidence is 75%.`
+2. If the primary indicators (like RSI and MACD) point clearly in the same direction, you should award a high confidence score (80% to 95%), even if there is minor visual noise.
+3. Only drop the confidence below 75% if there is a MAJOR contradiction between the primary indicators.
+4. Do not be overly timid or artificially conservative. We need actionable signals. If the setup looks solid according to the strategy, confidently give it an 85%+ score so the auto-trader can execute it.`
 ;
 
     const jsonInstruction = `

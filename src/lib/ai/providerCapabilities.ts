@@ -59,6 +59,16 @@ export function getModelCapabilities(
     };
   }
 
+  if (p === "anthropic") {
+    // All modern Claude models support vision
+    return {
+      vision: true,
+      structuredOutput: false,
+      maxImageCount: 20,
+      maxOutputTokens: 4096,
+    };
+  }
+
   return {
     vision: false,
     structuredOutput: false,

@@ -17,19 +17,32 @@ setInterval(() => {
   if (bollUpMatch) latestMarketData.indicators.BollingerUp = bollUpMatch[1];
   if (bollDnMatch) latestMarketData.indicators.BollingerDown = bollDnMatch[1];
   
-  latestMarketData.rawTextDump = pageText.substring(0, 1000); 
+  // 1. First, try to find the active currency by looking for a symbol right above the "Investments" panel
+  // This is highly reliable for Pocket Option because the right-hand trading panel always shows the active asset.
+  let symbolMatch = pageText.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin|Ethereum|Gold|Silver|Oil)[\s\S]{0,100}Investments/i);
   
-  // Try to find currency pair in the text (e.g. "EUR/USD OTC")
-  const symbolMatch = pageText.match(/([A-Z]{3}\/[A-Z]{3}(?:\sOTC)?)/);
+  // 2. Fallback to document title
+  if (!symbolMatch) {
+    symbolMatch = document.title.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin|Ethereum|Gold|Silver|Oil)/i);
+  }
+  
+  // 3. Absolute fallback to any symbol in the page text
+  if (!symbolMatch) {
+    symbolMatch = pageText.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin)/i);
+  }
+
   if (symbolMatch) {
-    latestMarketData.currentSymbol = symbolMatch[1];
+    // Clean up the symbol (e.g. remove parentheses around OTC)
+    let cleanSymbol = symbolMatch[1].toUpperCase().replace(/\(OTC\)/g, "OTC").trim();
+    latestMarketData.currentSymbol = cleanSymbol;
     
     // Auto-update the UI input if it exists
     const root = document.getElementById("ai-trading-root");
     if (root && root.shadowRoot) {
       const symInput = root.shadowRoot.getElementById("symbol");
-      if (symInput && document.activeElement !== symInput) { // Don't overwrite if user is typing
-         symInput.value = symbolMatch[1];
+      // Only overwrite if the user isn't currently typing in the box, and if the value is actually different
+      if (symInput && document.activeElement !== symInput && symInput.value !== latestMarketData.currentSymbol) { 
+         symInput.value = latestMarketData.currentSymbol;
       }
     }
   }
@@ -172,9 +185,21 @@ function injectUI() {
 
       <label>AI Model</label>
       <select id="model">
-        <optgroup label="Anthropic (Native API Key)">
-          <option value="claude-sonnet-5" data-provider="anthropic">Claude 5 Sonnet</option>
-          <option value="claude-haiku-4-5-20251001" data-provider="anthropic">Claude 4.5 Haiku</option>
+        <optgroup label="Anthropic (Native API)">
+          <option value="claude-3-5-sonnet-20241022" data-provider="anthropic" selected>Claude 3.5 Sonnet</option>
+          <option value="claude-3-5-haiku-20241022" data-provider="anthropic">Claude 3.5 Haiku</option>
+        </optgroup>
+        <optgroup label="OpenAI (Native API)">
+          <option value="gpt-4o" data-provider="openai">GPT-4o (Vision)</option>
+          <option value="gpt-4o-mini" data-provider="openai">GPT-4o Mini (Vision)</option>
+        </optgroup>
+        <optgroup label="Google Gemini (Native API)">
+          <option value="gemini-1.5-pro" data-provider="gemini">Gemini 1.5 Pro</option>
+          <option value="gemini-1.5-flash" data-provider="gemini">Gemini 1.5 Flash</option>
+        </optgroup>
+        <optgroup label="Groq (Fast API)">
+          <option value="llama-3.2-90b-vision-preview" data-provider="groq">Llama 3.2 90B Vision</option>
+          <option value="llama-3.2-11b-vision-preview" data-provider="groq">Llama 3.2 11B Vision</option>
         </optgroup>
         <optgroup label="OpenRouter (Free)">
           <option value="openrouter/free" data-provider="openrouter">OpenRouter Free Models</option>
