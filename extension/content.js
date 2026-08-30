@@ -45,12 +45,16 @@ function injectUI() {
     #container {
       position: absolute;
       top: 0;
-      right: 0;
+      right: -380px;
       height: 100vh;
       display: flex;
       align-items: center;
       pointer-events: none;
-      transition: opacity 0.1s ease;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+    }
+
+    #container.open {
+      transform: translateX(-380px);
     }
 
     #toggle-tab {
@@ -80,14 +84,8 @@ function injectUI() {
       padding: 20px;
       overflow-y: auto;
       pointer-events: auto;
-      transform: translateX(100%);
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       border-left: 1px solid #27272a;
       box-shadow: -5px 0 25px rgba(0,0,0,0.8);
-    }
-
-    #drawer.open {
-      transform: translateX(0);
     }
     
     /* UI CSS FROM OLD POPUP */
@@ -203,7 +201,7 @@ function bindEvents(shadow, container) {
   const analyzeBtn = shadow.getElementById("analyzeBtn");
 
   toggleBtn.addEventListener("click", () => {
-    drawer.classList.toggle("open");
+    container.classList.toggle("open");
   });
 
   // Load State
