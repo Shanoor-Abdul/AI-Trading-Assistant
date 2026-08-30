@@ -13,15 +13,6 @@
     "<all_urls>",
     "http://localhost:3000/*"
   ],
-  "action": {
-    "default_title": "AI Trading Assistant",
-    "default_icon": {
-      "16": "icon.png",
-      "48": "icon.png",
-      "128": "icon.png"
-    },
-    "default_popup": "popup.html"
-  },
   "background": {
     "service_worker": "background.js"
   },
@@ -34,6 +25,16 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icon.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
