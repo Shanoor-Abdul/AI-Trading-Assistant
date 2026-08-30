@@ -1,3 +1,60 @@
+// --- SAVE AND LOAD POPUP STATE ---
+const elementsToSave = ["timeframe", "tradeDuration", "model", "autoTradeToggle"];
+
+function saveState() {
+  const state = {};
+  elementsToSave.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      if (el.type === "checkbox") state[id] = el.checked;
+      else state[id] = el.value;
+    }
+  });
+  
+  // Save multi-select indicators separately
+  const indSelect = document.getElementById("indicators");
+  if (indSelect) {
+    state.indicators = Array.from(indSelect.selectedOptions).map(opt => opt.value);
+  }
+  
+  chrome.storage.local.set({ popupState: state });
+}
+
+function loadState() {
+  chrome.storage.local.get(["popupState"], (result) => {
+    if (result.popupState) {
+      const state = result.popupState;
+      elementsToSave.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && state[id] !== undefined) {
+          if (el.type === "checkbox") el.checked = state[id];
+          else el.value = state[id];
+        }
+      });
+      
+      // Load multi-select indicators
+      const indSelect = document.getElementById("indicators");
+      if (indSelect && state.indicators) {
+        Array.from(indSelect.options).forEach(opt => {
+          opt.selected = state.indicators.includes(opt.value);
+        });
+      }
+    }
+  });
+}
+
+// Load state on startup
+document.addEventListener("DOMContentLoaded", loadState);
+
+// Listen for changes to save state
+elementsToSave.forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", saveState);
+});
+const indSelect = document.getElementById("indicators");
+if (indSelect) indSelect.addEventListener("change", saveState);
+
+
 // --- CONTINUOUS AUTO-FETCH ASSET SYMBOL ---
 setInterval(() => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
