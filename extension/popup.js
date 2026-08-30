@@ -1,3 +1,34 @@
+// --- CONTINUOUS AUTO-FETCH ASSET SYMBOL ---
+setInterval(() => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        function: () => {
+          const selectors = [
+            'span.text-\\[10px\\].font-semibold.truncate.max-w-\\[80px\\]',
+            'span.text-\\[10px\\].font-semibold',
+            'div.asset-name span'
+          ];
+          for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el && el.innerText.trim().length > 1) {
+              return el.innerText.trim();
+            }
+          }
+          return null;
+        }
+      }, (results) => {
+        if (results && results[0] && results[0].result) {
+          const symbolInput = document.getElementById("symbol");
+          if (symbolInput) {
+            symbolInput.value = results[0].result;
+          }
+        }
+      });
+    }
+  });
+}, 1000);
 
 document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const btn = document.getElementById("analyzeBtn");
