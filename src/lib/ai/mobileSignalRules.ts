@@ -207,7 +207,7 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const rsiDir = rsiDirection(rsi);
   if (rsi && rsi.visible !== false) {
     // Keep heavy tracking weight (15) even on extremes to optimize sniper binary triggers
-    let rsiWeight = 15; 
+    const rsiWeight = 15; 
     const rsiValue = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
     const rsiConf = confidence(rsi.confidence);
     
