@@ -61,7 +61,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const tradeDuration = document.getElementById("tradeDuration").value;
   const indSelect = document.getElementById("indicators");
   const visibleIndicators = Array.from(indSelect.selectedOptions).map(opt => opt.value);
-  const selectedStrategies = [document.getElementById("strategies").value];
+  const selectedStrategies = ["Auto-Detect"];
   const modelSelect = document.getElementById("model");
   const model = modelSelect.value;
   const provider = modelSelect.options[modelSelect.selectedIndex].getAttribute("data-provider") || "openrouter";
@@ -74,7 +74,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
 
     // --- STEP 1: GET THE DATA (IMAGE OR TEXT) ---
     payloadBase64 = await new Promise((resolve, reject) => {
-      chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 80 }, (dataUrl) => {
+      chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
         if (chrome.runtime.lastError || !dataUrl) reject(new Error(chrome.runtime.lastError?.message || "Failed to capture image"));
         else { console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); resolve(dataUrl); }
       });
