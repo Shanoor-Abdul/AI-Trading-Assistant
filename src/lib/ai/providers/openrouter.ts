@@ -73,7 +73,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
           role: "user",
           content: retry ? [...messagesContent, { type: "text", text: retryInstruction }] : messagesContent,
         }],
-        max_tokens: currentModel.includes("sonnet") ? 16384 : 8192,
+        max_tokens: currentModel.includes("sonnet") ? 1500 : 1500,
         temperature: 0.05,
         response_format: { type: "json_object" },
       });

@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], promptOverride: "", rawOutput: true, isProgressive: false,
     });
     
-    const stage2Prompt = buildStage2Prompt(baseRequest2, stage1Data);
+    const stage2Prompt = buildStage2Prompt(baseRequest2, stage1Data, body.previousTarget || null);
 
     // Execute Stage 2 (Notice: no screenshot attached so it runs faster as text-only if provider supports it)
     const stage2Raw = await callProvider({ ...baseRequest2, promptOverride: stage2Prompt, rawOutput: true });
@@ -303,8 +303,8 @@ export async function POST(request: NextRequest) {
       takeProfit: stage2Data.takeProfit || null,
       stopLoss: stage2Data.stopLoss || null,
       confidence: stage2Data.confidence || 0,
-      reasoning: stage2Data.reasoning || "No reasoning provided",
-      explanation: `Next Move: ${stage2Data.nextMove?.primary || stage2Data.setupState}. ${stage2Data.reasoning}`,
+      reason: stage2Data.reason || stage2Data.beginnerMessage || stage2Data.reasoning || "No reasoning provided.",
+      nextTarget: typeof stage2Data.nextTarget === "object" ? JSON.stringify(stage2Data.nextTarget) : (stage2Data.nextTarget || "N/A"),
       invalidationConditions: stage2Data.invalidationConditions || [],
       unifiedMarketData: {
         currentPrice: { value: stage1Data.currentPrice || 0, confidence: 90 },

@@ -1,4 +1,51 @@
 
+// --- CONTINUOUS AUTO-FETCH ASSET SYMBOL ---
+setInterval(() => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        function: () => {
+          const selectors = [
+            'span.text-\\[10px\\].font-semibold.truncate.max-w-\\[80px\\]',
+            'span.text-\\[10px\\].font-semibold',
+            'div.asset-name span'
+          ];
+          for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el && el.innerText.trim().length > 1) {
+              return el.innerText.trim();
+            }
+          }
+          return null;
+        }
+      }, (results) => {
+        if (results && results[0] && results[0].result) {
+          const symbolInput = document.getElementById("symbol");
+          const oldSymbol = symbolInput.value;
+          const newSymbol = results[0].result;
+          
+          if (oldSymbol !== newSymbol) {
+             symbolInput.value = newSymbol;
+             
+             // If the symbol changed while the popup was open, reset the UI to avoid confusion!
+             document.getElementById("result").style.display = "none";
+             document.getElementById("signalText").innerText = "";
+             document.getElementById("reasoningText").innerText = "";
+             
+             // CRITICAL: DESTROY ALL PAST MEMORIES!
+             // If the user left the currency, the old memory is now dangerously expired.
+             chrome.storage.local.set({ previousTargets: {} });
+             
+             console.log("Symbol changed to", newSymbol, "- UI and Memory reset.");
+          }
+        }
+      });
+    }
+  });
+}, 1000);
+
+
 document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const btn = document.getElementById("analyzeBtn");
   btn.disabled = true;
@@ -62,6 +109,12 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
 
     btn.innerText = "AI Analyzing...";
 
+    
+    // --- MEMORY FETCH ---
+    const storage = await new Promise(resolve => chrome.storage.local.get(["previousTargets"], resolve));
+    const previousTargets = storage.previousTargets || {};
+    const previousTarget = previousTargets[symbol] || null;
+    
     // --- STEP 2: SEND TO BACKEND ---
     const apiRes = await fetch("http://localhost:3000/api/mobile-analyze", {
       method: "POST",
@@ -76,12 +129,14 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
         selectedStrategies: selectedStrategies.length ? selectedStrategies : ["Auto"],
         visibleIndicators: visibleIndicators,
         imageBase64: payloadBase64,       // Will be null if Text Mode
-        extractedTextData: payloadText    // Will be null if Capture Mode
+        extractedTextData: payloadText,    // Will be null if Capture Mode
+        previousTarget: previousTarget     // The memory payload
       })
     });
 
-    const result = await apiRes.json();
     
+    const result = await apiRes.json();
+
     // --- STEP 3: RENDER RESULT ---
     const resultDiv = document.getElementById("result");
     const signalText = document.getElementById("signalText");
@@ -99,12 +154,28 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
     }
 
 
+    
+    if (result.error) {
+       signalText.innerText = "API Error";
+       signalText.className = "signal sell";
+       reasoningText.innerText = result.error + (result.code ? " (" + result.code + ")" : "");
+       return;
+    }
     const conf = result.confidence || 0;
     signalText.innerText = result.signal + " (Conf: " + conf + "%)";
     signalText.className = "signal " + (result.signal === "BUY" ? "buy" : result.signal === "SELL" ? "sell" : "wait");
-    reasoningText.innerText = result.reasoning;
+    
+    // Nice Formatting for Reason and Target
+    reasoningText.innerHTML = `<strong>Reason:</strong> ${result.reason || result.reasoning || "N/A"}<br/><br/><strong>What to look for Next:</strong> ${result.nextTarget || "N/A"}`;
+    
+    // SAVE THE NEW TARGET FOR THIS SPECIFIC ASSET!
+    if (result.nextTarget) {
+        previousTargets[symbol] = result.nextTarget;
+        chrome.storage.local.set({ previousTargets: previousTargets });
+    }
     
     if (result.entryPrice || result.takeProfit || result.stopLoss) {
+
        levelsDiv.style.display = "flex";
        entryVal.innerText = result.entryPrice || "--";
        targetVal.innerText = result.takeProfit || "--";
