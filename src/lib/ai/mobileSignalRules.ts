@@ -240,8 +240,10 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   add(items, { key: "levels", label: "Support / resistance", direction: levelDirection(extraction, price), weight: 10, confidence: 50, evidence: "Price is interacting with a nearby extracted support/resistance level." });
 
   const availableWeight = items.reduce((sum, item) => sum + item.weight, 0);
-  const bullishPoints = items.filter(x => x.direction === "bullish").reduce((sum, x) => sum + x.weight * x.confidence / 100, 0);
-  const bearishPoints = items.filter(x => x.direction === "bearish").reduce((sum, x) => sum + x.weight * x.confidence / 100, 0);
+  // FIX: Do not artificially penalize the score based on the AI's "reading" confidence.
+  // If the AI is at least 50% sure it saw a bullish signal, give it the full mathematical weight.
+  const bullishPoints = items.filter(x => x.direction === "bullish").reduce((sum, x) => sum + (x.confidence >= 50 ? x.weight : x.weight * 0.5), 0);
+  const bearishPoints = items.filter(x => x.direction === "bearish").reduce((sum, x) => sum + (x.confidence >= 50 ? x.weight : x.weight * 0.5), 0);
   const bullishScore = availableWeight ? Math.round((bullishPoints / availableWeight) * 100) : 0;
   const bearishScore = availableWeight ? Math.round((bearishPoints / availableWeight) * 100) : 0;
   const evidenceCount = items.length;
