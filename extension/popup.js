@@ -54,7 +54,7 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
 
 
 
-  const isCaptureMode = document.getElementById("captureModeToggle").checked;
+  const isCaptureMode = true; // Hardcoded to always capture
   const isAutoTradeOn = document.getElementById("autoTradeToggle").checked;
   const symbol = document.getElementById("symbol").value;
   const timeframe = document.getElementById("timeframe").value;
@@ -66,30 +66,19 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
   const model = modelSelect.value;
   const provider = modelSelect.options[modelSelect.selectedIndex].getAttribute("data-provider") || "openrouter";
 
-  btn.innerText = isCaptureMode ? "Capturing Image..." : "Scraping Text...";
+  btn.innerText = "Capturing Image...";
 
   try {
     let payloadBase64 = null;
     let payloadText = null;
 
     // --- STEP 1: GET THE DATA (IMAGE OR TEXT) ---
-    if (isCaptureMode) {
-      payloadBase64 = await new Promise((resolve, reject) => {
-        chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 80 }, (dataUrl) => {
-          if (chrome.runtime.lastError || !dataUrl) reject(new Error(chrome.runtime.lastError?.message || "Failed to capture image"));
-          else { console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); resolve(dataUrl); }
-        });
+    payloadBase64 = await new Promise((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 80 }, (dataUrl) => {
+        if (chrome.runtime.lastError || !dataUrl) reject(new Error(chrome.runtime.lastError?.message || "Failed to capture image"));
+        else { console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); resolve(dataUrl); }
       });
-    } else {
-      payloadText = await new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          chrome.tabs.sendMessage(tabs[0].id, { action: "SCRAPE_DATA" }, (response) => {
-            if (!response || response.error) reject(new Error("Failed to read HTML text. Did you refresh the page?"));
-            else resolve(response.data);
-          });
-        });
-      });
-    }
+    });
 
     btn.innerText = "AI Analyzing...";
 
