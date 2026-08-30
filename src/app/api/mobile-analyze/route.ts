@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
 `You are an expert AI trading assistant. The user is trading ${body.symbol} on the ${body.timeframe} timeframe.
 They are considering a trade with a ${body.tradeDuration} duration.
 Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
+Based on the indicators and recent candlestick patterns, you must dynamically determine which trading strategy is best for the current market conditions (e.g. Trend Following, Mean Reversion, Breakout), and strictly apply that strategy to your analysis.
 
 The browser extension has scraped the following live text/data directly from the broker screen:
 ======
@@ -267,7 +267,7 @@ Based ONLY on this data, provide a highly accurate trading signal.`
 `You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
 They are considering a trade with a ${body.tradeDuration} duration.
 Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Trading strategies to apply: ${(baseRequest.selectedStrategies || []).join(", ")}.
+Based on the indicators and recent candlestick patterns, you must dynamically determine which trading strategy is best for the current market conditions (e.g. Trend Following, Mean Reversion, Breakout), and strictly apply that strategy to your analysis.
 
 First, carefully extract all visible data from the chart image:
 1. The exact current price of the asset.
@@ -275,7 +275,13 @@ First, carefully extract all visible data from the chart image:
 3. Any visible support or resistance levels.
 4. Trend direction and structure.
 
-Then, based ONLY on the data you extracted, provide a highly accurate trading signal.`
+Then, based ONLY on the data you extracted, provide a highly accurate trading signal.
+
+CRITICAL RULE FOR ANALYSIS AND SCORING:
+1. You must STRICTLY follow the visible chart indicators (RSI, MACD, Bollinger Bands) and the exact rules of the selected trading strategy.
+2. Only generate a BUY or SELL signal if the indicators and the strategy perfectly align to confirm a high-probability trade.
+3. You must be extremely strict and conservative with your "confidence" score. Do NOT award 85% or higher unless the indicators are perfectly aligned and confirming the strategy.
+4. If there is any contradiction in the indicators (e.g. MACD histogram shrinking while trend is down), your maximum allowed confidence is 75%.`
 ;
 
     const finalPrompt = combinedPrompt + `
@@ -284,13 +290,13 @@ Output your final analysis strictly as a JSON object matching this exact structu
 {
   "trend": "Bullish", "Bearish", or "Sideways",
   "signal": "BUY", "SELL", or "WAIT",
-  "marketState": "Brief description of current market context",
-  "entryPrice": number (suggested entry price),
+  "marketState": "Extremely brief 3-5 word description of market",
+  "entryPrice": number,
   "takeProfit": number,
   "stopLoss": number,
   "confidence": number (0-100),
-  "reasoning": "Detailed explanation of why this trade was chosen based on the extracted values and indicators",
-  "explanation": "A short summary for the user"
+  "reasoning": "A highly concise 1-2 sentence maximum explanation of your decision. Keep it as short as possible to save tokens.",
+  "explanation": "Very short 1 sentence summary"
 }
 `;
 
