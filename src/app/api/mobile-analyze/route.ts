@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { analyze as analyzeGemini } from "@/lib/ai/providers/gemini";
 import { analyze as analyzeOpenAI } from "@/lib/ai/providers/openai";
 import { analyze as analyzeGroq } from "@/lib/ai/providers/groq";
@@ -231,6 +233,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const rawImage = typeof body?.imageBase64 === "string" ? body.imageBase64.trim() : "";
+    
+    // DEBUG: Save image to local disk
+    if (rawImage) {
+      try {
+        const debugDir = path.join(process.cwd(), 'debugimages');
+        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+        const base64Data = rawImage.replace(/^data:image\/\w+;base64,/, "");
+        const filename = `debug_${Date.now()}.png`;
+        fs.writeFileSync(path.join(debugDir, filename), Buffer.from(base64Data, 'base64'));
+        console.log(`[DEBUG] Saved screenshot to ${filename}`);
+      } catch (e) {
+        console.error("Failed to save debug image", e);
+      }
+    }
+    
     if (!rawImage && !body?.extractedTextData) return NextResponse.json({ error: "A chart screenshot or text data is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
     if (!body?.symbol || !body?.timeframe || !body?.tradeDuration) return NextResponse.json({ error: "symbol, timeframe and tradeDuration are required.", code: "MOBILE_SETTINGS_MISSING", analysisType: "mobile_visual" }, { status: 400 });
 
