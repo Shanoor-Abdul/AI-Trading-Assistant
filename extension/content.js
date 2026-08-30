@@ -3,6 +3,8 @@ let latestMarketData = {
   currentPrice: "Searching...",
   indicators: {}
 };
+let capturedMacro4H = null;
+let capturedMacro1H = null;
 
 // --- CONTINUOUS BACKGROUND READING ---
 setInterval(() => {
@@ -217,6 +219,20 @@ function injectUI() {
         </label>
       </div>
 
+      <div style="background: #18181b; padding: 12px; border-radius: 6px; border: 1px solid #3f3f46; margin-top: 16px;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #f4f4f5;">Macro Context (Optional)</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <button id="cap4hBtn" style="margin: 0; padding: 6px; width: 45%; font-size: 12px; background: #4f46e5; border: none; color: white; border-radius: 4px; cursor: pointer;">Capture 4H</button>
+          <span id="status4h" style="font-size: 11px; color: #a1a1aa; font-weight: bold;">❌ Not Captured</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <button id="cap1hBtn" style="margin: 0; padding: 6px; width: 45%; font-size: 12px; background: #4f46e5; border: none; color: white; border-radius: 4px; cursor: pointer;">Capture 1H</button>
+          <span id="status1h" style="font-size: 11px; color: #a1a1aa; font-weight: bold;">❌ Not Captured</span>
+        </div>
+        <button id="evalMacroBtn" style="margin: 0 0 6px 0; padding: 6px; width: 100%; font-size: 12px; background: #059669; color: white; border: none; cursor: pointer; border-radius: 4px;">Evaluate Macro Market</button>
+        <button id="clearMacroBtn" style="margin: 0; padding: 6px; width: 100%; font-size: 12px; background: #ef4444; color: white; border: none; cursor: pointer; border-radius: 4px;">Clear Captured Charts</button>
+      </div>
+
       <button id="analyzeBtn">Analyze Chart</button>
     </div>
   `;
@@ -294,6 +310,127 @@ function bindEvents(shadow, container) {
   });
   shadow.getElementById("indicators").addEventListener("change", saveState);
 
+  // Macro Capture Logic
+  const cap4hBtn = shadow.getElementById("cap4hBtn");
+  const cap1hBtn = shadow.getElementById("cap1hBtn");
+  const clearMacroBtn = shadow.getElementById("clearMacroBtn");
+  const status4h = shadow.getElementById("status4h");
+  const status1h = shadow.getElementById("status1h");
+
+  async function takeSecretScreenshot() {
+    container.style.opacity = "0";
+    await new Promise(r => setTimeout(r, 150));
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: "TAKE_SCREENSHOT" }, resolve);
+    });
+    container.style.opacity = "1";
+    return response?.dataUrl || null;
+  }
+
+  cap4hBtn.addEventListener("click", async () => {
+    cap4hBtn.disabled = true;
+    const b64 = await takeSecretScreenshot();
+    if (b64) {
+      capturedMacro4H = b64;
+      status4h.innerHTML = `✅ Captured`;
+      status4h.style.color = "#22c55e";
+    }
+    cap4hBtn.disabled = false;
+  });
+
+  cap1hBtn.addEventListener("click", async () => {
+    cap1hBtn.disabled = true;
+    const b64 = await takeSecretScreenshot();
+    if (b64) {
+      capturedMacro1H = b64;
+      status1h.innerHTML = `✅ Captured`;
+      status1h.style.color = "#22c55e";
+    }
+    cap1hBtn.disabled = false;
+  });
+
+  clearMacroBtn.addEventListener("click", () => {
+    capturedMacro4H = null;
+    capturedMacro1H = null;
+    status4h.innerHTML = `❌ Not Captured`;
+    status4h.style.color = "#a1a1aa";
+    status1h.innerHTML = `❌ Not Captured`;
+    status1h.style.color = "#a1a1aa";
+  });
+
+  const evalMacroBtn = shadow.getElementById("evalMacroBtn");
+  evalMacroBtn.addEventListener("click", async () => {
+    if (!capturedMacro4H && !capturedMacro1H) {
+       shadow.getElementById("reasoningText").innerText = "Please capture 4H or 1H chart first!";
+       shadow.getElementById("result").style.display = "block";
+       return;
+    }
+    
+    evalMacroBtn.disabled = true;
+    evalMacroBtn.innerText = "Evaluating...";
+    shadow.getElementById("result").style.display = "none";
+    
+    const modelEl = shadow.getElementById("model");
+    const provider = modelEl.options[modelEl.selectedIndex].getAttribute("data-provider");
+    
+    const requestBody = {
+      macroOnly: true,
+      platform: window.location.hostname,
+      symbol: shadow.getElementById("symbol").value,
+      timeframe: shadow.getElementById("timeframe").value,
+      tradeDuration: shadow.getElementById("tradeDuration").value,
+      provider: provider,
+      model: modelEl.value,
+      macroTimeframeImage: capturedMacro4H,
+      confirmationTimeframeImage: capturedMacro1H,
+      imageBase64: capturedMacro4H || capturedMacro1H // Fallback so API doesn't crash expecting a main image
+    };
+
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ 
+          action: "FETCH_API", 
+          payload: requestBody 
+        }, resolve);
+      });
+      
+      shadow.getElementById("result").style.display = "block";
+      const rsText = shadow.getElementById("reasoningText");
+      
+      if (response && response.error) {
+        rsText.innerText = `API Error: ${response.error}`;
+        shadow.getElementById("signalText").innerText = "ERROR";
+        shadow.getElementById("signalText").className = "signal";
+        shadow.getElementById("levelsDiv").style.display = "none";
+        shadow.getElementById("actionText").innerText = "";
+      } else if (response && response.data) {
+        const data = response.data;
+        if (data.error) {
+            rsText.innerText = `API Error: ${data.error}`;
+            shadow.getElementById("levelsDiv").style.display = "none";
+            shadow.getElementById("actionText").innerText = "";
+        } else {
+            rsText.innerHTML = `<strong>Macro Evaluation:</strong><br/>${data.explanation || "No explanation provided."}`;
+            shadow.getElementById("signalText").innerText = data.signal || "UNKNOWN";
+            shadow.getElementById("signalText").className = "signal " + (data.signal || "").toLowerCase();
+            
+            // Explicitly hide the price levels and auto-trade warnings from the previous analysis!
+            shadow.getElementById("levelsDiv").style.display = "none";
+            shadow.getElementById("actionText").innerText = "";
+        }
+      } else {
+        rsText.innerText = "Error evaluating macro market.";
+      }
+    } catch (e) {
+      console.error(e);
+      shadow.getElementById("reasoningText").innerText = "Network Error.";
+      shadow.getElementById("result").style.display = "block";
+    }
+    
+    evalMacroBtn.disabled = false;
+    evalMacroBtn.innerText = "Evaluate Macro Market";
+  });
+
   // Analyze Button Logic
   analyzeBtn.addEventListener("click", async () => {
     const btnText = analyzeBtn.innerText;
@@ -341,6 +478,8 @@ function bindEvents(shadow, container) {
       provider: provider,
       model: modelEl.value,
       imageBase64: base64Image,
+      macroTimeframeImage: capturedMacro4H,
+      confirmationTimeframeImage: capturedMacro1H,
       extractedTextData: JSON.stringify(latestMarketData, null, 2),
       visibleIndicators: visibleIndicators,
       selectedStrategies: ["Auto (AI Selection)"]

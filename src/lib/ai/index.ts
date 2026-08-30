@@ -84,6 +84,7 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
     macroTimeframe: (req as any).macroTimeframeImage,
     confirmationTimeframeImage: (req as any).confirmationTimeframeImage,
     structureTimeframe: (req as any).structureTimeframeImage,
+    promptOverride: (req as any).promptOverride,
   };
 
   // Only non-final requests are allowed to carry visual payloads.
@@ -164,7 +165,12 @@ export async function analyze(req: AnalyzeRequest): Promise<UniversalAIResponse>
       }
       } else {
         if (req.marketDataMode === "api") {
-          universalReq.promptOverride = buildApiDataPrompt(universalReq);
+          const apiPrompt = buildApiDataPrompt(universalReq);
+          if (universalReq.promptOverride) {
+            universalReq.promptOverride = universalReq.promptOverride + "\n\n" + apiPrompt;
+          } else {
+            universalReq.promptOverride = apiPrompt;
+          }
         }
         switch (req.provider) {
           case "gemini": result = await analyzeGemini(universalReq); break;

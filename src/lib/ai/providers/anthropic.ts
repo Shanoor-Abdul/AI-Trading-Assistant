@@ -50,9 +50,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
       messages,
     });
 
-    try {
-      require("fs").writeFileSync(req.rawOutput ? "anthropic_stage1_debug.json" : "anthropic_stage2_debug.json", JSON.stringify(response, null, 2));
-    } catch (e) {}
+
 
     if (String(response.stop_reason) === "content_filter" || response.content.length === 0) {
        throw new Error("AI model refused to process the request due to content safety filters.");

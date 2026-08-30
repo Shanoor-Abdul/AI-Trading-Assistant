@@ -43,7 +43,10 @@ function createTimings(): AnalysisTimings {
 }
 
 function validateRequest(body: any) {
-  if (!body.imageBase64 && (!body.screenshots || body.screenshots.length === 0)) {
+  const hasMainImage = !!body.imageBase64 || (body.screenshots && body.screenshots.length > 0);
+  const hasMacroImage = !!body.macroTimeframeImage || !!body.confirmationTimeframeImage;
+
+  if (!hasMainImage && !hasMacroImage) {
     return NextResponse.json(
       { error: "Image(s) are required" },
       { status: 400 }
@@ -794,6 +797,8 @@ export async function POST(
     const primaryTimeframe = body.timeframe;
     const { confirmationTimeframe, trendTimeframe } = resolveMTFTimeframes(body);
 
+
+
     const tMarketStart = performance.now();
 
     const marketContext = await fetchMarketData(
@@ -837,7 +842,7 @@ export async function POST(
     const tAiStart =
       performance.now();
 
-    const aiPromise = analyze({
+    const baseAiParams = {
       imageBase64: body.imageBase64,
       screenshots: (body as any).screenshots,
       symbol: body.symbol,
@@ -868,7 +873,96 @@ export async function POST(
       confirmationTimeframeImage: body.confirmationTimeframeImage,
       structureTimeframe: body.structureTimeframeImage,
       primaryTimeframe: body.primaryTimeframe,
-    } as any);
+    };
+
+    let result;
+
+    if (body.macroOnly) {
+       console.log("[Macro Analyzer] Engaging macro-only evaluation...");
+       const macroPromise = analyze({
+         ...baseAiParams,
+         marketDataMode: "vision",
+         promptOverride: `You are a MACRO MARKET ANALYST. 
+You have been provided with high-timeframe charts (4H and/or 1H).
+Your ONLY job is to determine if the global market condition is safe for trading, or if it is choppy and dangerous.
+
+CRITICAL INSTRUCTION: DO NOT ATTEMPT TO FIND AN ENTRY OR EXIT. YOU MUST NEVER OUTPUT "BUY" OR "SELL".
+YOUR OUTPUT MUST EXACTLY MATCH THIS JSON SCHEMA AND NOTHING ELSE:
+{
+  "signal": "GOOD" | "BAD",
+  "explanation": "String explaining your reasoning"
+}
+
+If the market is trending and clean, signal is "GOOD".
+If the market is choppy or unpredictable, signal is "BAD".`
+       } as any);
+       result = await macroPromise;
+    } else {
+       // 1. QUANTITATIVE PRE-COMPUTATION (Hard Rules Filter)
+       const rsi = marketContext.indicators?.RSI;
+       const bbUp = marketContext.indicators?.BollingerBands?.upper;
+       const bbDn = marketContext.indicators?.BollingerBands?.lower;
+       const price = marketContext.marketData?.lastPrice;
+
+       // Basic Quant Guardrail: If price is chopped up strictly in the middle of BB and RSI is 40-60, veto early.
+       let isChoppy = false;
+       if (rsi && rsi > 45 && rsi < 55 && bbUp && bbDn && price) {
+          const bbRange = bbUp - bbDn;
+          const distFromMid = Math.abs(price - ((bbUp + bbDn) / 2));
+          if (distFromMid < bbRange * 0.1) {
+              isChoppy = true; // Price is dead in the middle of the bands with flat RSI
+          }
+       }
+
+       if (isChoppy) {
+          console.log("[Quant Filter] VETO: Price is strictly chopping in the middle of the bands.");
+          result = {
+             signal: "WAIT",
+             confidence: 0,
+             explanation: "WAIT: Quantitative pre-computation filter detected strict consolidation (chop). AI analysis skipped to save costs and avoid hallucination.",
+             reasoning: "Hard code filter: RSI is flat and price is dead center of Bollinger Bands."
+          };
+       } else {
+          // 2. MULTI-AGENT DEBATE (Soft Intelligence)
+          console.log("[Multi-Agent Debate] Spawning specialized analysts...");
+          const bullPromise = analyze({
+            ...baseAiParams,
+            promptOverride: "You are the BULLISH ANALYST AGENT. Your ONLY job is to look at the chart and find every possible reason to BUY. Ignore bearish signals. Argue the bullish case as strongly as possible. Output your JSON response with a BUY signal if you find a case, otherwise WAIT."
+          } as any);
+          
+          const bearPromise = analyze({
+            ...baseAiParams,
+            promptOverride: "You are the BEARISH ANALYST AGENT. Your ONLY job is to look at the chart and find every possible reason to SELL. Ignore bullish signals. Argue the bearish case as strongly as possible. Output your JSON response with a SELL signal if you find a case, otherwise WAIT."
+          } as any);
+
+          try {
+            const [bullResult, bearResult] = await Promise.all([bullPromise, bearPromise]);
+            
+            // 3. RISK MANAGER (Final Judge)
+            console.log("[Multi-Agent Debate] Feeding arguments to Risk Manager...");
+            const riskManagerPromise = analyze({
+              ...baseAiParams,
+              promptOverride: `You are the MASTER RISK MANAGER AGENT. You are the final judge.
+Two specialized analysts have debated this chart:
+BULLISH AGENT ARGUMENT: ${(bullResult as any).explanation || "No bullish case found."}
+BEARISH AGENT ARGUMENT: ${(bearResult as any).explanation || "No bearish case found."}
+
+Look at the chart yourself. Which agent is correct? Are they both wrong? 
+- If the Bull is correct, output BUY. 
+- If the Bear is correct, output SELL. 
+- If the chart is too risky or unclear, override them both and output WAIT with 0% confidence.
+You have the final say. Output standard JSON.`
+            } as any);
+
+            result = await riskManagerPromise;
+            (result as any).explanation = `[Multi-Agent Consensus]\nBull Argument: ${(bullResult as any).signal} - ${(bullResult as any).explanation}\nBear Argument: ${(bearResult as any).signal} - ${(bearResult as any).explanation}\n\nFinal Judge: ${(result as any).explanation}`;
+          } catch (err: any) {
+            console.error("Multi-Agent Debate failed. Falling back to single-agent:", err);
+            result = await analyze(baseAiParams as any);
+          }
+       }
+    }
+    const aiPromise = Promise.resolve(result);
 
     /*
      * ==========================================
