@@ -1,3 +1,1 @@
-
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => console.error(error));
-
+// Background service worker. Side panel logic removed.
