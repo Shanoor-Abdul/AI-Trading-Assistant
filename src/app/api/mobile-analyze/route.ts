@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image, promptOverride: "", rawOutput: false, isProgressive: false,
     });
 
-        const combinedPrompt = body?.extractedTextData ? 
+        const finalPrompt = body?.extractedTextData ? 
 `You are an expert AI trading assistant. The user is trading ${body.symbol} on the ${body.timeframe} timeframe.
 They are considering a trade with a ${body.tradeDuration} duration.
 Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
