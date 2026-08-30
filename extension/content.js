@@ -294,12 +294,16 @@ function bindEvents(shadow, container) {
     };
 
     try {
-      const res = await fetch("http://localhost:3000/api/mobile-analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
+      // PROXY VIA BACKGROUND.JS TO BYPASS CORS RESTRICTIONS
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ 
+          action: "FETCH_API", 
+          payload: requestBody 
+        }, resolve);
       });
-      const data = await res.json();
+      
+      if (response && response.error) throw new Error(response.error);
+      const data = response.data;
       
       const resDiv = shadow.getElementById("result");
       const sigText = shadow.getElementById("signalText");
