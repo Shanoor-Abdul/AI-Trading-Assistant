@@ -301,7 +301,7 @@ CRITICAL RULE FOR ANALYSIS AND SCORING:
 4. If there is any contradiction in the indicators (e.g. MACD histogram shrinking while trend is down), your maximum allowed confidence is 75%.`
 ;
 
-    const finalPrompt = combinedPrompt + `
+    const jsonInstruction = `
 
 Output your final analysis strictly as a JSON object matching this exact structure (and absolutely no markdown formatting outside of the JSON block):
 {
@@ -317,7 +317,7 @@ Output your final analysis strictly as a JSON object matching this exact structu
 }
 `;
 
-    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt, rawOutput: false, isProgressive: false });
+    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt + jsonInstruction, rawOutput: false, isProgressive: false });
     
     // Ensure all required fields exist
     const finalData = {
