@@ -133,7 +133,15 @@ document.getElementById("analyzeBtn").addEventListener("click", async () => {
     payloadBase64 = await new Promise((resolve, reject) => {
       chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
         if (chrome.runtime.lastError || !dataUrl) reject(new Error(chrome.runtime.lastError?.message || "Failed to capture image"));
-        else { console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); resolve(dataUrl); }
+        else { 
+          console.log("[AI Trading] Captured Canvas Screenshot! Image size (bytes):", dataUrl.length); 
+          const debugImg = document.getElementById("debugImage");
+          if (debugImg) {
+            debugImg.src = dataUrl;
+            debugImg.style.display = "block";
+          }
+          resolve(dataUrl); 
+        }
       });
     });
 
