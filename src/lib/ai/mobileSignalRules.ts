@@ -85,16 +85,29 @@ function indicatorDirection(indicator: any, kind: "rsi" | "macd" | "bb"): Direct
 
 function emaDirection(ema: any): Direction | null {
   if (!ema || typeof ema !== "object") return null;
-  const entries = Object.values(ema).filter((x: any) => x && typeof x === "object") as any[];
-  if (entries.length < 2) return null;
-  const values = entries.map((x: any) => number(x.value)).filter((x): x is number => x !== null);
-  if (values.length >= 2) {
-    const fast = values[0];
-    const slow = values[values.length - 1];
-    if (fast > slow) return "bullish";
-    if (fast < slow) return "bearish";
+  
+  // Parse and sort EMA keys by numeric period (e.g., "EMA9" -> 9, "EMA50" -> 50)
+  const entries = Object.entries(ema)
+    .map(([key, value]: [string, any]) => {
+      const periodMatch = key.match(/\d+/);
+      const period = periodMatch ? parseInt(periodMatch[0], 10) : 0;
+      return { period, data: value };
+    })
+    .filter(x => x.data && typeof x.data === "object" && number(x.data.value) !== null)
+    .sort((a, b) => a.period - b.period);
+
+  if (entries.length < 2) {
+    return direction(Object.values(ema).map((x: any) => x?.state).join(" "));
   }
-  return direction(entries.map((x: any) => x.state).join(" "));
+
+  const fastValue = number(entries[0].data.value);
+  const slowValue = number(entries[entries.length - 1].data.value);
+
+  if (fastValue !== null && slowValue !== null) {
+    if (fastValue > slowValue) return "bullish";
+    if (fastValue < slowValue) return "bearish";
+  }
+  return null;
 }
 
 function rsiDirection(rsi: any): Direction | null {
@@ -160,14 +173,19 @@ function levelDirection(extraction: any, price: number | null): Direction | null
   if (price === null) return null;
   const supports = Array.isArray(extraction?.supportLevels) ? extraction.supportLevels : [];
   const resistances = Array.isArray(extraction?.resistanceLevels) ? extraction.resistanceLevels : [];
+  
+  // Tightened strict threshold for 5-minute precision (0.0003 ~ 3 Pips instead of 22 Pips)
+  const proximityWindow = 0.0003; 
+
   const supportNearby = supports.some((x: any) => {
     const n = number(x?.value ?? x?.price ?? x);
-    return n !== null && Math.abs(price - n) / Math.max(Math.abs(price), 1) < 0.002;
+    return n !== null && Math.abs(price - n) / Math.max(Math.abs(price), 1) < proximityWindow;
   });
   const resistanceNearby = resistances.some((x: any) => {
     const n = number(x?.value ?? x?.price ?? x);
-    return n !== null && Math.abs(price - n) / Math.max(Math.abs(price), 1) < 0.002;
+    return n !== null && Math.abs(price - n) / Math.max(Math.abs(price), 1) < proximityWindow;
   });
+  
   if (supportNearby && !resistanceNearby) return "bullish";
   if (resistanceNearby && !supportNearby) return "bearish";
   return null;
@@ -188,10 +206,11 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const rsi = indicators.RSI;
   const rsiDir = rsiDirection(rsi);
   if (rsi && rsi.visible !== false) {
-    let rsiWeight = 15;
+    // Keep heavy tracking weight (15) even on extremes to optimize sniper binary triggers
+    let rsiWeight = 15; 
     const rsiValue = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
     const rsiConf = confidence(rsi.confidence);
-    if (rsiValue !== null && (rsiValue >= 70 || rsiValue <= 30)) rsiWeight = 8;
+    
     const multi = [rsi.rsi1, rsi.rsi2, rsi.rsi3].map(number).filter((x): x is number => x !== null);
     const multiText = multi.length > 1 ? ` (${multi.map((v, index) => `RSI${index + 1} ${v}`).join(", ")})` : "";
     add(items, { key: "rsi", label: "RSI momentum", direction: rsiDir, weight: rsiWeight, confidence: rsiConf, evidence: rsiValue !== null ? `RSI ${rsiValue}${multiText}${rsi.direction ? `, ${rsi.direction}` : ""}.` : `RSI ${rsi.direction || rsi.zone || "visible"}.` });
