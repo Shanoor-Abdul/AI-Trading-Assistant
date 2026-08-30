@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === "FETCH_API") {
-    fetch("http://localhost:3000/api/mobile-analyze", {
+    fetch("http://127.0.0.1:3000/api/mobile-analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request.payload)
