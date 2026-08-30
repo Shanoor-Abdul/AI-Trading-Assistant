@@ -18,6 +18,21 @@ setInterval(() => {
   if (bollDnMatch) latestMarketData.indicators.BollingerDown = bollDnMatch[1];
   
   latestMarketData.rawTextDump = pageText.substring(0, 1000); 
+  
+  // Try to find currency pair in the text (e.g. "EUR/USD OTC")
+  const symbolMatch = pageText.match(/([A-Z]{3}\/[A-Z]{3}(?:\sOTC)?)/);
+  if (symbolMatch) {
+    latestMarketData.currentSymbol = symbolMatch[1];
+    
+    // Auto-update the UI input if it exists
+    const root = document.getElementById("ai-trading-root");
+    if (root && root.shadowRoot) {
+      const symInput = root.shadowRoot.getElementById("symbol");
+      if (symInput && document.activeElement !== symInput) { // Don't overwrite if user is typing
+         symInput.value = symbolMatch[1];
+      }
+    }
+  }
 }, 1000);
 
 
@@ -123,7 +138,10 @@ function injectUI() {
   container.innerHTML = `
     <div id="toggle-tab">S</div>
     <div id="drawer">
-      <h2>AI Trading Assistant</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #3f3f46; padding-bottom: 12px; margin-bottom: 4px;">
+        <h2 style="margin: 0; border: none; padding: 0;">AI Trading Assistant</h2>
+        <button id="closeBtn" style="background: transparent; border: none; color: #a1a1aa; font-size: 20px; cursor: pointer; padding: 0; margin: 0; width: auto;">&times;</button>
+      </div>
       
       <label>Asset Symbol</label>
       <input type="text" id="symbol" value="AUD/CAD OTC" />
@@ -203,6 +221,13 @@ function bindEvents(shadow, container) {
   toggleBtn.addEventListener("click", () => {
     container.classList.toggle("open");
   });
+  
+  const closeBtn = shadow.getElementById("closeBtn");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      container.classList.remove("open");
+    });
+  }
 
   // Load State
   const elementsToSave = ["timeframe", "tradeDuration", "model", "autoTradeToggle", "symbol"];
@@ -378,9 +403,16 @@ function clickTradeButton(direction) {
   }
 }
 
-// Inject UI as soon as possible
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", injectUI);
-} else {
-  injectUI();
-}
+// Do NOT inject by default. Only inject and toggle when background script sends message (user clicked extension icon)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "TOGGLE_UI") {
+    injectUI(); // Ensure it exists
+    const root = document.getElementById("ai-trading-root");
+    if (root && root.shadowRoot) {
+      const container = root.shadowRoot.getElementById("container");
+      if (container) container.classList.toggle("open");
+    }
+    sendResponse({ status: "ok" });
+  }
+});
+

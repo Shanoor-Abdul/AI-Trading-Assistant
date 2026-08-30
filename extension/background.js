@@ -1,5 +1,14 @@
 // Background service worker
 
+// When the user clicks the extension icon in the toolbar
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id) {
+    chrome.tabs.sendMessage(tab.id, { action: "TOGGLE_UI" }).catch(() => {
+      console.log("Failed to send message to tab. Content script might not be loaded yet.");
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "TAKE_SCREENSHOT") {
     chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
