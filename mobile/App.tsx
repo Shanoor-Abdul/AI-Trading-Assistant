@@ -4,7 +4,6 @@ import { WebView } from "react-native-webview";
 import { captureRef } from "react-native-view-shot";
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useMobileTradingStore } from "./src/store/useMobileTradingStore";
-import { AI_MODELS, AVAILABLE_STRATEGIES, AVAILABLE_INDICATORS } from "./src/lib/types";
 import { PLATFORMS, getPlatformOptions } from "./src/store/TradingPlatform";
 
 const INJECTED_JS = `
@@ -31,8 +30,8 @@ export default function App() {
   const AI_MODELS = [
       { id: "claude-sonnet-5", name: "Claude Sonnet 5 (Native)", provider: "anthropic", isFree: false },
       { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic", isFree: false },
+      { id: "claude-opus-5", name: "Claude Opus 5", provider: "anthropic", isFree: false },
 
-    
     { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", isFree: true },
     { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite", provider: "gemini", isFree: true },
     { id: "llama-3.2-90b-vision-preview", name: "Llama 3.2 90B Vision", provider: "groq", isFree: true },

@@ -14,7 +14,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   }
 
   const prompt = req.promptOverride ? req.promptOverride : (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
-  const currentModel = req.model || "claude-haiku-4-5-20251001";
+  const currentModel = req.model || "claude-sonnet-5";
 
   const content: any[] = [];
   if (req.screenshot) {
