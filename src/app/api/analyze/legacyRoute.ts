@@ -877,7 +877,7 @@ export async function POST(
 
     let result;
 
-    if (body.macroOnly) {
+    if ((body as any).macroOnly) {
        console.log("[Macro Analyzer] Engaging macro-only evaluation...");
        const macroPromise = analyze({
          ...baseAiParams,
@@ -962,8 +962,6 @@ You have the final say. Output standard JSON.`
           }
        }
     }
-    const aiPromise = Promise.resolve(result);
-
     /*
      * ==========================================
      * 6. SCREENSHOT STORAGE
@@ -977,17 +975,7 @@ You have the final say. Output standard JSON.`
     
     const screenshotUrlPromise = Promise.resolve(null);
 
-    /*
-     * AI + screenshot upload continue
-     * concurrently.
-     */
-    const [
-      result,
-      screenshotUrl,
-    ] = await Promise.all([
-      aiPromise,
-      screenshotUrlPromise,
-    ]);
+    const screenshotUrl = await screenshotUrlPromise;
 
     timings.aiMs =
       performance.now() -

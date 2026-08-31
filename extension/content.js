@@ -203,8 +203,10 @@ function injectUI() {
           <option value="claude-haiku-4-5-20251001" data-provider="anthropic">Claude 4.5 Haiku</option>
           <option value="claude-opus-5" data-provider="anthropic">Claude 4.5 Opus</option>
         </optgroup>
-        <optgroup label="OpenRouter (Free)">
+        <optgroup label="OpenRouter">
           <option value="openrouter/free" data-provider="openrouter">OpenRouter Free Models</option>
+          <option value="z-ai/glm-5.3-flash" data-provider="openrouter">GLM 5.3 Flash (Z-AI)</option>
+          <option value="z-ai/glm-5.3-flash:batch" data-provider="openrouter">GLM 5.3 Flash Batch</option>
         </optgroup>
       </select>
 

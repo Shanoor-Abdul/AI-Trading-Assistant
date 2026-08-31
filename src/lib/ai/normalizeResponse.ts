@@ -82,7 +82,7 @@ export function normalizeResponse(rawText: string, defaultOverrides?: Partial<Un
 
   const normalized: any = {
     trend: normalizeEnum(rawObj.trend, ["Bullish", "Bearish", "Sideways"], "Sideways"),
-    signal: normalizeEnum(rawObj.signal, ["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL"], "NO_TRADE"),
+    signal: normalizeEnum(rawObj.signal, ["STRONG_BUY", "BUY", "WAIT", "UNSURE", "NO_TRADE", "SELL", "STRONG_SELL", "GOOD", "BAD"], "NO_TRADE"),
     confidence: percentage(rawObj.confidence),
     readiness: normalizeEnum(rawObj.readiness, ["NOT READY", "FAIR", "GOOD", "VERY GOOD", "READY", "READY / COMPLETE", "EXCELLENT"], "NOT READY"),
     estimatedConfidence: normalizeEnum(rawObj.estimatedConfidence ?? rawObj.estimated_confidence, ["LOW", "MEDIUM", "HIGH"], "LOW"),
