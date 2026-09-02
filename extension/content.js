@@ -191,9 +191,7 @@ function injectUI() {
         <option value="RSI" selected>RSI</option>
         <option value="MACD" selected>MACD</option>
         <option value="Bollinger Bands" selected>Bollinger Bands</option>
-        <option value="Moving Averages" selected>Moving Averages</option>
-        <option value="Stochastic">Stochastic</option>
-        <option value="Parabolic SAR">Parabolic SAR</option>
+        <option value="Simple MA" selected>Simple MA</option>
       </select>
 
       <label>AI Model</label>
