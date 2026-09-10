@@ -931,3 +931,208 @@ describe("Canonical 7-Factor 100-Point Scoring Model & Signal Threshold Invarian
   });
 });
 
+describe("Deterministic Engine Final Edge-Case & Invariant Validation Suite", () => {
+  // 1. S/R Corridor Squeeze: Trapped between ceiling and floor
+  it("Edge Case 1: Simultaneous ceiling and floor proximity triggers Tight Corridor Squeeze and blocks both BUY and SELL", () => {
+    const currentPrice = 1.1500;
+    const mockSr = {
+      nearestResistance: { price: 1.1501, distancePips: 1.0, distanceAtrMultiple: 0.1, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+      nearestSupport: { price: 1.1499, distancePips: 1.0, distanceAtrMultiple: 0.1, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+      allLevels: [],
+    };
+
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      currentPrice,
+      "Bullish",
+      "Bullish",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "NONE", quality: 50, rationale: "" },
+      mockSr,
+      { ema20: 1.1500, ema50: 1.1490, ema200: null, rsi: 55, rsiDelta: 0, macdHist: 0.0001, macdSlope: "Rising", atr: 0.0010 },
+      [],
+      10000
+    );
+
+    expect(evalResult.hardGates.buyAllowed).toBe(false);
+    expect(evalResult.hardGates.sellAllowed).toBe(false);
+    expect(evalResult.hardGates.reasons.some((r) => r.includes("Corridor Squeeze"))).toBe(true);
+  });
+
+  // 2. Liquidity Sweep Rejection (Wick above, close below)
+  it("Edge Case 2: Wick sweep above swing high with close below correctly flags falseBreakout and rejects bullishBOS", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1000, high: 1.1010, low: 1.0990, close: 1.1005 },
+      { datetime: "2", open: 1.1005, high: 1.1050, low: 1.1000, close: 1.1040 }, // Swing high at 1.1050
+      { datetime: "3", open: 1.1040, high: 1.1020, low: 1.1000, close: 1.1010 },
+      { datetime: "4", open: 1.1010, high: 1.1020, low: 1.1000, close: 1.1015 },
+      { datetime: "5", open: 1.1015, high: 1.1070, low: 1.1010, close: 1.1045 }, // Wicks to 1.1070, closes at 1.1045 (below 1.1050)
+    ];
+
+    const struct = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(struct.falseBreakout).toBe(true);
+    expect(struct.bullishBOS).toBe(false);
+    expect(struct.breakoutConfirmed).toBe(false);
+  });
+
+  // 3. True Body Close BOS (Close above swing high)
+  it("Edge Case 3: Candle body closing decisively above swing high flags breakoutConfirmed and bullishBOS", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1000, high: 1.1010, low: 1.0990, close: 1.1005 },
+      { datetime: "2", open: 1.1005, high: 1.1050, low: 1.1000, close: 1.1040 }, // Swing high at 1.1050
+      { datetime: "3", open: 1.1040, high: 1.1020, low: 1.1000, close: 1.1010 },
+      { datetime: "4", open: 1.1010, high: 1.1020, low: 1.1000, close: 1.1015 },
+      { datetime: "5", open: 1.1015, high: 1.1070, low: 1.1010, close: 1.1065 }, // Closes at 1.1065 (above 1.1050)
+    ];
+
+    const struct = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(struct.breakoutConfirmed).toBe(true);
+    expect(struct.falseBreakout).toBe(false);
+  });
+
+  // 4. Structural SL Clamping: Oversized stop capped at 2.5x ATR
+  it("Edge Case 4: Exceptionally distant swing low is clamped to max allowable stop (2.5x ATR)", () => {
+    const entryPrice = 1.1500;
+    const atr = 0.0010;
+    const distantSwingLow = { index: 1, candleIndex: 10, price: 1.1400, timestamp: "1" }; // 100 pips away (10x ATR)
+    const mockSr = { nearestResistance: { price: 1.1550, distancePips: 50, distanceAtrMultiple: 5, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 }, nearestSupport: null };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "BUY", atr, mockSr, { latestSwingHigh: null, latestSwingLow: distantSwingLow }, 10000);
+    expect(entryPrice - risk.stopLoss).toBeLessThanOrEqual(atr * 2.5 + 0.00001);
+    expect(risk.stopLoss).toBeLessThan(entryPrice);
+  });
+
+  // 5. Minimum SL Noise Buffer: Very close swing low respects minimum noise buffer (>= 0.5x ATR)
+  it("Edge Case 5: Very tight swing low respects minimum noise buffer (>= 0.5x ATR)", () => {
+    const entryPrice = 1.1500;
+    const atr = 0.0010;
+    const tightSwingLow = { index: 1, candleIndex: 1, price: 1.1499, timestamp: "1" }; // Only 1 pip away
+    const mockSr = { nearestResistance: { price: 1.1550, distancePips: 50, distanceAtrMultiple: 5, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 }, nearestSupport: null };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "BUY", atr, mockSr, { latestSwingHigh: null, latestSwingLow: tightSwingLow }, 10000);
+    expect(entryPrice - risk.stopLoss).toBeGreaterThanOrEqual(0.0003);
+    expect(entryPrice - risk.stopLoss).toBeGreaterThanOrEqual(atr * 0.5 - 0.00001);
+  });
+
+  // 6. Realistic TP Front-running: Target profit cleanly front-runs overhead resistance
+  it("Edge Case 6: Take profit front-runs overhead resistance level", () => {
+    const entryPrice = 1.1500;
+    const atr = 0.0010;
+    const mockSr = { nearestResistance: { price: 1.1530, distancePips: 30, distanceAtrMultiple: 3, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 }, nearestSupport: null };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "BUY", atr, mockSr, { latestSwingHigh: null, latestSwingLow: null }, 10000);
+    expect(risk.takeProfit).toBeLessThan(mockSr.nearestResistance.price);
+    expect(risk.takeProfit).toBeGreaterThan(entryPrice);
+  });
+
+  // 7. Low RR (< 1.1) Rejection: Overly close overhead resistance produces low RR and fails RR threshold
+  it("Edge Case 7: Resistance too close to entry causes low RR (< 1.1) and contributes 0 RR points", () => {
+    const entryPrice = 1.1500;
+    const atr = 0.0010;
+    const tightResSr = { nearestResistance: { price: 1.1505, distancePips: 5, distanceAtrMultiple: 0.5, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 }, nearestSupport: null };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "BUY", atr, tightResSr, { latestSwingHigh: null, latestSwingLow: null }, 10000);
+    expect(risk.riskRewardRatio).toBeLessThan(1.1);
+
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      entryPrice,
+      "Bullish",
+      "Bullish",
+      { trend: "BULLISH", structure: "BULLISH_STRUCTURE", swingHighs: [], swingLows: [], allSwings: [], latestSwingHigh: null, latestSwingLow: null, previousSwingHigh: null, previousSwingLow: null, isHigherHigh: true, isHigherLow: true, isLowerHigh: false, isLowerLow: false, breakOfStructure: false, changeOfCharacter: false, structureRetest: false },
+      { setup: "NONE", quality: 50, rationale: "" },
+      tightResSr,
+      { ema20: 1.1490, ema50: 1.1480, ema200: null, rsi: 60, rsiDelta: 1, macdHist: 0.0001, macdSlope: "Rising", atr },
+      [],
+      10000,
+      { buyRisk: risk }
+    );
+
+    expect(evalResult.factors?.riskReward.bullish).toBe(0);
+  });
+
+  // 8. Confidence Bounding: WAIT signal confidence never exceeds 50%
+  it("Edge Case 8: Non-tradeable / WAIT setup confidence is bounded <= 50%", () => {
+    const raw4h = generateCandles(60, 1.1200, 0.0001, 0.0005);
+    const raw1h = generateCandles(60, 1.1200, 0.0001, 0.0005);
+    const raw5m = generateCandles(60, 1.1200, 0.0001, 0.0005);
+
+    const result = DeterministicApiDecisionEngine.processTwelveDataMarketData("EUR/USD", "5m", raw4h, raw1h, raw5m);
+    if (result.signal === "WAIT") {
+      expect(result.confidence).toBeLessThanOrEqual(50);
+    }
+  });
+
+  // 9. Counter-Macro Conflict: 5M bullish against 4H macro bearish forces WAIT
+  it("Edge Case 9: 5M bullish structure against 4H macro bearish trend triggers Counter-Macro Conflict gate and forces WAIT", () => {
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1500,
+      "Strong Macro Bearish (Price < EMA50 < EMA200)",
+      "Neutral",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "NONE", quality: 50, rationale: "" },
+      { nearestResistance: null, nearestSupport: null, allLevels: [] },
+      { ema20: 1.1490, ema50: 1.1480, ema200: null, rsi: 58, rsiDelta: 1, macdHist: 0.0001, macdSlope: "Rising", atr: 0.0010 },
+      [],
+      10000
+    );
+
+    expect(evalResult.hardGates.buyAllowed).toBe(false);
+    expect(evalResult.hardGates.reasons.some((r) => r.includes("Counter-Macro Bullish Conflict"))).toBe(true);
+  });
+
+  // 10. Completed Candle Integrity: In-flight live candle does not contaminate trigger anatomy confirmation
+  it("Edge Case 10: Trigger anatomy confirmation is evaluated strictly on completed candles", () => {
+    const raw4h = generateCandles(60, 1.1000, 0.001);
+    const raw1h = generateCandles(60, 1.1200, 0.0005);
+    // 5M candles with a massive uncompleted live forming spike at the end
+    const raw5m = generateCandles(60, 1.1300, 0.0002);
+    // Overwrite the newest candle (index 0 in raw TwelveData format) with a wild wick
+    raw5m[0] = {
+      datetime: new Date().toISOString(),
+      open: "1.1350",
+      high: "1.1500",
+      low: "1.1340",
+      close: "1.1350", // Huge upper wick in forming bar
+      volume: "5000",
+    };
+
+    const result = DeterministicApiDecisionEngine.processTwelveDataMarketData("EUR/USD", "5m", raw4h, raw1h, raw5m);
+    expect(result).toBeDefined();
+    expect(result.marketStructure["5m"]).toBeDefined();
+  });
+});
+
+

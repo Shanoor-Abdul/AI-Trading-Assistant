@@ -367,14 +367,18 @@ export class DeterministicApiDecisionEngine {
         const isCloseAboveHigh = latestCandle.close > latestSwingHigh.price;
         const isWickAboveHigh = latestCandle.high > latestSwingHigh.price && latestCandle.close <= latestSwingHigh.price;
 
-        // False Breakout (Wick sweep without candle close confirmation)
+        // False Breakout (Wick sweep / Liquidity grab without candle body close confirmation)
         if (isWickAboveHigh) {
           falseBreakout = true;
+          breakoutConfirmed = false;
+          bullishBOS = false;
+          bullishCHOCH = false;
         }
 
-        // Bullish BOS: Existing Bullish Structure + Confirmed Close above Swing High
+        // Bullish BOS / CHOCH: Confirmed candle close above Swing High
         if (isCloseAboveHigh) {
           breakoutConfirmed = true;
+          falseBreakout = false;
           if (structure === "BULLISH_STRUCTURE") {
             bullishBOS = true;
             breakOfStructure = true;
@@ -396,14 +400,18 @@ export class DeterministicApiDecisionEngine {
         const isCloseBelowLow = latestCandle.close < latestSwingLow.price;
         const isWickBelowLow = latestCandle.low < latestSwingLow.price && latestCandle.close >= latestSwingLow.price;
 
-        // False Breakout (Wick sweep without candle close confirmation)
+        // False Breakout (Wick sweep / Liquidity grab without candle body close confirmation)
         if (isWickBelowLow) {
           falseBreakout = true;
+          breakoutConfirmed = false;
+          bearishBOS = false;
+          bearishCHOCH = false;
         }
 
-        // Bearish BOS: Existing Bearish Structure + Confirmed Close below Swing Low
+        // Bearish BOS / CHOCH: Confirmed candle close below Swing Low
         if (isCloseBelowLow) {
           breakoutConfirmed = true;
+          falseBreakout = false;
           if (structure === "BEARISH_STRUCTURE") {
             bearishBOS = true;
             breakOfStructure = true;
@@ -702,43 +710,43 @@ export class DeterministicApiDecisionEngine {
     pipMultiplier: number
   ): RiskCalculationResult {
     const safeAtr = Math.max(0.0001, atr5m);
-    const minBuffer = Math.max(0.0001, safeAtr * 0.5);
+    const minBuffer = Math.max(0.0003, safeAtr * 0.5);
+    const maxSlDist = safeAtr * 2.5;
 
     if (direction === "BUY") {
-      // Invalidation SL is below recent swing low or structural support, with ATR buffer
+      // Invalidation SL is below recent swing low or structural support, bounded between minBuffer and maxSlDist
       let slPrice = entryPrice - safeAtr * 1.2;
       let invalidationReason = "1.2x ATR Technical Invalidation";
 
       if (swings.latestSwingLow && swings.latestSwingLow.price < entryPrice) {
-        const swingSl = swings.latestSwingLow.price - safeAtr * 0.3;
-        if (swingSl < entryPrice) {
-          slPrice = Math.min(slPrice, swingSl);
+        const swingSl = swings.latestSwingLow.price - safeAtr * 0.2;
+        const dist = entryPrice - swingSl;
+        if (dist >= minBuffer && dist <= maxSlDist) {
+          slPrice = swingSl;
           invalidationReason = `Recent 5M Swing Low (${swings.latestSwingLow.price}) buffer`;
         }
       } else if (sr.nearestSupport && sr.nearestSupport.price < entryPrice) {
-        const supportSl = sr.nearestSupport.price - safeAtr * 0.3;
-        if (supportSl < entryPrice) {
-          slPrice = Math.min(slPrice, supportSl);
+        const supportSl = sr.nearestSupport.price - safeAtr * 0.2;
+        const dist = entryPrice - supportSl;
+        if (dist >= minBuffer && dist <= maxSlDist) {
+          slPrice = supportSl;
           invalidationReason = `Structural Support (${sr.nearestSupport.price}) buffer`;
         }
       }
 
-      // Hard clamp SL below entry by at least minBuffer
+      // Hard clamp SL below entry by at least minBuffer and not exceeding maxSlDist
       slPrice = Math.min(slPrice, entryPrice - minBuffer);
+      slPrice = Math.max(slPrice, entryPrice - maxSlDist);
 
-      // Realistic structural target: choose nearest realistic barrier between swing high, resistance, and 1.5 ATR
-      let tpPrice = entryPrice + safeAtr * 1.5;
-      if (swings.latestSwingHigh && swings.latestSwingHigh.price > entryPrice + minBuffer) {
+      // Realistic structural target: front-run swing high or overhead resistance
+      let tpPrice = entryPrice + safeAtr * 1.8;
+      if (swings.latestSwingHigh && swings.latestSwingHigh.price > entryPrice) {
         const swingTp = swings.latestSwingHigh.price - safeAtr * 0.15;
-        if (swingTp > entryPrice + minBuffer) {
-          tpPrice = Math.min(tpPrice, swingTp);
-        }
+        tpPrice = Math.min(tpPrice, Math.max(entryPrice + minBuffer, swingTp));
       }
-      if (sr.nearestResistance && sr.nearestResistance.price > entryPrice + minBuffer) {
-        const resTp = sr.nearestResistance.price - safeAtr * 0.2;
-        if (resTp > entryPrice + minBuffer) {
-          tpPrice = Math.min(tpPrice, resTp);
-        }
+      if (sr.nearestResistance && sr.nearestResistance.price > entryPrice) {
+        const resTp = sr.nearestResistance.price - safeAtr * 0.15;
+        tpPrice = Math.min(tpPrice, Math.max(entryPrice + minBuffer, resTp));
       }
       // Hard clamp TP above entry by at least minBuffer
       tpPrice = Math.max(tpPrice, entryPrice + minBuffer);
@@ -764,35 +772,34 @@ export class DeterministicApiDecisionEngine {
       let invalidationReason = "1.2x ATR Technical Invalidation";
 
       if (swings.latestSwingHigh && swings.latestSwingHigh.price > entryPrice) {
-        const swingSl = swings.latestSwingHigh.price + safeAtr * 0.3;
-        if (swingSl > entryPrice) {
-          slPrice = Math.max(slPrice, swingSl);
+        const swingSl = swings.latestSwingHigh.price + safeAtr * 0.2;
+        const dist = swingSl - entryPrice;
+        if (dist >= minBuffer && dist <= maxSlDist) {
+          slPrice = swingSl;
           invalidationReason = `Recent 5M Swing High (${swings.latestSwingHigh.price}) buffer`;
         }
       } else if (sr.nearestResistance && sr.nearestResistance.price > entryPrice) {
-        const resSl = sr.nearestResistance.price + safeAtr * 0.3;
-        if (resSl > entryPrice) {
-          slPrice = Math.max(slPrice, resSl);
+        const resSl = sr.nearestResistance.price + safeAtr * 0.2;
+        const dist = resSl - entryPrice;
+        if (dist >= minBuffer && dist <= maxSlDist) {
+          slPrice = resSl;
           invalidationReason = `Structural Resistance (${sr.nearestResistance.price}) buffer`;
         }
       }
 
-      // Hard clamp SL above entry by at least minBuffer
+      // Hard clamp SL above entry by at least minBuffer and not exceeding maxSlDist
       slPrice = Math.max(slPrice, entryPrice + minBuffer);
+      slPrice = Math.min(slPrice, entryPrice + maxSlDist);
 
-      // Realistic structural target: choose nearest realistic barrier between swing low, support, and 1.5 ATR
-      let tpPrice = entryPrice - safeAtr * 1.5;
-      if (swings.latestSwingLow && swings.latestSwingLow.price < entryPrice - minBuffer) {
+      // Realistic structural target: front-run swing low or underlying support
+      let tpPrice = entryPrice - safeAtr * 1.8;
+      if (swings.latestSwingLow && swings.latestSwingLow.price < entryPrice) {
         const swingTp = swings.latestSwingLow.price + safeAtr * 0.15;
-        if (swingTp < entryPrice - minBuffer) {
-          tpPrice = Math.max(tpPrice, swingTp);
-        }
+        tpPrice = Math.max(tpPrice, Math.min(entryPrice - minBuffer, swingTp));
       }
-      if (sr.nearestSupport && sr.nearestSupport.price < entryPrice - minBuffer) {
-        const suppTp = sr.nearestSupport.price + safeAtr * 0.2;
-        if (suppTp < entryPrice - minBuffer) {
-          tpPrice = Math.max(tpPrice, suppTp);
-        }
+      if (sr.nearestSupport && sr.nearestSupport.price < entryPrice) {
+        const suppTp = sr.nearestSupport.price + safeAtr * 0.15;
+        tpPrice = Math.max(tpPrice, Math.min(entryPrice - minBuffer, suppTp));
       }
       // Hard clamp TP below entry by at least minBuffer
       tpPrice = Math.min(tpPrice, entryPrice - minBuffer);
@@ -833,7 +840,7 @@ export class DeterministicApiDecisionEngine {
     trend1h: string,
     structure5m: MarketStructureResult,
     setupObj: { setup: DeterministicDecisionResult["setup"]; quality: number; rationale: string },
-    sr: { nearestResistance: SupportResistanceLevel | null; nearestSupport: SupportResistanceLevel | null },
+    sr: { nearestResistance: SupportResistanceLevel | null; nearestSupport: SupportResistanceLevel | null; allLevels?: SupportResistanceLevel[] },
     indicators5m: {
       ema20: number | null;
       ema50: number | null;
@@ -1146,10 +1153,12 @@ export class DeterministicApiDecisionEngine {
     let sellAllowed = true;
 
     // Check Distance to Resistance (Ceiling Trap)
+    let isCeilingTrapped = false;
     if (sr.nearestResistance) {
       const distPips = (sr.nearestResistance.price - currentPrice) * pipMultiplier;
       const distAtr = (sr.nearestResistance.price - currentPrice) / safeAtr;
       if (distPips < 2.5 || distAtr < 0.75) {
+        isCeilingTrapped = true;
         if (setupObj.setup !== "BREAKOUT_CONFIRMED") {
           buyAllowed = false;
           whyNotBuy.push(`Hard Gate: Price trapped just ${distPips.toFixed(1)}p below Resistance ceiling`);
@@ -1159,16 +1168,25 @@ export class DeterministicApiDecisionEngine {
     }
 
     // Check Distance to Support (Floor Trap)
+    let isFloorTrapped = false;
     if (sr.nearestSupport) {
       const distPips = (currentPrice - sr.nearestSupport.price) * pipMultiplier;
       const distAtr = (currentPrice - sr.nearestSupport.price) / safeAtr;
       if (distPips < 2.5 || distAtr < 0.75) {
+        isFloorTrapped = true;
         if (setupObj.setup !== "BREAKOUT_CONFIRMED") {
           sellAllowed = false;
           whyNotSell.push(`Hard Gate: Price trapped just ${distPips.toFixed(1)}p above Support floor`);
           hardGateReasons.push(`Support Floor Trap (${distPips.toFixed(1)}p to barrier)`);
         }
       }
+    }
+
+    // Hard Gate: Tight S/R Corridor Squeeze (Trapped between both ceiling and floor)
+    if (isCeilingTrapped && isFloorTrapped) {
+      buyAllowed = false;
+      sellAllowed = false;
+      hardGateReasons.push("Tight Support/Resistance Corridor Squeeze");
     }
 
     // Hard Gate: Chop
@@ -1322,12 +1340,12 @@ export class DeterministicApiDecisionEngine {
       struct5m.allSwings
     );
 
-    // 4. Setup Classification
+    // 4. Setup Classification (Evaluated on completed candles)
     const setupObj = this.classifySetup(
       bias4h,
       bias1h,
       struct5m,
-      candles5m.slice(-10),
+      completedCandles5m.slice(-10),
       ema20_5m,
       ema50_5m,
       rsi_5m,
@@ -1342,7 +1360,7 @@ export class DeterministicApiDecisionEngine {
     const buyRisk = this.calculateRisk(currentPrice, "BUY", atr_5m, sr, struct5m, pipMultiplier);
     const sellRisk = this.calculateRisk(currentPrice, "SELL", atr_5m, sr, struct5m, pipMultiplier);
 
-    // 6. Evidence & Hard Gates (Strict 7-Factor 100-Point Model)
+    // 6. Evidence & Hard Gates (Strict 7-Factor 100-Point Model with completed candle trigger confirmation)
     const evalResult = this.evaluateEvidenceAndGates(
       currentPrice,
       bias4h,
@@ -1360,7 +1378,7 @@ export class DeterministicApiDecisionEngine {
         macdSlope: macdSlope_5m,
         atr: atr_5m,
       },
-      candles5m.slice(-5),
+      completedCandles5m.slice(-5),
       pipMultiplier,
       { buyRisk, sellRisk }
     );
