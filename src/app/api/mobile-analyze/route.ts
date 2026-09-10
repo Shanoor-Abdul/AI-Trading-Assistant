@@ -240,41 +240,70 @@ export async function POST(request: NextRequest) {
       if (!apiKey) throw new Error("TWELVEDATA_API_KEY is not configured.");
 
       const symbol = body.symbol ? body.symbol.replace(/\s*\(OTC\)/i, '') : "EUR/USD";
+      const executionTf = body.timeframe || "5m";
       
-      const intervalMap: any = {
+      const intervalMap: Record<string, string> = {
         "1m": "1min", "5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"
       };
-      const interval = intervalMap[body.timeframe || "5m"] || "5min";
-      const macroInterval = (body.timeframe === "15m") ? "4h" : "1h";
+      const execInterval = intervalMap[executionTf] || "5min";
 
       const baseUrl = `https://api.twelvedata.com`;
-      const baseParams = `symbol=${symbol}&interval=${interval}&apikey=${apiKey}`;
-      
-      // Single-Timeframe Execution Endpoints (Current Chart Only)
-      const endpoints = [
-        fetch(`${baseUrl}/time_series?${baseParams}&outputsize=20`).then(r => r.json()),
-        fetch(`${baseUrl}/rsi?${baseParams}&time_period=14&outputsize=3`).then(r => r.json()),
-        fetch(`${baseUrl}/macd?${baseParams}&outputsize=3`).then(r => r.json()),
-        fetch(`${baseUrl}/ema?${baseParams}&time_period=20&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/ema?${baseParams}&time_period=50&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/bbands?${baseParams}&time_period=20&sd=2&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/atr?${baseParams}&time_period=14&outputsize=1`).then(r => r.json())
-      ];
-      
-      const [priceRes, rsiRes, macdRes, ema20Res, ema50Res, bbRes, atrRes] = await Promise.all(endpoints);
-      
-      if (priceRes.status === "error") throw new Error(priceRes.message);
-      
-      const getHistory = (arr: any[], key: string, limit = 5) => {
-          if (!arr || !arr.length) return [];
-          return arr.slice(0, limit).map((v: any) => parseFloat(v[key])).reverse();
+      const safeFetch = async (url: string) => {
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+          return data?.status === "error" ? null : data;
+        } catch {
+          return null;
+        }
       };
 
-      // Current Chart Execution Data & 5-Candle Anatomy
-      const closeHistory = getHistory(priceRes.values, 'close', 5);
+      // 4H, 1H, and Execution Timeframe Parallel Multi-Timeframe Query
+      const [
+        tf4hPrice, tf4hEma50, tf4hEma200, tf4hAtr,
+        tf1hPrice, tf1hEma20, tf1hEma50, tf1hEma200, tf1hRsi, tf1hMacd, tf1hAtr,
+        execPrice, execRsi, execMacd, execEma20, execEma50, execEma200, execBbands, execAtr
+      ] = await Promise.all([
+        // 4H Higher / Macro Timeframe
+        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=4h&outputsize=20&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=4h&time_period=50&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=4h&time_period=200&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=4h&time_period=14&outputsize=1&apikey=${apiKey}`),
+
+        // 1H Intermediate Structure Timeframe
+        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=1h&outputsize=20&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=20&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=50&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=200&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/rsi?symbol=${symbol}&interval=1h&time_period=14&outputsize=3&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/macd?symbol=${symbol}&interval=1h&outputsize=3&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=1h&time_period=14&outputsize=1&apikey=${apiKey}`),
+
+        // Execution Timeframe (e.g. 5m)
+        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=${execInterval}&outputsize=20&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/rsi?symbol=${symbol}&interval=${execInterval}&time_period=14&outputsize=3&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/macd?symbol=${symbol}&interval=${execInterval}&outputsize=3&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=20&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=50&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=200&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/bbands?symbol=${symbol}&interval=${execInterval}&time_period=20&sd=2&outputsize=1&apikey=${apiKey}`),
+        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=${execInterval}&time_period=14&outputsize=1&apikey=${apiKey}`),
+      ]);
+
+      if (!execPrice?.values || !execPrice.values.length) {
+        throw new Error(`Failed to retrieve price series for ${symbol} on ${executionTf}.`);
+      }
+
+      const getHistory = (arr: any[], key: string, limit = 5) => {
+        if (!arr || !arr.length) return [];
+        return arr.slice(0, limit).map((v: any) => parseFloat(v[key])).reverse();
+      };
+
+      // 1. Current Execution Timeframe Anatomy & Indicators
+      const closeHistory = getHistory(execPrice.values, 'close', 5);
       const currentPrice = closeHistory[closeHistory.length - 1] || 'N/A';
       
-      const rawCandles = priceRes.values?.slice(0, 5) || [];
+      const rawCandles = execPrice.values?.slice(0, 5) || [];
       const fiveCandles = [...rawCandles].reverse().map((c: any, idx: number) => {
         const o = parseFloat(c.open);
         const h = parseFloat(c.high);
@@ -311,19 +340,18 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      const r1 = priceRes.values?.length ? Math.max(...priceRes.values.map((v: any) => parseFloat(v.high))) : null;
-      const s1 = priceRes.values?.length ? Math.min(...priceRes.values.map((v: any) => parseFloat(v.low))) : null;
-      
+      const r1 = execPrice.values?.length ? Math.max(...execPrice.values.map((v: any) => parseFloat(v.high))) : null;
+      const s1 = execPrice.values?.length ? Math.min(...execPrice.values.map((v: any) => parseFloat(v.low))) : null;
       const pipMultiplier = (symbol.includes("JPY") || symbol.includes("XAU") || symbol.includes("XAG")) ? 100 : 10000;
       
       const pipsUnderResistance = (r1 && currentPrice !== 'N/A') ? ((r1 - (currentPrice as number)) * pipMultiplier).toFixed(1) : 'N/A';
       const pipsAboveSupport = (s1 && currentPrice !== 'N/A') ? (((currentPrice as number) - s1) * pipMultiplier).toFixed(1) : 'N/A';
 
-      const rsiArr = getHistory(rsiRes.values, 'rsi', 3);
+      const rsiArr = getHistory(execRsi?.values, 'rsi', 3);
       const rsiChange = rsiArr.length === 3 ? (rsiArr[2] - rsiArr[0]).toFixed(2) : 'N/A';
       const currentRsi = rsiArr[rsiArr.length - 1]?.toFixed(2) || 'N/A';
 
-      const macdHistArr = getHistory(macdRes.values, 'macd_hist', 3);
+      const macdHistArr = getHistory(execMacd?.values, 'macd_hist', 3);
       let macdSlope = "Flat";
       if (macdHistArr.length === 3) {
          if (macdHistArr[2] > macdHistArr[1] && macdHistArr[1] > macdHistArr[0]) macdSlope = "Rising";
@@ -332,11 +360,15 @@ export async function POST(request: NextRequest) {
          else if (macdHistArr[2] < 0 && macdHistArr[1] > 0) macdSlope = "Bearish Cross";
       }
 
-      const macd = macdRes.values?.[0]?.macd ? parseFloat(macdRes.values[0].macd).toFixed(4) : 'N/A';
-      const macdSignal = macdRes.values?.[0]?.macd_signal ? parseFloat(macdRes.values[0].macd_signal).toFixed(4) : 'N/A';
-      const ema20 = ema20Res.values?.[0]?.ema ? parseFloat(ema20Res.values[0].ema).toFixed(4) : 'N/A';
-      const ema50 = ema50Res.values?.[0]?.ema ? parseFloat(ema50Res.values[0].ema).toFixed(4) : 'N/A';
-      
+      const macdVal = execMacd?.values?.[0]?.macd ? parseFloat(execMacd.values[0].macd).toFixed(4) : 'N/A';
+      const macdSignalVal = execMacd?.values?.[0]?.macd_signal ? parseFloat(execMacd.values[0].macd_signal).toFixed(4) : 'N/A';
+      const macdHistVal = execMacd?.values?.[0]?.macd_hist ? parseFloat(execMacd.values[0].macd_hist).toFixed(4) : 'N/A';
+
+      const ema20 = execEma20?.values?.[0]?.ema ? parseFloat(execEma20.values[0].ema).toFixed(4) : 'N/A';
+      const ema50 = execEma50?.values?.[0]?.ema ? parseFloat(execEma50.values[0].ema).toFixed(4) : 'N/A';
+      const ema200 = execEma200?.values?.[0]?.ema ? parseFloat(execEma200.values[0].ema).toFixed(4) : 'N/A';
+      const atr5m = execAtr?.values?.[0]?.atr ? parseFloat(execAtr.values[0].atr).toFixed(4) : 'N/A';
+
       let maAlignment = "ENTANGLED_CHOP";
       if (currentPrice !== 'N/A' && ema20 !== 'N/A' && ema50 !== 'N/A') {
         const cp = Number(currentPrice);
@@ -348,9 +380,9 @@ export async function POST(request: NextRequest) {
         else if (e20 < cp && cp < e50) maAlignment = "BEARISH_PULLBACK_ZONE (EMA20 < Price < EMA50)";
       }
 
-      const bbUpper = bbRes.values?.[0]?.upper_band ? parseFloat(bbRes.values[0].upper_band).toFixed(4) : 'N/A';
-      const bbMiddle = bbRes.values?.[0]?.middle_band ? parseFloat(bbRes.values[0].middle_band).toFixed(4) : 'N/A';
-      const bbLower = bbRes.values?.[0]?.lower_band ? parseFloat(bbRes.values[0].lower_band).toFixed(4) : 'N/A';
+      const bbUpper = execBbands?.values?.[0]?.upper_band ? parseFloat(execBbands.values[0].upper_band).toFixed(4) : 'N/A';
+      const bbMiddle = execBbands?.values?.[0]?.middle_band ? parseFloat(execBbands.values[0].middle_band).toFixed(4) : 'N/A';
+      const bbLower = execBbands?.values?.[0]?.lower_band ? parseFloat(execBbands.values[0].lower_band).toFixed(4) : 'N/A';
       
       let bbState = "Normal";
       let percentB = "N/A";
@@ -367,8 +399,8 @@ export async function POST(request: NextRequest) {
            if (bbu > bbl) {
              const pb = (cp - bbl) / (bbu - bbl);
              percentB = pb.toFixed(2);
-             if (pb > 0.9) priceLocationState = "NEAR_UPPER_BOLLINGER_BAND (Overextended / High Resistance Risk)";
-             else if (pb < 0.1) priceLocationState = "NEAR_LOWER_BOLLINGER_BAND (Oversold / Floor Support Risk)";
+             if (pb > 0.9) priceLocationState = "NEAR_UPPER_BOLLINGER_BAND (Pushing Upper Band / High Resistance Zone)";
+             else if (pb < 0.1) priceLocationState = "NEAR_LOWER_BOLLINGER_BAND (Pushing Lower Band / Floor Support Zone)";
              else if (pb >= 0.4 && pb <= 0.6) priceLocationState = "NEAR_MIDDLE_BOLLINGER_BAND (Equilibrium / Mean Reversion Center)";
            }
          }
@@ -378,117 +410,118 @@ export async function POST(request: NextRequest) {
         ? (parseFloat(String(currentPrice)) > parseFloat(String(ema50)) ? "Bullish" : "Bearish") 
         : "Sideways";
 
+      // 2. 4H Macro Structure & Trend
+      const tf4hEma50Val = tf4hEma50?.values?.[0]?.ema ? parseFloat(tf4hEma50.values[0].ema).toFixed(4) : 'N/A';
+      const tf4hEma200Val = tf4hEma200?.values?.[0]?.ema ? parseFloat(tf4hEma200.values[0].ema).toFixed(4) : 'N/A';
+      const tf4hLatestClose = tf4hPrice?.values?.[0]?.close ? parseFloat(tf4hPrice.values[0].close).toFixed(4) : 'N/A';
+      let tf4hBias = "Neutral / Indecisive";
+      if (tf4hLatestClose !== 'N/A' && tf4hEma50Val !== 'N/A') {
+        const c4h = parseFloat(tf4hLatestClose);
+        const e50_4h = parseFloat(tf4hEma50Val);
+        if (tf4hEma200Val !== 'N/A') {
+          const e200_4h = parseFloat(tf4hEma200Val);
+          if (c4h > e50_4h && e50_4h > e200_4h) tf4hBias = "Strong Macro Bullish (Price > EMA50 > EMA200)";
+          else if (c4h < e50_4h && e50_4h < e200_4h) tf4hBias = "Strong Macro Bearish (Price < EMA50 < EMA200)";
+          else if (c4h > e50_4h) tf4hBias = "Macro Bullish (Price > EMA50)";
+          else if (c4h < e50_4h) tf4hBias = "Macro Bearish (Price < EMA50)";
+        } else {
+          tf4hBias = c4h > e50_4h ? "Macro Bullish" : "Macro Bearish";
+        }
+      }
+
+      // 3. 1H Intermediate Structure & Momentum
+      const tf1hEma20Val = tf1hEma20?.values?.[0]?.ema ? parseFloat(tf1hEma20.values[0].ema).toFixed(4) : 'N/A';
+      const tf1hEma50Val = tf1hEma50?.values?.[0]?.ema ? parseFloat(tf1hEma50.values[0].ema).toFixed(4) : 'N/A';
+      const tf1hEma200Val = tf1hEma200?.values?.[0]?.ema ? parseFloat(tf1hEma200.values[0].ema).toFixed(4) : 'N/A';
+      const tf1hLatestClose = tf1hPrice?.values?.[0]?.close ? parseFloat(tf1hPrice.values[0].close).toFixed(4) : 'N/A';
+      const tf1hRsiArr = getHistory(tf1hRsi?.values, 'rsi', 3);
+      const tf1hCurrentRsi = tf1hRsiArr[tf1hRsiArr.length - 1]?.toFixed(2) || 'N/A';
+      const tf1hRsiDelta = tf1hRsiArr.length === 3 ? (tf1hRsiArr[2] - tf1hRsiArr[0]).toFixed(2) : 'N/A';
+      const tf1hMacdVal = tf1hMacd?.values?.[0]?.macd ? parseFloat(tf1hMacd.values[0].macd).toFixed(4) : 'N/A';
+      const tf1hMacdHist = tf1hMacd?.values?.[0]?.macd_hist ? parseFloat(tf1hMacd.values[0].macd_hist).toFixed(4) : 'N/A';
+      
+      let tf1hBias = "Neutral / Range";
+      if (tf1hLatestClose !== 'N/A' && tf1hEma50Val !== 'N/A') {
+        const c1h = parseFloat(tf1hLatestClose);
+        const e50_1h = parseFloat(tf1hEma50Val);
+        if (tf1hEma20Val !== 'N/A') {
+          const e20_1h = parseFloat(tf1hEma20Val);
+          if (c1h > e20_1h && e20_1h > e50_1h) tf1hBias = "Bullish Momentum Expansion (Price > EMA20 > EMA50)";
+          else if (c1h < e20_1h && e20_1h < e50_1h) tf1hBias = "Bearish Momentum Expansion (Price < EMA20 < EMA50)";
+          else if (e20_1h > c1h && c1h > e50_1h) tf1hBias = "Bullish Pullback Zone (EMA20 > Price > EMA50)";
+          else if (e20_1h < c1h && c1h < e50_1h) tf1hBias = "Bearish Pullback Zone (EMA20 < Price < EMA50)";
+        } else {
+          tf1hBias = c1h > e50_1h ? "Bullish Trend" : "Bearish Trend";
+        }
+      }
+
+      // Assemble Comprehensive Multi-Timeframe Dataset
       const payloadObj = {
-          asset: symbol,
-          timeframe: body.timeframe || "5m",
-          chart_trend: chartTrend,
+        data_source: "twelvedata_api_mode",
+        asset: symbol,
+        trade_duration: body.tradeDuration || "5m",
+        execution_timeframe: executionTf,
+        macro_timeframe_4h: {
+          status: tf4hPrice ? "VALID" : "UNAVAILABLE",
+          latest_close: tf4hLatestClose,
+          ema_50: tf4hEma50Val,
+          ema_200: tf4hEma200Val,
+          macro_bias: tf4hBias,
+          atr: tf4hAtr?.values?.[0]?.atr || 'N/A'
+        },
+        intermediate_timeframe_1h: {
+          status: tf1hPrice ? "VALID" : "UNAVAILABLE",
+          latest_close: tf1hLatestClose,
+          ema_20: tf1hEma20Val,
+          ema_50: tf1hEma50Val,
+          ema_200: tf1hEma200Val,
+          rsi_value: tf1hCurrentRsi,
+          rsi_delta_3c: tf1hRsiDelta,
+          macd_line: tf1hMacdVal,
+          macd_histogram: tf1hMacdHist,
+          intermediate_bias: tf1hBias,
+          atr: tf1hAtr?.values?.[0]?.atr || 'N/A'
+        },
+        execution_timeframe_5m: {
           current_price: currentPrice,
+          chart_trend: chartTrend,
           moving_average_alignment: {
-              ema_20: ema20,
-              ema_50: ema50,
-              alignment_status: maAlignment
+            ema_20: ema20,
+            ema_50: ema50,
+            ema_200: ema200,
+            alignment_status: maAlignment
           },
           execution_indicators: {
-              rsi_value: currentRsi,
-              rsi_3_candle_delta: rsiChange,
-              macd_histogram: macd,
-              macd_histogram_slope: macdSlope
+            rsi_value: currentRsi,
+            rsi_3_candle_delta: rsiChange,
+            macd_line: macdVal,
+            macd_signal: macdSignalVal,
+            macd_histogram: macdHistVal,
+            macd_histogram_slope: macdSlope,
+            atr: atr5m
           },
           market_structure_and_location: {
+            bollinger_bands: {
+              upper_band: bbUpper,
+              middle_band: bbMiddle,
+              lower_band: bbLower,
               bollinger_state: bbState,
               bollinger_percent_b: percentB,
-              price_location_state: priceLocationState,
-              nearest_resistance_r1: r1 || 'N/A',
-              pips_under_resistance: pipsUnderResistance,
-              nearest_support_s1: s1 || 'N/A',
-              pips_above_support: pipsAboveSupport
+              price_location_state: priceLocationState
+            },
+            nearest_resistance_r1: r1 || 'N/A',
+            pips_under_resistance: pipsUnderResistance,
+            nearest_support_s1: s1 || 'N/A',
+            pips_above_support: pipsAboveSupport
           },
           recent_5_candles_anatomy: fiveCandles
+        }
       };
 
       extractedTextData = JSON.stringify(payloadObj, null, 2);
-      rawImage = ""; // In twelvedata mode, rely directly on structured math
-
-      // =========================================================================
-      // ZERO-TOKEN GATEKEEPER FILTER (CURRENT TIMEFRAME TRAP DETECTION)
-      // Zero AI Tokens spent on flat, trapped, or clearly conflicting conditions
-      // =========================================================================
-      const numRsi = parseFloat(String(currentRsi));
-      const numRsiDelta = parseFloat(String(rsiChange));
-      const numPipsToR1 = parseFloat(String(pipsUnderResistance));
-      const numPipsToS1 = parseFloat(String(pipsAboveSupport));
-
-      let localFilterTriggered = false;
-      let filterReason = "";
-      let marketStateTitle = "";
-      let recheckTime = "3-5 minutes";
-
-      // Gate 1: Trap under Resistance
-      if (chartTrend === "Bullish" && !isNaN(numPipsToR1) && numPipsToR1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta <= 0) {
-        localFilterTriggered = true;
-        marketStateTitle = "Resistance Ceiling Trap";
-        filterReason = `Price is sitting just ${numPipsToR1} pips below Resistance with stalling RSI momentum (${numRsiDelta}). High risk of a false breakout rejection.`;
-        recheckTime = "Wait 3-5 minutes for a clean structural break above Resistance.";
-      }
-      // Gate 2: Trap on Support
-      else if (chartTrend === "Bearish" && !isNaN(numPipsToS1) && numPipsToS1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta >= 0) {
-        localFilterTriggered = true;
-        marketStateTitle = "Support Floor Trap";
-        filterReason = `Price is sitting directly on Support (${numPipsToS1} pips away) with stalling downward momentum (${numRsiDelta} delta). High risk of bounce.`;
-        recheckTime = "Wait 3-5 minutes for a clean structural breakdown below Support.";
-      }
-      // Gate 3: Extreme Volatility Squeeze (Flat / Dead market)
-      else if (bbState.includes("Squeezing") && !isNaN(numRsiDelta) && Math.abs(numRsiDelta) < 0.8) {
-        localFilterTriggered = true;
-        marketStateTitle = "Volatility Squeeze (Dead Market)";
-        filterReason = `Market is in an extreme Bollinger Squeeze with flat momentum (${numRsiDelta} delta). Energy is consolidating sideways.`;
-        recheckTime = "Standby 5-10 minutes for a volatility breakout.";
-      }
-      // Gate 4: Neutral Dead Zone / Choppy Indecision
-      else if (!isNaN(numRsi) && numRsi >= 48 && numRsi <= 52 && macdSlope === "Flat") {
-        localFilterTriggered = true;
-        marketStateTitle = "Neutral Dead Zone (Chop / Consolidation)";
-        filterReason = `Market is in an indecisive range (RSI: ${currentRsi}, MACD: Flat). No directional conviction present.`;
-        recheckTime = "Standby 3-5 minutes for directional momentum to form.";
-      }
-
-      if (localFilterTriggered) {
-        const dashboardTelemetry = `🛑 [Zero-Token Gatekeeper Filter]\n` +
-          `• State: ${marketStateTitle}\n` +
-          `• Reason: ${filterReason}\n` +
-          `• Telemetry: Trend: ${chartTrend} | RSI: ${currentRsi} (Δ ${rsiChange}) | MACD: ${macdSlope} | R1: ${pipsUnderResistance}p | S1: ${pipsAboveSupport}p\n` +
-          `• Next Check: ${recheckTime} (0 AI Tokens Used)`;
-
-        return NextResponse.json({
-          trend: chartTrend,
-          signal: "WAIT",
-          confidence: 20,
-          readiness: "NOT READY",
-          estimatedConfidence: "LOW",
-          recommendedTimeframe: body.timeframe || "5m",
-          entryPrice: typeof currentPrice === "number" ? currentPrice : null,
-          stopLoss: null,
-          takeProfit: null,
-          explanation: `[Gatekeeper - 0 Tokens Used] ${marketStateTitle}: ${filterReason}`,
-          reasoning: dashboardTelemetry,
-          marketState: marketStateTitle,
-          analysisType: "mobile_visual",
-          timings: { totalMs: 0 }
-        });
-      }
+      rawImage = ""; // Zero image dependency in TwelveData API mode
     }
 
-    // DEBUG: Save image to local disk
-    if (rawImage) {
-      try {
-        const debugDir = path.join(process.cwd(), 'debugimages');
-        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-        const base64Data = rawImage.replace(/^data:image\/\w+;base64,/, "");
-        const filename = `debug_${Date.now()}.png`;
-        fs.writeFileSync(path.join(debugDir, filename), Buffer.from(base64Data, 'base64'));
-      } catch (e) {}
-    }
-    
     if (!rawImage && !extractedTextData) return NextResponse.json({ error: "A chart screenshot or text data is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
     if (!body?.symbol || !body?.timeframe || !body?.tradeDuration) return NextResponse.json({ error: "symbol, timeframe and tradeDuration are required.", code: "MOBILE_SETTINGS_MISSING", analysisType: "mobile_visual" }, { status: 400 });
 
@@ -509,13 +542,258 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image.base64 ? image : undefined, promptOverride: "", rawOutput: false, isProgressive: false,
     });
 
-    const INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT = `
-You are an elite, decisive institutional trading engine.
-Your objective: Identify high-probability 1-minute to 5-minute trade setups and produce clear, actionable **BUY** or **SELL** signals with high confidence (80% - 95%).
+    let finalPrompt = "";
+    if (body.dataSource === "twelvedata") {
+      // EXACT 26-SECTION PRODUCTION API MODE PROMPT
+      finalPrompt = `You are the API MARKET DECISION ENGINE for a 5-minute trading assistant.
+
+================================================================================
+SECTION 1: ROLE DEFINITION
+================================================================================
+You are the institutional, deterministic decision layer for automated 5-minute trade execution.
+Your objective: Take verified numerical market data across 4H Macro, 1H Intermediate, and 5M Execution timeframes, synthesize multi-timeframe confluence, and produce a high-confidence, actionable BUY, SELL, or WAIT signal with exact numerical reasoning.
+
+================================================================================
+SECTION 2: MODE SEPARATION (API MODE vs VISION MODE)
+================================================================================
+IMPORTANT: This is API mode, NOT Vision mode.
+- You receive structured numerical market data calculated directly from TwelveData live market APIs.
+- The API data is the absolute primary source of truth.
+- DO NOT analyze screenshots.
+- DO NOT infer values from imaginary charts.
+- DO NOT invent missing prices, candles, indicators, support/resistance, or market structure.
+- Treat math, moving averages, wick percentages, and indicator values as hard deterministic facts.
+
+================================================================================
+SECTION 3: ANALYSIS PIPELINE (4H -> 1H -> 5M)
+================================================================================
+Execute this analysis pipeline sequentially:
+Stage 1: DATA VALIDATION & QUALITY AUDIT
+Stage 2: 4H MACRO REGIME & HIGHER-TIMEFRAME BIAS
+Stage 3: 1H INTERMEDIATE STRUCTURE & MOMENTUM CONFIRMATION
+Stage 4: 5M EXECUTION MOVING AVERAGE ALIGNMENT
+Stage 5: 5M PRICE LOCATION & BOLLINGER BEHAVIOR
+Stage 6: 5M MOMENTUM & INDICATOR DIVERGENCE / SLOPES
+Stage 7: 5-CANDLE PRICE ACTION ANATOMY & REJECTIONS
+Stage 8: SUPPORT & RESISTANCE PROXIMITY AUDIT (CEILING/FLOOR TRAPS)
+Stage 9: BULLISH vs BEARISH COMPETITION SEPARATION
+Stage 10: ENTRY + CONFIDENCE + SIZING + FINAL DETERMINATION
+
+================================================================================
+SECTION 4: DATA VALIDATION & QUALITY SCORE
+================================================================================
+Verify that current price, moving averages, RSI, MACD, Bollinger Bands, and support/resistance are present in the provided dataset. Assign a dataQuality score (0 to 100). If essential execution metrics are present, dataQuality should be >= 90.
+
+================================================================================
+SECTION 5: 4H MACRO MARKET EVALUATION
+================================================================================
+Evaluate 4H macro trend using 4H Price vs EMA50 and EMA200:
+- Bullish: 4H Price > 4H EMA50
+- Bearish: 4H Price < 4H EMA50
+- 4H establishes the macro directional tailwind. Never take aggressive counter-macro trades without severe 5M exhaustion confirmation.
+
+================================================================================
+SECTION 6: 1H INTERMEDIATE MARKET EVALUATION
+================================================================================
+Evaluate 1H intermediate trend and momentum:
+- Bullish Alignment: 1H Price > EMA20 > EMA50 with 1H RSI > 50 and rising MACD.
+- Bearish Alignment: 1H Price < EMA20 < EMA50 with 1H RSI < 50 and falling MACD.
+- Intermediate Pullback: Price retracing toward 1H EMA20/EMA50 while higher trend remains intact.
+
+================================================================================
+SECTION 7: 5M EXECUTION MARKET EVALUATION
+================================================================================
+5M is the execution timeframe where entries, trigger candles, wicks, and invalidations occur.
+- Bullish Execution: Price breaking out or bouncing off EMA20 with expanding body and rising momentum.
+- Bearish Execution: Price breaking down or rejecting EMA20 with expanding body and falling momentum.
+
+================================================================================
+SECTION 8: MOVING AVERAGE ALIGNMENT RULES
+================================================================================
+- FULL_BULLISH_STACK: Price > EMA20 > EMA50 > EMA200 -> Strong institutional long pressure (+30 Bullish).
+- FULL_BEARISH_STACK: Price < EMA20 < EMA50 < EMA200 -> Strong institutional short pressure (+30 Bearish).
+- BULLISH_PULLBACK_ZONE: EMA20 > Price > EMA50 -> Healthy retracement looking for support bounce.
+- BEARISH_PULLBACK_ZONE: EMA20 < Price < EMA50 -> Healthy retracement looking for resistance rejection.
+- ENTANGLED_CHOP: EMA20 and EMA50 crisscrossing with Price oscillating tightly -> Standby / WAIT bias.
+
+================================================================================
+SECTION 9: PRICE LOCATION & BOLLINGER RULES
+================================================================================
+- In a strong trending market (4H/1H aligned), price expanding and walking the outer Bollinger Band is MOMENTUM CONFIRMATION, not an automatic reversal signal.
+- In a ranging market, %B > 0.95 near Upper Band without breakout momentum represents high resistance risk.
+- In a ranging market, %B < 0.05 near Lower Band without breakdown momentum represents floor support risk.
+- Bollinger Squeeze (<0.001 bandwidth) warns of impending volatility explosion; wait for directional expansion.
+
+================================================================================
+SECTION 10: MOMENTUM & INDICATOR ALIGNMENT RULES
+================================================================================
+- RSI Expansion: RSI rising with 3-candle positive delta confirms buyer aggression. RSI falling with negative delta confirms seller aggression.
+- RSI Extreme Divergence: RSI > 75 stalling near resistance or RSI < 25 stalling near support warns of exhaustion.
+- MACD Slope: Rising histogram / Bullish cross confirms upward velocity. Falling histogram / Bearish cross confirms downward velocity.
+
+================================================================================
+SECTION 11: 5-CANDLE PRICE ACTION ANATOMY
+================================================================================
+Examine recent 5 candles:
+- BULLISH_HAMMER_REJECTION: Lower wick >= 50% of range with small upper body -> Buyers defending level.
+- BEARISH_SHOOTING_STAR_REJECTION: Upper wick >= 50% of range with small lower body -> Sellers defending level.
+- BULLISH_EXPANSION: Solid green body >= 65% of range closing near highs -> Strong continuation.
+- BEARISH_EXPANSION: Solid red body >= 65% of range closing near lows -> Strong continuation.
+- DOJI_INDECISION: Body <= 20% of range -> Indecision; requires next candle confirmation.
+
+================================================================================
+SECTION 12: SUPPORT & RESISTANCE RISK RULES
+================================================================================
+- Proximity to Resistance (R1): If buying, price must have room to run (>3.0 pips to R1). Buying directly into a ceiling with stalling RSI delta is a hard disqualify.
+- Proximity to Support (S1): If selling, price must have room to run (>3.0 pips to S1). Selling directly into a floor with stalling RSI delta is a hard disqualify.
+
+================================================================================
+SECTION 13: SETUP DETECTION & CLASSIFICATION
+================================================================================
+Classify setup into one of:
+1. TREND_CONTINUATION: Multi-timeframe trend alignment with momentum expansion.
+2. PULLBACK_REJECTION: Healthy retracement to dynamic EMA20/EMA50 with rejection wick in trend direction.
+3. BREAKOUT: Structural break above resistance or below support with expanding volume/body.
+4. MEAN_REVERSION: Reversal from extreme exhaustion band back toward equilibrium (only with clear rejection candle).
+5. SIDEWAYS_CHOP: Entangled EMAs and flat indicators (WAIT signal).
+
+================================================================================
+SECTION 14: BULLISH vs BEARISH SEPARATION (COMPETITION ENGINE)
+================================================================================
+Separately calculate:
+- whyBuy: Concrete institutional reasons favoring a long position.
+- whyNotBuy: Risks, overhead resistance, or negative divergence threatening a long.
+- whySell: Concrete institutional reasons favoring a short position.
+- whyNotSell: Risks, floor support, or positive divergence threatening a short.
+Compute bullishScore (0-100) and bearishScore (0-100).
+
+================================================================================
+SECTION 15: DISQUALIFICATION / HARD-BLOCK CONDITIONS (NO-TRADE TRAPS)
+================================================================================
+Force signal to WAIT if:
+- Trapped directly under R1 (<2.5 pips) with negative RSI delta.
+- Trapped directly on S1 (<2.5 pips) with positive RSI delta.
+- Dead volatility squeeze with RSI between 48-52 and flat MACD slope.
+- 5M trend directly contradicts 4H macro trend with no structural rejection pattern.
+
+================================================================================
+SECTION 16: SIGNAL DIRECTION DETERMINATION (BUY / SELL / WAIT)
+================================================================================
+- Issue **BUY** when bullishScore >= 75 and bullishScore > bearishScore + 20 and no hard-blocks trigger.
+- Issue **SELL** when bearishScore >= 75 and bearishScore > bullishScore + 20 and no hard-blocks trigger.
+- Issue **WAIT** when market is entangled, scores are balanced, or hard-block trap conditions are active.
+
+================================================================================
+SECTION 17: MULTI-TIMEFRAME ALIGNMENT GATE
+================================================================================
+Verify 4H Macro + 1H Intermediate + 5M Execution alignment:
+- Full 3-timeframe confluence = Grade A Institutional Setup (Confidence 88% - 95%).
+- 2-timeframe confluence (1H + 5M aligned with neutral 4H) = Grade B Setup (Confidence 80% - 87%).
+- Divergent / Conflicted timeframes = Standby / WAIT (Confidence 20% - 45%).
+
+================================================================================
+SECTION 18: CONFIDENCE SCORING SYSTEM
+================================================================================
+- 85% - 95%: Flawless multi-timeframe confluence, clean momentum expansion, clear path to TP with safe SL distance.
+- 78% - 84%: Strong directional setup with minor minor friction (e.g. 1 intermediate candle pause).
+- 50% - 75%: Mixed signals or approaching major structural pivot.
+- 20% - 45%: Indecisive chop, squeeze, or active trap conditions.
+
+================================================================================
+SECTION 19: TRADE READINESS CLASSIFICATION
+================================================================================
+- "READY": Confidence >= 80% with immediate trigger candle confirmed.
+- "GOOD": Confidence 75% - 79% with setup valid but awaiting ideal entry tick.
+- "FAIR": Confidence 60% - 74% with partial setup development.
+- "NOT READY": Confidence < 60% (WAIT).
+
+================================================================================
+SECTION 20: DYNAMIC ENTRY, STOP LOSS & TAKE PROFIT CALCULATION
+================================================================================
+Calculate dynamic numerical price levels:
+- entryPrice: Current market close.
+- BUY Stop Loss: 2.0 pips below 5M S1 or recent swing low.
+- BUY Take Profit: 1.0 pip below 5M R1 or 1.5x ATR target.
+- SELL Stop Loss: 2.0 pips above 5M R1 or recent swing high.
+- SELL Take Profit: 1.0 pip above 5M S1 or 1.5x ATR target.
+
+================================================================================
+SECTION 21: TRADE DURATION & EXPIRATION ALIGNMENT
+================================================================================
+The trade is targeted for 5-minute binary expiry / fast execution. Momentum must be active NOW.
+
+================================================================================
+SECTION 22: RISK / REWARD AND PROXIMITY FILTERING
+================================================================================
+Ensure target potential exceeds risk distance. Avoid entering trades where stop distance is larger than distance to nearest barrier.
+
+================================================================================
+SECTION 23: ANTI-HALLUCINATION & MATH VERIFICATION RULES
+================================================================================
+- Quote exact values from the provided JSON dataset.
+- Do not invent candle prices or indicators not present in the payload.
+
+================================================================================
+SECTION 24: DECISION PRIORITY HIERARCHY
+================================================================================
+Priority 1: Multi-Timeframe Confluence (4H -> 1H -> 5M)
+Priority 2: 5M Execution Momentum & Candle Anatomy
+Priority 3: S/R Barrier Distance & Clearance
+Priority 4: Indicator Crosses & Delta Slopes
+
+================================================================================
+SECTION 25: STRICT JSON OUTPUT SCHEMA
+================================================================================
+You MUST output strictly pure JSON matching this exact schema:
+{
+  "trend": "Bullish" | "Bearish" | "Sideways",
+  "signal": "BUY" | "SELL" | "WAIT",
+  "confidence": number,
+  "readiness": "READY" | "GOOD" | "FAIR" | "NOT READY",
+  "marketRegime": string,
+  "marketState": string,
+  "setup": "TREND_CONTINUATION" | "PULLBACK_REJECTION" | "BREAKOUT" | "MEAN_REVERSION" | "SIDEWAYS_CHOP",
+  "timeframeAnalysis": {
+    "macro_4h": string,
+    "intermediate_1h": string,
+    "execution_5m": string,
+    "confluenceGrade": "GRADE_A_CONFLUENT" | "GRADE_B_ALIGNED" | "GRADE_C_CONFLICTED"
+  },
+  "dataQuality": number,
+  "bullishScore": number,
+  "bearishScore": number,
+  "whyBuy": string[],
+  "whyNotBuy": string[],
+  "whySell": string[],
+  "whyNotSell": string[],
+  "scores": {
+    "bullish": number,
+    "bearish": number,
+    "wait": number
+  },
+  "entryPrice": number | null,
+  "takeProfit": number | null,
+  "stopLoss": number | null,
+  "reasoning": string,
+  "explanation": string
+}
+
+================================================================================
+SECTION 26: FINAL OUTPUT DIRECTIVES
+================================================================================
+- Return ONLY valid parseable JSON.
+- No markdown wrappers (\`\`\`json), no preamble, no trailing commentary.
+
+LIVE MULTI-TIMEFRAME DATASET:
+${extractedTextData}
+`;
+    } else if (rawImage) {
+      // PRIMARY VISUAL MODE (CHART SCREENSHOTS)
+      finalPrompt = `You are an elite, decisive institutional trading engine.
+Your objective: Identify high-probability 1-minute to 5-minute trade setups directly from the provided chart screenshot and produce clear, actionable **BUY** or **SELL** signals with high confidence (80% - 95%).
 
 DECISION CRITERIA & EXECUTION RULES:
-
-1. TREND & MOMENTUM EXPANSION (PRIMARY RULE):
+1. TREND & MOMENTUM EXPANSION:
    - Strong Downtrend (Lower Highs, Lower Lows, Red Candle Expansion, MACD Bearish / Falling, RSI < 45):
      -> Issue **SELL** with **80% - 92% confidence**.
      -> NOTE: Price riding or pushing down on the Lower Bollinger Band in a downtrend is strong BEARISH MOMENTUM confirmation, NOT a block.
@@ -533,14 +811,7 @@ DECISION CRITERIA & EXECUTION RULES:
    - Only output **WAIT** (Confidence 20% - 45%) if the market is completely flat (Dojis, zero volume), in a tight sideways squeeze with no direction, or if RSI is dead flat at 50 with conflicting indicators.
 
 4. CONFIDENCE SCORING:
-   - When trend, recent candles, and momentum (RSI/MACD) agree in the same direction: Award **82% to 94% confidence** so the trader can execute.
-   - Do not be artificially timid. We need clear, decisive BUY and SELL signals when directional pressure is present.
-`;
-
-    let finalPrompt = "";
-    if (rawImage) {
-      // PRIMARY VISUAL MODE: Extract from screenshot directly!
-      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
+   - When trend, recent candles, and momentum agree in the same direction: Award **82% to 94% confidence** so the trader can execute.
 
 The user has provided a chart screenshot of ${body.symbol} on the ${body.timeframe} timeframe (${body.tradeDuration} trade duration).
 Visible indicators on chart: ${(baseRequest.visibleIndicators || []).join(", ") || "Candlestick price action, RSI, MACD, Bollinger Bands, Moving Averages"}.
@@ -550,34 +821,8 @@ ANALYSIS INSTRUCTIONS:
 2. If momentum is clearly pointing DOWN (bearish candles, falling RSI/MACD), decisively issue **SELL** (82%-92% confidence).
 3. If momentum is clearly pointing UP (bullish candles, rising RSI/MACD), decisively issue **BUY** (82%-92% confidence).
 4. Only output WAIT if the market is completely flat or dead sideways.
-`;
-    } else if (body.dataSource === "twelvedata") {
-      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
 
-LIVE STRUCTURED MARKET DATASET TO ANALYZE:
-======
-${extractedTextData}
-======
-
-Calculate Stop Loss (SL) and Take Profit (TP) levels dynamically:
-- For BUY: SL = 2 pips below nearest_support_s1. TP = 1 pip below nearest_resistance_r1.
-- For SELL: SL = 2 pips above nearest_resistance_r1. TP = 1 pip above nearest_support_s1.
-`;
-    } else {
-      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
-
-The user is trading ${body.symbol} on the ${body.timeframe} timeframe with ${body.tradeDuration} duration.
-Live data:
-======
-${extractedTextData || "Rely on standard market structure."}
-======
-
-Apply the decision rules decisively.
-`;
-    }
-
-    const jsonInstruction = `
-Format your answer strictly as a pure JSON object with no markdown fences, preamble, or trailing text:
+Format your answer strictly as a pure JSON object:
 {
   "trend": "Bullish" | "Bearish" | "Sideways",
   "signal": "BUY" | "SELL" | "WAIT",
@@ -597,30 +842,50 @@ Format your answer strictly as a pure JSON object with no markdown fences, pream
   "explanation": "1-sentence executive summary"
 }
 `;
+    } else {
+      finalPrompt = `The user is trading ${body.symbol} on the ${body.timeframe} timeframe with ${body.tradeDuration} duration.
+Live data:
+${extractedTextData || "Rely on standard market structure."}
 
-    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt + jsonInstruction, rawOutput: false, isProgressive: false });
+Format your answer strictly as a pure JSON object with trend, signal (BUY/SELL/WAIT), confidence, marketState, entryPrice, stopLoss, takeProfit, reasoning, and explanation.
+`;
+    }
+
+    const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt, rawOutput: false, isProgressive: false });
     
     let calibratedSignal = finalAnalysis.signal || "WAIT";
     let calibratedConfidence = finalAnalysis.confidence || 0;
     
     // Ensure confident signals are maintained
     if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence >= 70) {
-      // Keep confident actionable signal
       calibratedConfidence = Math.max(80, calibratedConfidence);
     }
 
-    // Ensure all required fields exist
+    // Ensure all required fields exist and pass through
     const finalData = {
       trend: finalAnalysis.trend || "Sideways",
       signal: calibratedSignal,
-      marketState: finalAnalysis.marketState || "Unknown",
+      marketState: finalAnalysis.marketState || finalAnalysis.marketRegime || "Unknown",
+      marketRegime: finalAnalysis.marketRegime || finalAnalysis.marketState || "Unknown",
       entryPrice: finalAnalysis.entryPrice || finalAnalysis.entry || null,
       takeProfit: finalAnalysis.takeProfit || null,
       stopLoss: finalAnalysis.stopLoss || null,
       confidence: calibratedConfidence,
       readiness: finalAnalysis.readiness || (calibratedConfidence >= 78 ? "READY" : calibratedConfidence >= 60 ? "FAIR" : "NOT READY"),
       setup: finalAnalysis.setup || "NO_CLEAR_SETUP",
-      scores: finalAnalysis.scores || undefined,
+      timeframeAnalysis: finalAnalysis.timeframeAnalysis || undefined,
+      dataQuality: finalAnalysis.dataQuality || (body.dataSource === "twelvedata" ? 95 : 85),
+      bullishScore: finalAnalysis.bullishScore || finalAnalysis.scores?.bullish || (calibratedSignal === "BUY" ? calibratedConfidence : 20),
+      bearishScore: finalAnalysis.bearishScore || finalAnalysis.scores?.bearish || (calibratedSignal === "SELL" ? calibratedConfidence : 20),
+      whyBuy: Array.isArray(finalAnalysis.whyBuy) ? finalAnalysis.whyBuy : [],
+      whyNotBuy: Array.isArray(finalAnalysis.whyNotBuy) ? finalAnalysis.whyNotBuy : [],
+      whySell: Array.isArray(finalAnalysis.whySell) ? finalAnalysis.whySell : [],
+      whyNotSell: Array.isArray(finalAnalysis.whyNotSell) ? finalAnalysis.whyNotSell : [],
+      scores: finalAnalysis.scores || {
+        bullish: finalAnalysis.bullishScore || (calibratedSignal === "BUY" ? calibratedConfidence : 20),
+        bearish: finalAnalysis.bearishScore || (calibratedSignal === "SELL" ? calibratedConfidence : 20),
+        wait: calibratedSignal === "WAIT" ? 80 : 20
+      },
       reasoning: finalAnalysis.reasoning || "No reasoning provided",
       explanation: finalAnalysis.explanation || "No explanation provided",
       unifiedMarketData: {
@@ -632,9 +897,9 @@ Format your answer strictly as a pure JSON object with no markdown fences, pream
 
     return NextResponse.json({
       ...validated,
-      analysisType: "mobile_visual",
+      analysisType: body.dataSource === "twelvedata" ? "mobile_api" : "mobile_visual",
       extractionOnly: false,
-      source: "mobile_single_prompt",
+      source: body.dataSource === "twelvedata" ? "twelvedata_multi_timeframe_api" : "mobile_single_prompt",
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {
@@ -642,3 +907,4 @@ Format your answer strictly as a pure JSON object with no markdown fences, pream
     return NextResponse.json({ error: error?.message || "Mobile chart analysis failed", code: "MOBILE_ANALYSIS_FAILED", analysisType: "mobile_visual" }, { status: 500 });
   }
 }
+
