@@ -267,15 +267,53 @@ export async function POST(request: NextRequest) {
       if (priceRes.status === "error") throw new Error(priceRes.message);
       if (rsiRes.status === "error") throw new Error(rsiRes.message);
       
-      const getHistory = (arr: any[], key: string, limit = 3) => {
+      const getHistory = (arr: any[], key: string, limit = 5) => {
           if (!arr || !arr.length) return [];
           // TwelveData returns newest first. We take limit, reverse to show Oldest -> Prev -> Newest
           return arr.slice(0, limit).map((v: any) => parseFloat(v[key])).reverse();
       };
 
-      const closeHistory = getHistory(priceRes.values, 'close', 3);
+      const closeHistory = getHistory(priceRes.values, 'close', 5);
       const currentPrice = closeHistory[closeHistory.length - 1] || 'N/A';
       
+      // 5-Candle Anatomy & Pattern Feature Engineering
+      const rawCandles = priceRes.values?.slice(0, 5) || [];
+      const fiveCandles = [...rawCandles].reverse().map((c: any, idx: number) => {
+        const o = parseFloat(c.open);
+        const h = parseFloat(c.high);
+        const l = parseFloat(c.low);
+        const cl = parseFloat(c.close);
+        const range = Math.max(0.00001, h - l);
+        const body = Math.abs(cl - o);
+        const upperWick = h - Math.max(o, cl);
+        const lowerWick = Math.min(o, cl) - l;
+        const bodyPct = parseFloat(((body / range) * 100).toFixed(1));
+        const upperWickPct = parseFloat(((upperWick / range) * 100).toFixed(1));
+        const lowerWickPct = parseFloat(((lowerWick / range) * 100).toFixed(1));
+        const isBullish = cl >= o;
+        
+        let patternTag = "NEUTRAL_BODY";
+        if (bodyPct <= 20) patternTag = "DOJI_INDECISION";
+        else if (isBullish && lowerWickPct >= 50 && bodyPct <= 35) patternTag = "BULLISH_HAMMER_REJECTION";
+        else if (!isBullish && upperWickPct >= 50 && bodyPct <= 35) patternTag = "BEARISH_SHOOTING_STAR_REJECTION";
+        else if (isBullish && bodyPct >= 65) patternTag = "BULLISH_EXPANSION";
+        else if (!isBullish && bodyPct >= 65) patternTag = "BEARISH_EXPANSION";
+
+        return {
+          candleIndex: idx + 1,
+          time: c.datetime,
+          open: o,
+          high: h,
+          low: l,
+          close: cl,
+          direction: isBullish ? "BULLISH" : "BEARISH",
+          bodyPct: `${bodyPct}%`,
+          upperWickPct: `${upperWickPct}%`,
+          lowerWickPct: `${lowerWickPct}%`,
+          patternTag
+        };
+      });
+
       // Support & Resistance via Local High/Low (Boss's fallback)
       const r1 = priceRes.values?.length ? Math.max(...priceRes.values.map((v: any) => parseFloat(v.high))) : null;
       const s1 = priceRes.values?.length ? Math.min(...priceRes.values.map((v: any) => parseFloat(v.low))) : null;
@@ -285,13 +323,12 @@ export async function POST(request: NextRequest) {
       const pipsUnderResistance = (r1 && currentPrice !== 'N/A') ? ((r1 - (currentPrice as number)) * pipMultiplier).toFixed(1) : 'N/A';
       const pipsAboveSupport = (s1 && currentPrice !== 'N/A') ? (((currentPrice as number) - s1) * pipMultiplier).toFixed(1) : 'N/A';
 
-      
       // Momentum Deltas & Slopes (Feature Engineering)
-      const rsiArr = getHistory(rsiRes.values, 'rsi');
+      const rsiArr = getHistory(rsiRes.values, 'rsi', 3);
       const rsiChange = rsiArr.length === 3 ? (rsiArr[2] - rsiArr[0]).toFixed(2) : 'N/A';
       const currentRsi = rsiArr[rsiArr.length - 1]?.toFixed(2) || 'N/A';
 
-      const macdHistArr = getHistory(macdRes.values, 'macd_hist');
+      const macdHistArr = getHistory(macdRes.values, 'macd_hist', 3);
       const macdHistChange = macdHistArr.length === 3 ? (macdHistArr[2] - macdHistArr[0]).toFixed(4) : 'N/A';
       let macdSlope = "Flat";
       if (macdHistArr.length === 3) {
@@ -306,15 +343,41 @@ export async function POST(request: NextRequest) {
       const ema20 = ema20Res.values?.[0]?.ema ? parseFloat(ema20Res.values[0].ema).toFixed(4) : 'N/A';
       const ema50 = ema50Res.values?.[0]?.ema ? parseFloat(ema50Res.values[0].ema).toFixed(4) : 'N/A';
       
+      let maAlignment = "ENTANGLED_CHOP";
+      if (currentPrice !== 'N/A' && ema20 !== 'N/A' && ema50 !== 'N/A') {
+        const cp = Number(currentPrice);
+        const e20 = Number(ema20);
+        const e50 = Number(ema50);
+        if (cp > e20 && e20 > e50) maAlignment = "FULL_BULLISH_STACK (Price > EMA20 > EMA50)";
+        else if (cp < e20 && e20 < e50) maAlignment = "FULL_BEARISH_STACK (Price < EMA20 < EMA50)";
+        else if (e20 > cp && cp > e50) maAlignment = "BULLISH_PULLBACK_ZONE (EMA20 > Price > EMA50)";
+        else if (e20 < cp && cp < e50) maAlignment = "BEARISH_PULLBACK_ZONE (EMA20 < Price < EMA50)";
+      }
+
       const bbUpper = bbRes.values?.[0]?.upper_band ? parseFloat(bbRes.values[0].upper_band).toFixed(4) : 'N/A';
       const bbMiddle = bbRes.values?.[0]?.middle_band ? parseFloat(bbRes.values[0].middle_band).toFixed(4) : 'N/A';
       const bbLower = bbRes.values?.[0]?.lower_band ? parseFloat(bbRes.values[0].lower_band).toFixed(4) : 'N/A';
       
       let bbState = "Normal";
-      if (bbUpper !== 'N/A' && bbLower !== 'N/A') {
+      let percentB = "N/A";
+      let priceLocationState = "MID_RANGE";
+      if (bbUpper !== 'N/A' && bbLower !== 'N/A' && bbMiddle !== 'N/A') {
          const bandWidth = (parseFloat(bbUpper) - parseFloat(bbLower)) / parseFloat(bbMiddle);
          if (bandWidth < 0.001) bbState = "Squeezing (Low Volatility)";
          else if (bandWidth > 0.005) bbState = "Expanding (High Volatility)";
+
+         if (currentPrice !== 'N/A') {
+           const cp = Number(currentPrice);
+           const bbu = Number(bbUpper);
+           const bbl = Number(bbLower);
+           if (bbu > bbl) {
+             const pb = (cp - bbl) / (bbu - bbl);
+             percentB = pb.toFixed(2);
+             if (pb > 0.9) priceLocationState = "NEAR_UPPER_BOLLINGER_BAND (Overextended / High Resistance Risk)";
+             else if (pb < 0.1) priceLocationState = "NEAR_LOWER_BOLLINGER_BAND (Oversold / Floor Support Risk)";
+             else if (pb >= 0.4 && pb <= 0.6) priceLocationState = "NEAR_MIDDLE_BOLLINGER_BAND (Equilibrium / Mean Reversion Center)";
+           }
+         }
       }
 
       const atr = atrRes.values?.[0]?.atr ? parseFloat(atrRes.values[0].atr).toFixed(4) : 'N/A';
@@ -334,6 +397,11 @@ export async function POST(request: NextRequest) {
               macro_ema_200: macroEma200,
               macro_trend: macroTrend
           },
+          moving_average_alignment: {
+              ema_20: ema20,
+              ema_50: ema50,
+              alignment_status: maAlignment
+          },
           execution_indicators: {
               timeframe: body.timeframe || "5m",
               rsi_value: currentRsi,
@@ -341,13 +409,16 @@ export async function POST(request: NextRequest) {
               macd_histogram: macd,
               macd_histogram_slope: macdSlope
           },
-          market_structure: {
+          market_structure_and_location: {
               bollinger_state: bbState,
+              bollinger_percent_b: percentB,
+              price_location_state: priceLocationState,
               nearest_resistance_r1: r1 || 'N/A',
               pips_under_resistance: pipsUnderResistance,
               nearest_support_s1: s1 || 'N/A',
               pips_above_support: pipsAboveSupport
-          }
+          },
+          recent_5_candles_anatomy: fiveCandles
       };
 
       extractedTextData = JSON.stringify(payloadObj, null, 2);
@@ -466,100 +537,147 @@ export async function POST(request: NextRequest) {
       visibleIndicators: Array.isArray(body.visibleIndicators) ? body.visibleIndicators : [], screenshot: image.base64 ? image : undefined, promptOverride: "", rawOutput: false, isProgressive: false,
     });
 
+    const INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT = `
+You are the world's most disciplined institutional algorithmic trading decision engine.
+Your single mission: Maximize win rate (target >= 80%) on 5-minute / 15-minute executions by rejecting all low-probability, choppy, or ambiguous setups.
+
+Execute this MANDATORY 10-STAGE DECISION PIPELINE in strict order:
+
+STAGE 1: DATA VALIDATION
+- Check reliability of current price, latest candle anatomy, RSI, MACD, Bollinger Bands, and S/R levels.
+- If essential metrics are missing or contradictory, default to "WAIT" with low confidence (< 45%).
+
+STAGE 2: MARKET REGIME CLASSIFICATION
+- Classify market into: [Trending Bullish], [Trending Bearish], [Ranging Chop], or [Volatility Squeeze].
+- Trend-following entries are STRICTLY FORBIDDEN in Ranging Chop.
+
+STAGE 3: PRICE ACTION & 5-CANDLE ANATOMY
+- Inspect the 5-candle progression.
+- Check body expansion vs compression and upper/lower wick rejection spikes (hammers, shooting stars).
+- Verify momentum is actively expanding in the trade direction without stalling opposing wicks.
+
+STAGE 4: MARKET STRUCTURE
+- Bullish: Higher Highs (HH) + Higher Lows (HL).
+- Bearish: Lower Highs (LH) + Lower Lows (LL).
+- Sideways: Overlapping bodies / wicks without directional expansion.
+
+STAGE 5: PRICE LOCATION (CRITICAL RISK FLOOR)
+- HARD RULE: NEVER BUY directly under Resistance (R1) or Upper Bollinger Band.
+- HARD RULE: NEVER SELL directly on Support (S1) or Lower Bollinger Band.
+- Ideal BUY Location: Pullback to EMA20 / Bollinger Middle Band with lower wick rejection, or clean breakout above R1.
+- Ideal SELL Location: Pullback to EMA20 / Bollinger Middle Band with upper wick rejection, or clean breakdown below S1.
+
+STAGE 6: MOMENTUM DYNAMICS
+- Bullish: RSI > 52 and rising (positive delta), MACD histogram expanding upward.
+- Bearish: RSI < 48 and falling (negative delta), MACD histogram expanding downward.
+
+STAGE 7: INDICATOR CONVERGENCE
+- Moving Averages (Price vs EMA20 vs EMA50) must align with RSI and MACD.
+- Any conflict between primary indicators immediately disqualifies a Grade-A trade.
+
+STAGE 8: SETUP IDENTIFICATION
+Identify the exact setup:
+1. TREND_CONTINUATION_PULLBACK (Best for 5m: Macro trend pullback to EMA20/Middle Band with rejection candle).
+2. SR_REJECTION (Strong bounce off major Support or rejection off Resistance).
+3. BOLLINGER_MEAN_REVERSION (Band overshoot + RSI exhaustion + reversal candle).
+4. BREAKOUT_CONFIRMATION (Clean close beyond S/R with momentum surge).
+5. NO_CLEAR_SETUP (Mixed signals -> MUST BE "WAIT").
+
+STAGE 9: BUY vs SELL COMPETITION SCORING
+- Bullish Score: 0 to 10
+- Bearish Score: 0 to 10
+- Wait / Noise Score: 0 to 10
+To issue BUY: Bullish Score >= 7.5 AND Bullish Score - Bearish Score >= 3.0.
+To issue SELL: Bearish Score >= 7.5 AND Bearish Score - Bullish Score >= 3.0.
+Otherwise, the output MUST be "WAIT".
+
+STAGE 10: CALIBRATED CONFIDENCE & FINAL VERDICT
+- 85% - 95%: Flawless confluence across all 3 pillars (Trend + Momentum + Anatomy).
+- 78% - 84%: High-Probability Grade-A setup.
+- 65% - 74%: Marginal / Gray Zone -> MUST DOWNGRADE SIGNAL TO "WAIT" (Calibrated Confidence: 40-50%).
+- < 65%: Noise / Choppy -> Signal MUST BE "WAIT" (Calibrated Confidence: 20-35%).
+`;
+
     let finalPrompt = "";
     if (body.dataSource === "twelvedata") {
-      finalPrompt = `You are an elite automated risk algorithm and systematic trading assistant. Analyze the provided live structured JSON market dataset. Based on strict convergence logic, determine an explicit execution state: **[BUY]**, **[SELL]**, or **[HOLD]**.
-      
-Execution Rules:
-1. Strictly enforce trend alignment: Never issue a BUY if macro_trend is BEARISH. Never issue a SELL if macro_trend is BULLISH.
-2. Protection rules: If macro_trend is BULLISH but execution_indicators show a negative rsi_3_candle_delta (falling pressure) and price is sitting closely underneath a ceiling (pips_under_resistance < 5.0), you MUST output **[HOLD]** to avoid false breakouts.
-3. Trigger Buy Conditions: Only BUY if macro_trend is BULLISH, price breaks above/resides near key zones with RSI climbing (>53), and macd_histogram_slope is UP.
-4. Trigger Sell Conditions: Only SELL if macro_trend is BEARISH, RSI dropping (<47), and macd_histogram_slope is DOWN.
+      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
+
+LIVE STRUCTURED MARKET DATASET TO ANALYZE:
+======
+${extractedTextData}
+======
 
 Calculate Stop Loss (SL) and Take Profit (TP) levels dynamically:
-- For BUY: SL goes 2 pips below nearest_support_s1. TP goes 1 pip below nearest_resistance_r1.
-- For SELL: SL goes 2 pips above nearest_resistance_r1. TP goes 1 pip above nearest_support_s1.
-
-Format your answer precisely as a pure JSON object with no markdown fences, preamble, or trailing text.
-The JSON must have this exact structure:
-{
-  "signal": "BUY" | "SELL" | "WAIT",
-  "entryPrice": number,
-  "stopLoss": number,
-  "takeProfit": number,
-  "confidence": number,
-  "explanation": "Provide a brief 2-sentence structural rationale identifying metrics that forced the state."
-}
-
-JSON PAYLOAD TO ANALYZE:
-======
-${extractedTextData}
-======
+- For BUY: SL = 2 pips below nearest_support_s1. TP = 1 pip below nearest_resistance_r1.
+- For SELL: SL = 2 pips above nearest_resistance_r1. TP = 1 pip above nearest_support_s1.
 `;
     } else if (extractedTextData) {
-      finalPrompt = `You are an expert AI trading assistant. The user is trading ${body.symbol} on the ${body.timeframe} timeframe.
-They are considering a trade with a ${body.tradeDuration} duration.
-Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Based on the indicators and recent candlestick patterns, you must dynamically determine which trading strategy is best for the current market conditions (e.g. Trend Following, Mean Reversion, Breakout), and strictly apply that strategy to your analysis.
+      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
 
-The browser extension has scraped the following live text/data directly from the broker screen or API:
+The user is trading ${body.symbol} on the ${body.timeframe} timeframe with ${body.tradeDuration} duration.
+Scraped live broker text data:
 ======
 ${extractedTextData}
 ======
 
-Carefully read the scraped text to find:
-1. The exact current price of the asset.
-2. Indicator values (RSI, MACD, Bollinger Bands).
-
-Based ONLY on this data, provide a highly accurate trading signal.`;
+Apply the 10-stage institutional decision pipeline strictly to the extracted prices and indicators.
+`;
     } else {
-      finalPrompt = `You are an expert AI trading assistant. The user has provided a screenshot of a trading chart for ${body.symbol} on the ${body.timeframe} timeframe.
-They are considering a trade with a ${body.tradeDuration} duration.
-Visible indicators on the chart: ${(baseRequest.visibleIndicators || []).join(", ") || "None specified"}.
-Based on the indicators and recent candlestick patterns, you must dynamically determine which trading strategy is best for the current market conditions (e.g. Trend Following, Mean Reversion, Breakout), and strictly apply that strategy to your analysis.
+      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
 
-First, carefully extract all visible data from the chart image:
-1. The exact current price of the asset.
-2. Indicator values (e.g., RSI value, MACD lines/histogram, Bollinger Bands position).
-3. Any visible support or resistance levels.
-4. Trend direction and structure.
+The user has provided a chart screenshot of ${body.symbol} on the ${body.timeframe} timeframe (${body.tradeDuration} duration).
+Visible indicators on chart: ${(baseRequest.visibleIndicators || []).join(", ") || "RSI, MACD, Bollinger Bands, Moving Averages"}.
 
-Then, based ONLY on the data you extracted, provide a highly accurate trading signal.
-
-CRITICAL RULE FOR ANALYSIS AND SCORING:
-1. You must STRICTLY follow the visible chart indicators (RSI, MACD, Bollinger Bands, Moving Averages / SMA) and the exact rules of the selected trading strategy.
-2. If the primary indicators (like RSI and MACD) point clearly in the same direction, you should award a high confidence score (80% to 95%), even if there is minor visual noise.
-3. Only drop the confidence below 75% if there is a MAJOR contradiction between the primary indicators.
-4. Do not be overly timid or artificially conservative. We need actionable signals. If the setup looks solid according to the strategy, confidently give it an 85%+ score so the auto-trader can execute it.`;
+Extract all visible price action, 5 recent candles, support/resistance, RSI, MACD, and Bollinger Bands, and strictly run the 10-stage decision pipeline.
+`;
     }
 
     const jsonInstruction = `
-
-Output your final analysis strictly as a JSON object matching this exact structure (and absolutely no markdown formatting outside of the JSON block):
+Format your answer strictly as a pure JSON object with no markdown fences, preamble, or trailing text:
 {
-  "trend": "Bullish", "Bearish", or "Sideways",
-  "signal": "BUY", "SELL", or "WAIT",
-  "marketState": "Extremely brief 3-5 word description of market",
-  "entryPrice": number,
-  "takeProfit": number,
-  "stopLoss": number,
-  "confidence": number (0-100),
-  "reasoning": "A highly concise 1-2 sentence maximum explanation of your decision. Keep it as short as possible to save tokens.",
-  "explanation": "Very short 1 sentence summary"
+  "trend": "Bullish" | "Bearish" | "Sideways",
+  "signal": "BUY" | "SELL" | "WAIT",
+  "marketState": "Regime description (e.g. Trend Continuation Pullback, Range Bound Chop, Resistance Trap)",
+  "entryPrice": number | null,
+  "takeProfit": number | null,
+  "stopLoss": number | null,
+  "confidence": number,
+  "readiness": "READY" | "GOOD" | "FAIR" | "NOT READY",
+  "setup": "TREND_CONTINUATION_PULLBACK" | "SR_REJECTION" | "BOLLINGER_MEAN_REVERSION" | "BREAKOUT_CONFIRMATION" | "NO_CLEAR_SETUP",
+  "scores": {
+    "bullish": number,
+    "bearish": number,
+    "wait": number
+  },
+  "reasoning": "2-3 sentence institutional rationale explaining candle anatomy, location, and momentum metrics.",
+  "explanation": "1-sentence executive summary"
 }
 `;
 
     const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt + jsonInstruction, rawOutput: false, isProgressive: false });
     
+    // Enforce Boss's strict 75%+ Confidence floor and Gray-Zone Filter
+    let calibratedSignal = finalAnalysis.signal || "WAIT";
+    let calibratedConfidence = finalAnalysis.confidence || 0;
+    
+    if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence > 0 && calibratedConfidence < 75) {
+      // Gray-zone downgrade: Force WAIT to prevent the 20% win-rate loss trap
+      calibratedSignal = "WAIT";
+      calibratedConfidence = Math.min(50, calibratedConfidence);
+    }
+
     // Ensure all required fields exist
     const finalData = {
       trend: finalAnalysis.trend || "Sideways",
-      signal: finalAnalysis.signal || "WAIT",
+      signal: calibratedSignal,
       marketState: finalAnalysis.marketState || "Unknown",
       entryPrice: finalAnalysis.entryPrice || finalAnalysis.entry || null,
       takeProfit: finalAnalysis.takeProfit || null,
       stopLoss: finalAnalysis.stopLoss || null,
-      confidence: finalAnalysis.confidence || 0,
+      confidence: calibratedConfidence,
+      readiness: finalAnalysis.readiness || (calibratedConfidence >= 78 ? "READY" : calibratedConfidence >= 60 ? "FAIR" : "NOT READY"),
+      setup: finalAnalysis.setup || "NO_CLEAR_SETUP",
+      scores: finalAnalysis.scores || undefined,
       reasoning: finalAnalysis.reasoning || "No reasoning provided",
       explanation: finalAnalysis.explanation || "No explanation provided",
       unifiedMarketData: {
