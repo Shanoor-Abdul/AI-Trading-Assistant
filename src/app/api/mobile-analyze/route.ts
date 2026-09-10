@@ -11,6 +11,7 @@ import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
 import { buildMobileSignalPrompt } from "@/lib/ai/mobileSignalPrompt";
 import { calculateMobileSignalConfidence, calculateMobileSignalRules } from "@/lib/ai/mobileSignalConfidence";
+import { EMA, RSI, MACD, BollingerBands, ATR } from "technicalindicators";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -239,7 +240,7 @@ export async function POST(request: NextRequest) {
       const apiKey = process.env.TWELVEDATA_API_KEY;
       if (!apiKey) throw new Error("TWELVEDATA_API_KEY is not configured.");
 
-      const symbol = body.symbol ? body.symbol.replace(/\s*\(OTC\)/i, '') : "EUR/USD";
+      const symbol = body.symbol ? body.symbol.replace(/\s*\(OTC\)/gi, '').trim() : "EUR/USD";
       const executionTf = body.timeframe || "5m";
       
       const intervalMap: Record<string, string> = {
@@ -248,63 +249,71 @@ export async function POST(request: NextRequest) {
       const execInterval = intervalMap[executionTf] || "5min";
 
       const baseUrl = `https://api.twelvedata.com`;
-      const safeFetch = async (url: string) => {
+      const safeFetchSeries = async (interval: string, size = 60) => {
         try {
+          const url = `${baseUrl}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${size}&apikey=${apiKey}`;
           const res = await fetch(url);
           const data = await res.json();
-          return data?.status === "error" ? null : data;
-        } catch {
-          return null;
+          if (data?.status === "error" || !Array.isArray(data?.values) || data.values.length === 0) {
+            return { success: false, message: data?.message || "No candle data returned", values: [] as any[] };
+          }
+          return { success: true, message: "", values: data.values as any[] };
+        } catch (err: any) {
+          return { success: false, message: err?.message || "Fetch failed", values: [] as any[] };
         }
       };
 
-      // 4H, 1H, and Execution Timeframe Parallel Multi-Timeframe Query
-      const [
-        tf4hPrice, tf4hEma50, tf4hEma200, tf4hAtr,
-        tf1hPrice, tf1hEma20, tf1hEma50, tf1hEma200, tf1hRsi, tf1hMacd, tf1hAtr,
-        execPrice, execRsi, execMacd, execEma20, execEma50, execEma200, execBbands, execAtr
-      ] = await Promise.all([
-        // 4H Higher / Macro Timeframe
-        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=4h&outputsize=20&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=4h&time_period=50&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=4h&time_period=200&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=4h&time_period=14&outputsize=1&apikey=${apiKey}`),
-
-        // 1H Intermediate Structure Timeframe
-        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=1h&outputsize=20&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=20&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=50&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=1h&time_period=200&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/rsi?symbol=${symbol}&interval=1h&time_period=14&outputsize=3&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/macd?symbol=${symbol}&interval=1h&outputsize=3&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=1h&time_period=14&outputsize=1&apikey=${apiKey}`),
-
-        // Execution Timeframe (e.g. 5m)
-        safeFetch(`${baseUrl}/time_series?symbol=${symbol}&interval=${execInterval}&outputsize=20&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/rsi?symbol=${symbol}&interval=${execInterval}&time_period=14&outputsize=3&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/macd?symbol=${symbol}&interval=${execInterval}&outputsize=3&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=20&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=50&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/ema?symbol=${symbol}&interval=${execInterval}&time_period=200&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/bbands?symbol=${symbol}&interval=${execInterval}&time_period=20&sd=2&outputsize=1&apikey=${apiKey}`),
-        safeFetch(`${baseUrl}/atr?symbol=${symbol}&interval=${execInterval}&time_period=14&outputsize=1&apikey=${apiKey}`),
+      // Fetch primary execution timeframe series and parallel query for 1H and 4H macro contexts (3 API calls total instead of 19)
+      const [execRes, tf1hRes, tf4hRes] = await Promise.all([
+        safeFetchSeries(execInterval, 60),
+        safeFetchSeries("1h", 50),
+        safeFetchSeries("4h", 50)
       ]);
 
-      if (!execPrice?.values || !execPrice.values.length) {
-        throw new Error(`Failed to retrieve price series for ${symbol} on ${executionTf}.`);
+      if (!execRes.success || !execRes.values.length) {
+        throw new Error(`TwelveData API error: ${execRes.message || `Failed to retrieve price series for ${symbol} on ${executionTf}`}. If using the free tier (8 calls/min), please retry in 10-15 seconds.`);
       }
 
-      const getHistory = (arr: any[], key: string, limit = 5) => {
-        if (!arr || !arr.length) return [];
-        return arr.slice(0, limit).map((v: any) => parseFloat(v[key])).reverse();
-      };
+      // 1. Calculate 5M / Execution Local Indicators with Mathematical Precision
+      const chronExec = [...execRes.values].reverse();
+      const closePrices = chronExec.map((c: any) => parseFloat(c.close));
+      const highPrices = chronExec.map((c: any) => parseFloat(c.high));
+      const lowPrices = chronExec.map((c: any) => parseFloat(c.low));
+      const currentPrice = closePrices[closePrices.length - 1];
 
-      // 1. Current Execution Timeframe Anatomy & Indicators
-      const closeHistory = getHistory(execPrice.values, 'close', 5);
-      const currentPrice = closeHistory[closeHistory.length - 1] || 'N/A';
-      
-      const rawCandles = execPrice.values?.slice(0, 5) || [];
-      const fiveCandles = [...rawCandles].reverse().map((c: any, idx: number) => {
+      // Local technical indicators calculation
+      const ema20Arr = EMA.calculate({ period: 20, values: closePrices });
+      const ema50Arr = EMA.calculate({ period: 50, values: closePrices });
+      const ema200Arr = closePrices.length >= 200 ? EMA.calculate({ period: 200, values: closePrices }) : [];
+      const rsiArr = RSI.calculate({ period: 14, values: closePrices });
+      const macdArr = MACD.calculate({ fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false, values: closePrices });
+      const bbArr = BollingerBands.calculate({ period: 20, stdDev: 2, values: closePrices });
+      const atrArr = ATR.calculate({ period: 14, high: highPrices, low: lowPrices, close: closePrices });
+
+      const ema20 = ema20Arr.length ? ema20Arr[ema20Arr.length - 1].toFixed(4) : 'N/A';
+      const ema50 = ema50Arr.length ? ema50Arr[ema50Arr.length - 1].toFixed(4) : 'N/A';
+      const ema200 = ema200Arr.length ? ema200Arr[ema200Arr.length - 1].toFixed(4) : 'N/A';
+      const currentRsi = rsiArr.length ? rsiArr[rsiArr.length - 1].toFixed(2) : 'N/A';
+      const rsiChange = rsiArr.length >= 3 ? (rsiArr[rsiArr.length - 1] - rsiArr[rsiArr.length - 3]).toFixed(2) : 'N/A';
+      const macdVal = macdArr.length ? Number(macdArr[macdArr.length - 1].MACD).toFixed(4) : 'N/A';
+      const macdSignalVal = macdArr.length ? Number(macdArr[macdArr.length - 1].signal).toFixed(4) : 'N/A';
+      const macdHistVal = macdArr.length ? Number(macdArr[macdArr.length - 1].histogram).toFixed(4) : 'N/A';
+      const atr5m = atrArr.length ? atrArr[atrArr.length - 1].toFixed(4) : 'N/A';
+
+      let macdSlope = "Flat";
+      if (macdArr.length >= 3) {
+        const h0 = Number(macdArr[macdArr.length - 3].histogram);
+        const h1 = Number(macdArr[macdArr.length - 2].histogram);
+        const h2 = Number(macdArr[macdArr.length - 1].histogram);
+        if (h2 > h1 && h1 > h0) macdSlope = "Rising";
+        else if (h2 < h1 && h1 < h0) macdSlope = "Falling";
+        else if (h2 > 0 && h1 < 0) macdSlope = "Bullish Cross";
+        else if (h2 < 0 && h1 > 0) macdSlope = "Bearish Cross";
+      }
+
+      // 5-Candle Anatomy
+      const recent5Raw = execRes.values.slice(0, 5);
+      const fiveCandles = [...recent5Raw].reverse().map((c: any, idx: number) => {
         const o = parseFloat(c.open);
         const h = parseFloat(c.high);
         const l = parseFloat(c.low);
@@ -340,38 +349,16 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      const r1 = execPrice.values?.length ? Math.max(...execPrice.values.map((v: any) => parseFloat(v.high))) : null;
-      const s1 = execPrice.values?.length ? Math.min(...execPrice.values.map((v: any) => parseFloat(v.low))) : null;
+      const r1 = execRes.values?.length ? Math.max(...execRes.values.slice(0, 20).map((v: any) => parseFloat(v.high))) : null;
+      const s1 = execRes.values?.length ? Math.min(...execRes.values.slice(0, 20).map((v: any) => parseFloat(v.low))) : null;
       const pipMultiplier = (symbol.includes("JPY") || symbol.includes("XAU") || symbol.includes("XAG")) ? 100 : 10000;
       
-      const pipsUnderResistance = (r1 && currentPrice !== 'N/A') ? ((r1 - (currentPrice as number)) * pipMultiplier).toFixed(1) : 'N/A';
-      const pipsAboveSupport = (s1 && currentPrice !== 'N/A') ? (((currentPrice as number) - s1) * pipMultiplier).toFixed(1) : 'N/A';
-
-      const rsiArr = getHistory(execRsi?.values, 'rsi', 3);
-      const rsiChange = rsiArr.length === 3 ? (rsiArr[2] - rsiArr[0]).toFixed(2) : 'N/A';
-      const currentRsi = rsiArr[rsiArr.length - 1]?.toFixed(2) || 'N/A';
-
-      const macdHistArr = getHistory(execMacd?.values, 'macd_hist', 3);
-      let macdSlope = "Flat";
-      if (macdHistArr.length === 3) {
-         if (macdHistArr[2] > macdHistArr[1] && macdHistArr[1] > macdHistArr[0]) macdSlope = "Rising";
-         else if (macdHistArr[2] < macdHistArr[1] && macdHistArr[1] < macdHistArr[0]) macdSlope = "Falling";
-         else if (macdHistArr[2] > 0 && macdHistArr[1] < 0) macdSlope = "Bullish Cross";
-         else if (macdHistArr[2] < 0 && macdHistArr[1] > 0) macdSlope = "Bearish Cross";
-      }
-
-      const macdVal = execMacd?.values?.[0]?.macd ? parseFloat(execMacd.values[0].macd).toFixed(4) : 'N/A';
-      const macdSignalVal = execMacd?.values?.[0]?.macd_signal ? parseFloat(execMacd.values[0].macd_signal).toFixed(4) : 'N/A';
-      const macdHistVal = execMacd?.values?.[0]?.macd_hist ? parseFloat(execMacd.values[0].macd_hist).toFixed(4) : 'N/A';
-
-      const ema20 = execEma20?.values?.[0]?.ema ? parseFloat(execEma20.values[0].ema).toFixed(4) : 'N/A';
-      const ema50 = execEma50?.values?.[0]?.ema ? parseFloat(execEma50.values[0].ema).toFixed(4) : 'N/A';
-      const ema200 = execEma200?.values?.[0]?.ema ? parseFloat(execEma200.values[0].ema).toFixed(4) : 'N/A';
-      const atr5m = execAtr?.values?.[0]?.atr ? parseFloat(execAtr.values[0].atr).toFixed(4) : 'N/A';
+      const pipsUnderResistance = (r1 && currentPrice != null) ? ((r1 - currentPrice) * pipMultiplier).toFixed(1) : 'N/A';
+      const pipsAboveSupport = (s1 && currentPrice != null) ? ((currentPrice - s1) * pipMultiplier).toFixed(1) : 'N/A';
 
       let maAlignment = "ENTANGLED_CHOP";
-      if (currentPrice !== 'N/A' && ema20 !== 'N/A' && ema50 !== 'N/A') {
-        const cp = Number(currentPrice);
+      if (currentPrice != null && ema20 !== 'N/A' && ema50 !== 'N/A') {
+        const cp = currentPrice;
         const e20 = Number(ema20);
         const e50 = Number(ema50);
         if (cp > e20 && e20 > e50) maAlignment = "FULL_BULLISH_STACK (Price > EMA20 > EMA50)";
@@ -380,78 +367,110 @@ export async function POST(request: NextRequest) {
         else if (e20 < cp && cp < e50) maAlignment = "BEARISH_PULLBACK_ZONE (EMA20 < Price < EMA50)";
       }
 
-      const bbUpper = execBbands?.values?.[0]?.upper_band ? parseFloat(execBbands.values[0].upper_band).toFixed(4) : 'N/A';
-      const bbMiddle = execBbands?.values?.[0]?.middle_band ? parseFloat(execBbands.values[0].middle_band).toFixed(4) : 'N/A';
-      const bbLower = execBbands?.values?.[0]?.lower_band ? parseFloat(execBbands.values[0].lower_band).toFixed(4) : 'N/A';
+      const latestBb = bbArr.length ? bbArr[bbArr.length - 1] : null;
+      const bbUpper = latestBb ? latestBb.upper.toFixed(4) : 'N/A';
+      const bbMiddle = latestBb ? latestBb.middle.toFixed(4) : 'N/A';
+      const bbLower = latestBb ? latestBb.lower.toFixed(4) : 'N/A';
       
       let bbState = "Normal";
       let percentB = "N/A";
       let priceLocationState = "MID_RANGE";
-      if (bbUpper !== 'N/A' && bbLower !== 'N/A' && bbMiddle !== 'N/A') {
-         const bandWidth = (parseFloat(bbUpper) - parseFloat(bbLower)) / parseFloat(bbMiddle);
-         if (bandWidth < 0.001) bbState = "Squeezing (Low Volatility)";
-         else if (bandWidth > 0.005) bbState = "Expanding (High Volatility)";
+      if (latestBb && latestBb.middle > 0) {
+        const bandWidth = (latestBb.upper - latestBb.lower) / latestBb.middle;
+        if (bandWidth < 0.001) bbState = "Squeezing (Low Volatility)";
+        else if (bandWidth > 0.005) bbState = "Expanding (High Volatility)";
 
-         if (currentPrice !== 'N/A') {
-           const cp = Number(currentPrice);
-           const bbu = Number(bbUpper);
-           const bbl = Number(bbLower);
-           if (bbu > bbl) {
-             const pb = (cp - bbl) / (bbu - bbl);
-             percentB = pb.toFixed(2);
-             if (pb > 0.9) priceLocationState = "NEAR_UPPER_BOLLINGER_BAND (Pushing Upper Band / High Resistance Zone)";
-             else if (pb < 0.1) priceLocationState = "NEAR_LOWER_BOLLINGER_BAND (Pushing Lower Band / Floor Support Zone)";
-             else if (pb >= 0.4 && pb <= 0.6) priceLocationState = "NEAR_MIDDLE_BOLLINGER_BAND (Equilibrium / Mean Reversion Center)";
-           }
-         }
+        if (latestBb.upper > latestBb.lower) {
+          const pb = (currentPrice - latestBb.lower) / (latestBb.upper - latestBb.lower);
+          percentB = pb.toFixed(2);
+          if (pb > 0.9) priceLocationState = "NEAR_UPPER_BOLLINGER_BAND (Pushing Upper Band / High Resistance Zone)";
+          else if (pb < 0.1) priceLocationState = "NEAR_LOWER_BOLLINGER_BAND (Pushing Lower Band / Floor Support Zone)";
+          else if (pb >= 0.4 && pb <= 0.6) priceLocationState = "NEAR_MIDDLE_BOLLINGER_BAND (Equilibrium / Mean Reversion Center)";
+        }
       }
 
-      const chartTrend = (currentPrice !== 'N/A' && ema50 !== 'N/A') 
-        ? (parseFloat(String(currentPrice)) > parseFloat(String(ema50)) ? "Bullish" : "Bearish") 
+      const chartTrend = (currentPrice != null && ema50 !== 'N/A') 
+        ? (currentPrice > parseFloat(String(ema50)) ? "Bullish" : "Bearish") 
         : "Sideways";
 
       // 2. 4H Macro Structure & Trend
-      const tf4hEma50Val = tf4hEma50?.values?.[0]?.ema ? parseFloat(tf4hEma50.values[0].ema).toFixed(4) : 'N/A';
-      const tf4hEma200Val = tf4hEma200?.values?.[0]?.ema ? parseFloat(tf4hEma200.values[0].ema).toFixed(4) : 'N/A';
-      const tf4hLatestClose = tf4hPrice?.values?.[0]?.close ? parseFloat(tf4hPrice.values[0].close).toFixed(4) : 'N/A';
       let tf4hBias = "Neutral / Indecisive";
-      if (tf4hLatestClose !== 'N/A' && tf4hEma50Val !== 'N/A') {
-        const c4h = parseFloat(tf4hLatestClose);
-        const e50_4h = parseFloat(tf4hEma50Val);
-        if (tf4hEma200Val !== 'N/A') {
-          const e200_4h = parseFloat(tf4hEma200Val);
-          if (c4h > e50_4h && e50_4h > e200_4h) tf4hBias = "Strong Macro Bullish (Price > EMA50 > EMA200)";
-          else if (c4h < e50_4h && e50_4h < e200_4h) tf4hBias = "Strong Macro Bearish (Price < EMA50 < EMA200)";
-          else if (c4h > e50_4h) tf4hBias = "Macro Bullish (Price > EMA50)";
-          else if (c4h < e50_4h) tf4hBias = "Macro Bearish (Price < EMA50)";
-        } else {
-          tf4hBias = c4h > e50_4h ? "Macro Bullish" : "Macro Bearish";
+      let tf4hLatestClose = "N/A";
+      let tf4hEma50Val = "N/A";
+      let tf4hEma200Val = "N/A";
+      let tf4hAtrVal = "N/A";
+
+      if (tf4hRes.success && tf4hRes.values.length >= 20) {
+        const chron4h = [...tf4hRes.values].reverse();
+        const c4hCloses = chron4h.map((c: any) => parseFloat(c.close));
+        const c4hHighs = chron4h.map((c: any) => parseFloat(c.high));
+        const c4hLows = chron4h.map((c: any) => parseFloat(c.low));
+        const e50_4h = EMA.calculate({ period: Math.min(50, c4hCloses.length), values: c4hCloses });
+        const e200_4h = c4hCloses.length >= 200 ? EMA.calculate({ period: 200, values: c4hCloses }) : [];
+        const atr_4h = ATR.calculate({ period: 14, high: c4hHighs, low: c4hLows, close: c4hCloses });
+
+        tf4hLatestClose = c4hCloses[c4hCloses.length - 1].toFixed(4);
+        tf4hEma50Val = e50_4h.length ? e50_4h[e50_4h.length - 1].toFixed(4) : "N/A";
+        tf4hEma200Val = e200_4h.length ? e200_4h[e200_4h.length - 1].toFixed(4) : "N/A";
+        tf4hAtrVal = atr_4h.length ? atr_4h[atr_4h.length - 1].toFixed(4) : "N/A";
+
+        const last4hClose = c4hCloses[c4hCloses.length - 1];
+        const last4hE50 = e50_4h.length ? e50_4h[e50_4h.length - 1] : null;
+        const last4hE200 = e200_4h.length ? e200_4h[e200_4h.length - 1] : null;
+
+        if (last4hE50 && last4hE200) {
+          if (last4hClose > last4hE50 && last4hE50 > last4hE200) tf4hBias = "Strong Macro Bullish (Price > EMA50 > EMA200)";
+          else if (last4hClose < last4hE50 && last4hE50 < last4hE200) tf4hBias = "Strong Macro Bearish (Price < EMA50 < EMA200)";
+          else if (last4hClose > last4hE50) tf4hBias = "Macro Bullish (Price > EMA50)";
+          else if (last4hClose < last4hE50) tf4hBias = "Macro Bearish (Price < EMA50)";
+        } else if (last4hE50) {
+          tf4hBias = last4hClose > last4hE50 ? "Macro Bullish" : "Macro Bearish";
         }
       }
 
       // 3. 1H Intermediate Structure & Momentum
-      const tf1hEma20Val = tf1hEma20?.values?.[0]?.ema ? parseFloat(tf1hEma20.values[0].ema).toFixed(4) : 'N/A';
-      const tf1hEma50Val = tf1hEma50?.values?.[0]?.ema ? parseFloat(tf1hEma50.values[0].ema).toFixed(4) : 'N/A';
-      const tf1hEma200Val = tf1hEma200?.values?.[0]?.ema ? parseFloat(tf1hEma200.values[0].ema).toFixed(4) : 'N/A';
-      const tf1hLatestClose = tf1hPrice?.values?.[0]?.close ? parseFloat(tf1hPrice.values[0].close).toFixed(4) : 'N/A';
-      const tf1hRsiArr = getHistory(tf1hRsi?.values, 'rsi', 3);
-      const tf1hCurrentRsi = tf1hRsiArr[tf1hRsiArr.length - 1]?.toFixed(2) || 'N/A';
-      const tf1hRsiDelta = tf1hRsiArr.length === 3 ? (tf1hRsiArr[2] - tf1hRsiArr[0]).toFixed(2) : 'N/A';
-      const tf1hMacdVal = tf1hMacd?.values?.[0]?.macd ? parseFloat(tf1hMacd.values[0].macd).toFixed(4) : 'N/A';
-      const tf1hMacdHist = tf1hMacd?.values?.[0]?.macd_hist ? parseFloat(tf1hMacd.values[0].macd_hist).toFixed(4) : 'N/A';
-      
       let tf1hBias = "Neutral / Range";
-      if (tf1hLatestClose !== 'N/A' && tf1hEma50Val !== 'N/A') {
-        const c1h = parseFloat(tf1hLatestClose);
-        const e50_1h = parseFloat(tf1hEma50Val);
-        if (tf1hEma20Val !== 'N/A') {
-          const e20_1h = parseFloat(tf1hEma20Val);
-          if (c1h > e20_1h && e20_1h > e50_1h) tf1hBias = "Bullish Momentum Expansion (Price > EMA20 > EMA50)";
-          else if (c1h < e20_1h && e20_1h < e50_1h) tf1hBias = "Bearish Momentum Expansion (Price < EMA20 < EMA50)";
-          else if (e20_1h > c1h && c1h > e50_1h) tf1hBias = "Bullish Pullback Zone (EMA20 > Price > EMA50)";
-          else if (e20_1h < c1h && c1h < e50_1h) tf1hBias = "Bearish Pullback Zone (EMA20 < Price < EMA50)";
-        } else {
-          tf1hBias = c1h > e50_1h ? "Bullish Trend" : "Bearish Trend";
+      let tf1hCurrentRsi = "N/A";
+      let tf1hRsiDelta = "N/A";
+      let tf1hMacdVal = "N/A";
+      let tf1hMacdHist = "N/A";
+      let tf1hEma20Val = "N/A";
+      let tf1hEma50Val = "N/A";
+      let tf1hEma200Val = "N/A";
+      let tf1hLatestClose = "N/A";
+      let tf1hAtrVal = "N/A";
+
+      if (tf1hRes.success && tf1hRes.values.length >= 20) {
+        const chron1h = [...tf1hRes.values].reverse();
+        const c1hCloses = chron1h.map((c: any) => parseFloat(c.close));
+        const c1hHighs = chron1h.map((c: any) => parseFloat(c.high));
+        const c1hLows = chron1h.map((c: any) => parseFloat(c.low));
+        const e20_1h = EMA.calculate({ period: 20, values: c1hCloses });
+        const e50_1h = EMA.calculate({ period: Math.min(50, c1hCloses.length), values: c1hCloses });
+        const rsi_1h = RSI.calculate({ period: 14, values: c1hCloses });
+        const macd_1h = MACD.calculate({ fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false, values: c1hCloses });
+        const atr_1h = ATR.calculate({ period: 14, high: c1hHighs, low: c1hLows, close: c1hCloses });
+
+        tf1hLatestClose = c1hCloses[c1hCloses.length - 1].toFixed(4);
+        tf1hEma20Val = e20_1h.length ? e20_1h[e20_1h.length - 1].toFixed(4) : "N/A";
+        tf1hEma50Val = e50_1h.length ? e50_1h[e50_1h.length - 1].toFixed(4) : "N/A";
+        tf1hCurrentRsi = rsi_1h.length ? rsi_1h[rsi_1h.length - 1].toFixed(2) : "N/A";
+        tf1hRsiDelta = rsi_1h.length >= 3 ? (rsi_1h[rsi_1h.length - 1] - rsi_1h[rsi_1h.length - 3]).toFixed(2) : "N/A";
+        tf1hMacdVal = macd_1h.length ? Number(macd_1h[macd_1h.length - 1].MACD).toFixed(4) : "N/A";
+        tf1hMacdHist = macd_1h.length ? Number(macd_1h[macd_1h.length - 1].histogram).toFixed(4) : "N/A";
+        tf1hAtrVal = atr_1h.length ? atr_1h[atr_1h.length - 1].toFixed(4) : "N/A";
+
+        const lastClose = c1hCloses[c1hCloses.length - 1];
+        const lastE20 = e20_1h.length ? e20_1h[e20_1h.length - 1] : null;
+        const lastE50 = e50_1h.length ? e50_1h[e50_1h.length - 1] : null;
+
+        if (lastE20 && lastE50) {
+          if (lastClose > lastE20 && lastE20 > lastE50) tf1hBias = "Bullish Momentum Expansion (Price > EMA20 > EMA50)";
+          else if (lastClose < lastE20 && lastE20 < lastE50) tf1hBias = "Bearish Momentum Expansion (Price < EMA20 < EMA50)";
+          else if (lastE20 > lastClose && lastClose > lastE50) tf1hBias = "Bullish Pullback Zone (EMA20 > Price > EMA50)";
+          else if (lastE20 < lastClose && lastClose < lastE50) tf1hBias = "Bearish Pullback Zone (EMA20 < Price < EMA50)";
+        } else if (lastE50) {
+          tf1hBias = lastClose > lastE50 ? "Bullish Trend" : "Bearish Trend";
         }
       }
 
@@ -462,15 +481,15 @@ export async function POST(request: NextRequest) {
         trade_duration: body.tradeDuration || "5m",
         execution_timeframe: executionTf,
         macro_timeframe_4h: {
-          status: tf4hPrice ? "VALID" : "UNAVAILABLE",
+          status: tf4hRes.success ? "VALID" : "UNAVAILABLE",
           latest_close: tf4hLatestClose,
           ema_50: tf4hEma50Val,
           ema_200: tf4hEma200Val,
           macro_bias: tf4hBias,
-          atr: tf4hAtr?.values?.[0]?.atr || 'N/A'
+          atr: tf4hAtrVal
         },
         intermediate_timeframe_1h: {
-          status: tf1hPrice ? "VALID" : "UNAVAILABLE",
+          status: tf1hRes.success ? "VALID" : "UNAVAILABLE",
           latest_close: tf1hLatestClose,
           ema_20: tf1hEma20Val,
           ema_50: tf1hEma50Val,
@@ -480,7 +499,7 @@ export async function POST(request: NextRequest) {
           macd_line: tf1hMacdVal,
           macd_histogram: tf1hMacdHist,
           intermediate_bias: tf1hBias,
-          atr: tf1hAtr?.values?.[0]?.atr || 'N/A'
+          atr: tf1hAtrVal
         },
         execution_timeframe_5m: {
           current_price: currentPrice,
