@@ -56,7 +56,10 @@ Return the complete JSON object only.`;
         config: {
           responseMimeType: "application/json",
           temperature: 0.1,
-          maxOutputTokens: 6000,
+          maxOutputTokens: 2048,
+          thinkingConfig: {
+            thinkingBudget: 0,
+          },
         },
       });
 
