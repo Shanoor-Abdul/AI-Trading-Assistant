@@ -162,6 +162,16 @@ export interface DeterministicDecisionResult {
     sell: RiskCalculationResult;
     active: RiskCalculationResult;
   };
+  factors?: {
+    htfAlignment: { bullish: number; bearish: number; max: number };
+    marketStructure: { bullish: number; bearish: number; max: number };
+    momentum: { bullish: number; bearish: number; max: number };
+    entryLocation: { bullish: number; bearish: number; max: number };
+    supportResistance: { bullish: number; bearish: number; max: number };
+    riskReward: { bullish: number; bearish: number; max: number };
+    entryConfirmation: { bullish: number; bearish: number; max: number };
+    total: { bullish: number; bearish: number; max: number };
+  };
   whyBuy: string[];
   whyNotBuy: string[];
   whySell: string[];
@@ -788,6 +798,15 @@ export class DeterministicApiDecisionEngine {
 
   /**
    * Section 15-16: Independent Deterministic Scoring & Hard Gates
+   * Strict 7-Factor 100-Point Model:
+   * A. HTF Alignment (20)
+   * B. Market Structure (20)
+   * C. Momentum (15)
+   * D. Entry Location (15)
+   * E. Support / Resistance (10)
+   * F. Risk / Reward (10)
+   * G. Entry Confirmation (10)
+   * Total = 100 Points
    */
   static evaluateEvidenceAndGates(
     currentPrice: number,
@@ -807,7 +826,11 @@ export class DeterministicApiDecisionEngine {
       atr: number;
     },
     latestCandles: Candle[],
-    pipMultiplier: number
+    pipMultiplier: number,
+    riskContext?: {
+      buyRisk?: RiskCalculationResult;
+      sellRisk?: RiskCalculationResult;
+    }
   ) {
     let bullishScore = 0;
     let bearishScore = 0;
@@ -819,87 +842,69 @@ export class DeterministicApiDecisionEngine {
 
     const safeAtr = Math.max(0.0001, indicators5m.atr);
 
-    // 1. Higher Timeframe Context (Max 20 pts)
+    // =========================================================================
+    // 1. Higher-Timeframe Alignment (Max 20 pts: 4H 10 pts + 1H 10 pts)
+    // =========================================================================
+    let htfBullish = 0;
+    let htfBearish = 0;
+
     if (trend4h.includes("Bullish")) {
-      bullishScore += 10;
+      htfBullish += 10;
       whyBuy.push("4H Macro trend is Bullish (+10)");
     } else if (trend4h.includes("Bearish")) {
-      bearishScore += 10;
+      htfBearish += 10;
       whySell.push("4H Macro trend is Bearish (+10)");
     }
 
     if (trend1h.includes("Bullish")) {
-      bullishScore += 10;
+      htfBullish += 10;
       whyBuy.push("1H Intermediate trend confirms Bullish structure (+10)");
     } else if (trend1h.includes("Bearish")) {
-      bearishScore += 10;
+      htfBearish += 10;
       whySell.push("1H Intermediate trend confirms Bearish structure (+10)");
     }
 
+    bullishScore += htfBullish;
+    bearishScore += htfBearish;
+
+    // =========================================================================
     // 2. 5M Market Structure (Max 20 pts)
-    if (structure5m.structure === "BULLISH_STRUCTURE") {
-      bullishScore += 20;
-      whyBuy.push("5M prints Higher Highs and Higher Lows (+20)");
+    // =========================================================================
+    let structBullish = 0;
+    let structBearish = 0;
+
+    if (structure5m.structure === "BULLISH_STRUCTURE" || structure5m.bullishBOS || structure5m.bullishCHOCH) {
+      structBullish = 20;
+      whyBuy.push("5M prints Higher Highs and Higher Lows / Bullish BOS (+20)");
       whyNotSell.push("5M structure is structurally Bullish");
-    } else if (structure5m.structure === "BEARISH_STRUCTURE") {
-      bearishScore += 20;
-      whySell.push("5M prints Lower Highs and Lower Lows (+20)");
+    } else if (structure5m.structure === "BEARISH_STRUCTURE" || structure5m.bearishBOS || structure5m.bearishCHOCH) {
+      structBearish = 20;
+      whySell.push("5M prints Lower Highs and Lower Lows / Bearish BOS (+20)");
       whyNotBuy.push("5M structure is structurally Bearish");
     } else {
-      bullishScore += 5;
-      bearishScore += 5;
+      structBullish = 5;
+      structBearish = 5;
     }
 
-    // 3. Setup Quality (Max 20 pts)
-    if (setupObj.setup === "TREND_CONTINUATION_PULLBACK" || setupObj.setup === "BREAKOUT_CONFIRMED") {
-      if (bullishScore > bearishScore) {
-        bullishScore += 20;
-        whyBuy.push(`Active high-grade setup: ${setupObj.setup} (+20)`);
-      } else {
-        bearishScore += 20;
-        whySell.push(`Active high-grade setup: ${setupObj.setup} (+20)`);
-      }
-    } else if (setupObj.setup === "SUPPORT_REJECTION") {
-      bullishScore += 15;
-      whyBuy.push("Support floor rejection pinbar confirmed (+15)");
-    } else if (setupObj.setup === "RESISTANCE_REJECTION") {
-      bearishScore += 15;
-      whySell.push("Resistance ceiling rejection pinbar confirmed (+15)");
-    } else if (setupObj.setup === "CHOP") {
-      whyNotBuy.push("Market is in an entangled volatility CHOP");
-      whyNotSell.push("Market is in an entangled volatility CHOP");
-    }
+    bullishScore += structBullish;
+    bearishScore += structBearish;
 
-    // 4. Moving Average Alignment (Max 15 pts)
-    const e20 = indicators5m.ema20;
-    const e50 = indicators5m.ema50;
-    if (e20 && e50) {
-      if (currentPrice > e20 && e20 > e50) {
-        bullishScore += 15;
-        whyBuy.push("Full bullish EMA stack (Price > EMA20 > EMA50) (+15)");
-      } else if (currentPrice < e20 && e20 < e50) {
-        bearishScore += 15;
-        whySell.push("Full bearish EMA stack (Price < EMA20 < EMA50) (+15)");
-      } else if (e20 > currentPrice && currentPrice > e50) {
-        bullishScore += 8;
-        whyBuy.push("Bullish pullback zone (EMA20 > Price > EMA50) (+8)");
-      } else if (e20 < currentPrice && currentPrice < e50) {
-        bearishScore += 8;
-        whySell.push("Bearish pullback zone (EMA20 < Price < EMA50) (+8)");
-      }
-    }
+    // =========================================================================
+    // 3. Momentum: RSI (8 pts) + MACD (7 pts) (Max 15 pts)
+    // =========================================================================
+    let momBullish = 0;
+    let momBearish = 0;
 
-    // 5. Momentum: RSI + MACD Slope (Max 15 pts)
     const rsi = indicators5m.rsi;
     const rsiDelta = indicators5m.rsiDelta;
     const macdSlope = indicators5m.macdSlope;
 
     if (rsi != null) {
       if (rsi > 55 && (rsiDelta == null || rsiDelta >= 0)) {
-        bullishScore += 8;
+        momBullish += 8;
         whyBuy.push(`RSI (${rsi.toFixed(1)}) in bullish expansion (+8)`);
       } else if (rsi < 45 && (rsiDelta == null || rsiDelta <= 0)) {
-        bearishScore += 8;
+        momBearish += 8;
         whySell.push(`RSI (${rsi.toFixed(1)}) in bearish expansion (+8)`);
       }
     }
@@ -907,29 +912,126 @@ export class DeterministicApiDecisionEngine {
     const macdHist = indicators5m.macdHist;
     if (macdHist != null) {
       if (macdHist > 0 && (macdSlope === "Rising" || macdSlope === "Bullish Cross")) {
-        bullishScore += 7;
+        momBullish += 7;
         whyBuy.push(`MACD histogram (${macdHist.toFixed(5)}) is positive and expanding (+7)`);
       } else if (macdHist < 0 && (macdSlope === "Falling" || macdSlope === "Bearish Cross")) {
-        bearishScore += 7;
+        momBearish += 7;
         whySell.push(`MACD histogram (${macdHist.toFixed(5)}) is negative and expanding (+7)`);
       } else if (macdHist > 0) {
-        bullishScore += 3;
+        momBullish += 3;
         whyBuy.push(`MACD histogram (${macdHist.toFixed(5)}) is positive (+3)`);
       } else if (macdHist < 0) {
-        bearishScore += 3;
+        momBearish += 3;
         whySell.push(`MACD histogram (${macdHist.toFixed(5)}) is negative (+3)`);
       }
     } else {
       if (macdSlope === "Rising" || macdSlope === "Bullish Cross") {
-        bullishScore += 5;
+        momBullish += 5;
         whyBuy.push(`MACD histogram is rising/bullish cross (+5)`);
       } else if (macdSlope === "Falling" || macdSlope === "Bearish Cross") {
-        bearishScore += 5;
+        momBearish += 5;
         whySell.push(`MACD histogram is falling/bearish cross (+5)`);
       }
     }
 
-    // 6. Price Action / Candle Anatomy (Max 10 pts)
+    bullishScore += Math.min(15, momBullish);
+    bearishScore += Math.min(15, momBearish);
+
+    // =========================================================================
+    // 4. Entry Location / Moving Average Alignment (Max 15 pts)
+    // =========================================================================
+    let locBullish = 0;
+    let locBearish = 0;
+
+    const e20 = indicators5m.ema20;
+    const e50 = indicators5m.ema50;
+    if (e20 && e50) {
+      if (currentPrice > e20 && e20 > e50) {
+        locBullish = 15;
+        whyBuy.push("Full bullish EMA stack (Price > EMA20 > EMA50) (+15)");
+      } else if (currentPrice < e20 && e20 < e50) {
+        locBearish = 15;
+        whySell.push("Full bearish EMA stack (Price < EMA20 < EMA50) (+15)");
+      } else if (e20 > currentPrice && currentPrice > e50) {
+        locBullish = 8;
+        whyBuy.push("Bullish pullback zone (EMA20 > Price > EMA50) (+8)");
+      } else if (e20 < currentPrice && currentPrice < e50) {
+        locBearish = 8;
+        whySell.push("Bearish pullback zone (EMA20 < Price < EMA50) (+8)");
+      }
+    }
+
+    bullishScore += locBullish;
+    bearishScore += locBearish;
+
+    // =========================================================================
+    // 5. Support / Resistance Clearance & Interaction (Max 10 pts)
+    // =========================================================================
+    let srBullish = 0;
+    let srBearish = 0;
+
+    const pipsUnderR1 = sr.nearestResistance ? (sr.nearestResistance.price - currentPrice) * pipMultiplier : 999;
+    const distAtrR1 = sr.nearestResistance ? (sr.nearestResistance.price - currentPrice) / safeAtr : 99;
+    const pipsAboveS1 = sr.nearestSupport ? (currentPrice - sr.nearestSupport.price) * pipMultiplier : 999;
+    const distAtrS1 = sr.nearestSupport ? (currentPrice - sr.nearestSupport.price) / safeAtr : 99;
+
+    if (pipsUnderR1 >= 3.0 && distAtrR1 >= 0.75) {
+      srBullish = 10;
+      whyBuy.push(`Clear headroom to Resistance ceiling (${pipsUnderR1.toFixed(1)}p) (+10)`);
+    } else if (setupObj.setup === "SUPPORT_REJECTION") {
+      srBullish = 10;
+      whyBuy.push("Support floor rejection confirmed (+10)");
+    }
+
+    if (pipsAboveS1 >= 3.0 && distAtrS1 >= 0.75) {
+      srBearish = 10;
+      whySell.push(`Clear room to Support floor (${pipsAboveS1.toFixed(1)}p) (+10)`);
+    } else if (setupObj.setup === "RESISTANCE_REJECTION") {
+      srBearish = 10;
+      whySell.push("Resistance ceiling rejection confirmed (+10)");
+    }
+
+    bullishScore += srBullish;
+    bearishScore += srBearish;
+
+    // =========================================================================
+    // 6. Risk / Reward Structure (Max 10 pts)
+    // =========================================================================
+    let rrBullish = 0;
+    let rrBearish = 0;
+
+    const buyRr = riskContext?.buyRisk?.riskRewardRatio;
+    const sellRr = riskContext?.sellRisk?.riskRewardRatio;
+
+    if (buyRr != null) {
+      if (buyRr >= 1.5) {
+        rrBullish = 10;
+        whyBuy.push(`Optimal calculated Risk/Reward (${buyRr.toFixed(2)} >= 1.5) (+10)`);
+      } else if (buyRr >= 1.1) {
+        rrBullish = 5;
+        whyBuy.push(`Acceptable calculated Risk/Reward (${buyRr.toFixed(2)} >= 1.1) (+5)`);
+      }
+    }
+
+    if (sellRr != null) {
+      if (sellRr >= 1.5) {
+        rrBearish = 10;
+        whySell.push(`Optimal calculated Risk/Reward (${sellRr.toFixed(2)} >= 1.5) (+10)`);
+      } else if (sellRr >= 1.1) {
+        rrBearish = 5;
+        whySell.push(`Acceptable calculated Risk/Reward (${sellRr.toFixed(2)} >= 1.1) (+5)`);
+      }
+    }
+
+    bullishScore += rrBullish;
+    bearishScore += rrBearish;
+
+    // =========================================================================
+    // 7. Price Action / Trigger Candle Anatomy Confirmation (Max 10 pts)
+    // =========================================================================
+    let confBullish = 0;
+    let confBearish = 0;
+
     const lastC = latestCandles[latestCandles.length - 1];
     if (lastC) {
       const isBullishCandle = lastC.close >= lastC.open;
@@ -939,19 +1041,24 @@ export class DeterministicApiDecisionEngine {
       const upperWickRatio = (lastC.high - Math.max(lastC.open, lastC.close)) / range;
 
       if (isBullishCandle && (bodyRatio >= 0.6 || lowerWickRatio >= 0.4)) {
-        bullishScore += 10;
+        confBullish = 10;
         whyBuy.push("Recent trigger candle shows strong buyer pressure (+10)");
       } else if (!isBullishCandle && (bodyRatio >= 0.6 || upperWickRatio >= 0.4)) {
-        bearishScore += 10;
+        confBearish = 10;
         whySell.push("Recent trigger candle shows strong seller pressure (+10)");
       }
     }
 
+    bullishScore += confBullish;
+    bearishScore += confBearish;
+
+    // =========================================================================
     // Hard Gate Validations
+    // =========================================================================
     let buyAllowed = true;
     let sellAllowed = true;
 
-    // Check Distance to Resistance
+    // Check Distance to Resistance (Ceiling Trap)
     if (sr.nearestResistance) {
       const distPips = (sr.nearestResistance.price - currentPrice) * pipMultiplier;
       const distAtr = (sr.nearestResistance.price - currentPrice) / safeAtr;
@@ -964,7 +1071,7 @@ export class DeterministicApiDecisionEngine {
       }
     }
 
-    // Check Distance to Support
+    // Check Distance to Support (Floor Trap)
     if (sr.nearestSupport) {
       const distPips = (currentPrice - sr.nearestSupport.price) * pipMultiplier;
       const distAtr = (currentPrice - sr.nearestSupport.price) / safeAtr;
@@ -1004,6 +1111,16 @@ export class DeterministicApiDecisionEngine {
       bullishScore,
       bearishScore,
       directionalLead: Math.abs(bullishScore - bearishScore),
+      factors: {
+        htfAlignment: { bullish: htfBullish, bearish: htfBearish, max: 20 },
+        marketStructure: { bullish: structBullish, bearish: structBearish, max: 20 },
+        momentum: { bullish: momBullish, bearish: momBearish, max: 15 },
+        entryLocation: { bullish: locBullish, bearish: locBearish, max: 15 },
+        supportResistance: { bullish: srBullish, bearish: srBearish, max: 10 },
+        riskReward: { bullish: rrBullish, bearish: rrBearish, max: 10 },
+        entryConfirmation: { bullish: confBullish, bearish: confBearish, max: 10 },
+        total: { bullish: bullishScore, bearish: bearishScore, max: 100 },
+      },
       whyBuy,
       whyNotBuy,
       whySell,
@@ -1134,7 +1251,11 @@ export class DeterministicApiDecisionEngine {
       sr
     );
 
-    // 5. Evidence & Hard Gates
+    // 5. Risk Engine
+    const buyRisk = this.calculateRisk(currentPrice, "BUY", atr_5m, sr, struct5m, pipMultiplier);
+    const sellRisk = this.calculateRisk(currentPrice, "SELL", atr_5m, sr, struct5m, pipMultiplier);
+
+    // 6. Evidence & Hard Gates (Strict 7-Factor 100-Point Model)
     const evalResult = this.evaluateEvidenceAndGates(
       currentPrice,
       bias4h,
@@ -1153,12 +1274,9 @@ export class DeterministicApiDecisionEngine {
         atr: atr_5m,
       },
       candles5m.slice(-5),
-      pipMultiplier
+      pipMultiplier,
+      { buyRisk, sellRisk }
     );
-
-    // 6. Risk Engine
-    const buyRisk = this.calculateRisk(currentPrice, "BUY", atr_5m, sr, struct5m, pipMultiplier);
-    const sellRisk = this.calculateRisk(currentPrice, "SELL", atr_5m, sr, struct5m, pipMultiplier);
 
     // 7. Calculate Trade Quality Independently from Direction
     let buyTradeQuality = 30;
@@ -1403,6 +1521,7 @@ export class DeterministicApiDecisionEngine {
         sell: sellRisk,
         active: activeRisk,
       },
+      factors: evalResult.factors,
       whyBuy: evalResult.whyBuy,
       whyNotBuy: evalResult.whyNotBuy,
       whySell: evalResult.whySell,
@@ -1578,6 +1697,16 @@ export class DeterministicApiDecisionEngine {
       momentum: { rsiValue: null, rsiDelta: null, macdHistogram: null, macdSlope: "Flat", isRsiOverbought: false, isRsiOversold: false, isMomentumBullish: false, isMomentumBearish: false },
       priceLocation: { nearestResistance: null, nearestSupport: null, pipsUnderResistance: 0, pipsAboveSupport: 0, atrMultipleToResistance: 0, atrMultipleToSupport: 0, locationQuality: "POOR_CEILING_TRAP", opposingLevelRisk: "CRITICAL_BARRIER", bollingerPercentB: null, bollingerState: "NORMAL" },
       risk: { buy: emptyRisk, sell: emptyRisk, active: emptyRisk },
+      factors: {
+        htfAlignment: { bullish: 0, bearish: 0, max: 20 },
+        marketStructure: { bullish: 0, bearish: 0, max: 20 },
+        momentum: { bullish: 0, bearish: 0, max: 15 },
+        entryLocation: { bullish: 0, bearish: 0, max: 15 },
+        supportResistance: { bullish: 0, bearish: 0, max: 10 },
+        riskReward: { bullish: 0, bearish: 0, max: 10 },
+        entryConfirmation: { bullish: 0, bearish: 0, max: 10 },
+        total: { bullish: 0, bearish: 0, max: 100 },
+      },
       whyBuy: [],
       whyNotBuy: ["Insufficient data"],
       whySell: [],

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { DeterministicApiDecisionEngine, Candle } from "./DeterministicApiDecisionEngine";
 import { TwelveDataIndicatorAdapter } from "./TwelveDataIndicatorAdapter";
 import { DeterministicBacktestEngine } from "./DeterministicBacktestEngine";
+import { calculateMobileSignalRules } from "../ai/mobileSignalRules";
 
 function generateCandles(count: number, basePrice: number, trendStep: number, waveAmplitude = 0.0002): any[] {
   const candles: any[] = [];
@@ -606,3 +607,327 @@ describe("DeterministicApiDecisionEngine 30-Test Comprehensive Suite", () => {
     expect(Array.isArray(summary.trades)).toBe(true);
   });
 });
+
+describe("Canonical 7-Factor 100-Point Scoring Model & Signal Threshold Invariants", () => {
+  const defaultSR = {
+    nearestResistance: { price: 1.1550, distancePips: 40.0, distanceAtrMultiple: 4.0, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+    nearestSupport: { price: 1.1450, distancePips: 60.0, distanceAtrMultiple: 6.0, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+    allLevels: [],
+  };
+
+  const defaultIndicators = {
+    ema20: 1.1505,
+    ema50: 1.1495,
+    ema200: null,
+    rsi: 60,
+    rsiDelta: 1,
+    macdHist: 0.0002,
+    macdSlope: "Rising",
+    atr: 0.0010,
+  };
+
+  // Price (1.1510) > EMA20 (1.1505) > EMA50 (1.1495) -> 15 pts location
+  // Trigger candle: open 1.1502, close 1.1510, high 1.1510, low 1.1500 (body ratio 0.8 >= 0.6) -> 10 pts confirmation
+  const fullBullCandle = {
+    datetime: "2026-09-10T12:00:00Z",
+    open: 1.1502,
+    high: 1.1510,
+    low: 1.1500,
+    close: 1.1510,
+  };
+
+  // 1. Exact 7-Factor Sums
+  it("Factor breakdown exactly sums to 100 max points", () => {
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1510,
+      "Bullish",
+      "Bullish",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: true,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "TREND_CONTINUATION_PULLBACK", quality: 85, rationale: "" },
+      defaultSR,
+      defaultIndicators,
+      [fullBullCandle],
+      10000,
+      {
+        buyRisk: { entryPrice: 1.1510, stopLoss: 1.1494, takeProfit: 1.1540, riskPips: 16, rewardPips: 30, riskRewardRatio: 1.875, invalidationReason: "" },
+        sellRisk: { entryPrice: 1.1510, stopLoss: 1.1526, takeProfit: 1.1480, riskPips: 16, rewardPips: 30, riskRewardRatio: 1.875, invalidationReason: "" },
+      }
+    );
+
+    expect(evalResult.factors).toBeDefined();
+    if (evalResult.factors) {
+      expect(evalResult.factors.htfAlignment.max).toBe(20);
+      expect(evalResult.factors.marketStructure.max).toBe(20);
+      expect(evalResult.factors.momentum.max).toBe(15);
+      expect(evalResult.factors.entryLocation.max).toBe(15);
+      expect(evalResult.factors.supportResistance.max).toBe(10);
+      expect(evalResult.factors.riskReward.max).toBe(10);
+      expect(evalResult.factors.entryConfirmation.max).toBe(10);
+      expect(evalResult.factors.total.max).toBe(100);
+
+      expect(evalResult.factors.htfAlignment.bullish).toBe(20);
+      expect(evalResult.factors.marketStructure.bullish).toBe(20);
+      expect(evalResult.factors.momentum.bullish).toBe(15);
+      expect(evalResult.factors.entryLocation.bullish).toBe(15);
+      expect(evalResult.factors.supportResistance.bullish).toBe(10);
+      expect(evalResult.factors.riskReward.bullish).toBe(10);
+      expect(evalResult.factors.entryConfirmation.bullish).toBe(10);
+      expect(evalResult.bullishScore).toBe(100);
+    }
+  });
+
+  // 2. Missing HTF contributes 0 and does not redistribute
+  it("Missing higher-timeframe data contributes 0 points and never inflates remaining factors", () => {
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1510,
+      "Neutral / Indecisive",
+      "Neutral / Range",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "TREND_CONTINUATION_PULLBACK", quality: 85, rationale: "" },
+      defaultSR,
+      defaultIndicators,
+      [fullBullCandle],
+      10000,
+      {
+        buyRisk: { entryPrice: 1.1510, stopLoss: 1.1494, takeProfit: 1.1540, riskPips: 16, rewardPips: 30, riskRewardRatio: 1.875, invalidationReason: "" },
+      }
+    );
+
+    expect(evalResult.factors?.htfAlignment.bullish).toBe(0);
+    expect(evalResult.bullishScore).toBe(80); // 100 - 20 HTF = 80
+  });
+
+  // 3. Threshold enforcement: Score 70 produces WAIT (< 75 threshold)
+  it("Bullish score = 70 is less than 75 threshold", () => {
+    // 70 score: 0 HTF (0), structure (20), mom (15), loc (15), SR (10), RR (10), conf (0: no trigger candle) = 70
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1510,
+      "Neutral",
+      "Neutral",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "NONE", quality: 50, rationale: "" },
+      defaultSR,
+      defaultIndicators,
+      [], // no trigger candle
+      10000,
+      {
+        buyRisk: { entryPrice: 1.1510, stopLoss: 1.1494, takeProfit: 1.1540, riskPips: 16, rewardPips: 30, riskRewardRatio: 1.875, invalidationReason: "" },
+      }
+    );
+
+    expect(evalResult.bullishScore).toBe(70);
+    expect(evalResult.bullishScore).toBeLessThan(75);
+  });
+
+  // 4. Hard Gate Override: Resistance trap forces buyAllowed: false
+  it("Resistance ceiling trap strictly forces buyAllowed = false regardless of 80+ score", () => {
+    const trappedSR = {
+      nearestResistance: { price: 1.1511, distancePips: 1.0, distanceAtrMultiple: 0.1, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+      nearestSupport: defaultSR.nearestSupport,
+      allLevels: [],
+    };
+
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1510,
+      "Bullish",
+      "Bullish",
+      {
+        trend: "BULLISH",
+        structure: "BULLISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: true,
+        isHigherLow: true,
+        isLowerHigh: false,
+        isLowerLow: false,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "NONE", quality: 50, rationale: "" },
+      trappedSR,
+      defaultIndicators,
+      [fullBullCandle],
+      10000
+    );
+
+    expect(evalResult.hardGates.buyAllowed).toBe(false);
+    expect(evalResult.hardGates.reasons.some(r => r.includes("Resistance Ceiling Trap"))).toBe(true);
+  });
+
+  // 5. Hard Gate Override: Support floor trap forces sellAllowed = false
+  it("Support floor trap strictly forces sellAllowed = false regardless of 80+ score", () => {
+    const trappedSR = {
+      nearestResistance: defaultSR.nearestResistance,
+      nearestSupport: { price: 1.1489, distancePips: 1.0, distanceAtrMultiple: 0.1, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+      allLevels: [],
+    };
+
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      1.1490,
+      "Bearish",
+      "Bearish",
+      {
+        trend: "BEARISH",
+        structure: "BEARISH_STRUCTURE",
+        swingHighs: [],
+        swingLows: [],
+        allSwings: [],
+        latestSwingHigh: null,
+        latestSwingLow: null,
+        previousSwingHigh: null,
+        previousSwingLow: null,
+        isHigherHigh: false,
+        isHigherLow: false,
+        isLowerHigh: true,
+        isLowerLow: true,
+        breakOfStructure: false,
+        changeOfCharacter: false,
+        structureRetest: false,
+      },
+      { setup: "NONE", quality: 50, rationale: "" },
+      trappedSR,
+      {
+        ema20: 1.1495,
+        ema50: 1.1505,
+        ema200: null,
+        rsi: 40,
+        rsiDelta: -1,
+        macdHist: -0.0002,
+        macdSlope: "Falling",
+        atr: 0.0010,
+      },
+      [{ datetime: "2026-09-10T12:00:00Z", open: 1.1498, high: 1.1498, low: 1.1490, close: 1.1490 }],
+      10000
+    );
+
+    expect(evalResult.hardGates.sellAllowed).toBe(false);
+    expect(evalResult.hardGates.reasons.some(r => r.includes("Support Floor Trap"))).toBe(true);
+  });
+
+  // 6. Server validator rejects AI BUY when deterministic engine is in WAIT
+  it("validateFinalSignal rejects AI BUY when deterministic engine is in WAIT", () => {
+    const deterministic = DeterministicApiDecisionEngine.processTwelveDataMarketData(
+      "EUR/USD",
+      "5m",
+      generateCandles(60, 1.1200, 0.0001, 0.0005), // choppy
+      generateCandles(60, 1.1200, 0.0001, 0.0005),
+      generateCandles(60, 1.1200, 0.0001, 0.0005)
+    );
+
+    const validation = DeterministicApiDecisionEngine.validateFinalSignal(deterministic, {
+      signal: "BUY",
+      confidence: 85,
+    });
+
+    if (deterministic.signal === "WAIT") {
+      expect(validation.finalSignal).toBe("WAIT");
+      expect(validation.validationOverride).toBe(true);
+    }
+  });
+
+  // 7. mobileSignalRules uses exact 7-factor 100-point model without weight redistribution
+  it("mobileSignalRules calculates exact 7 factors and does not redistribute missing weights", () => {
+    const partialExtraction = {
+      indicators: {
+        RSI: { visible: true, value: 65, direction: "bullish", confidence: 90 },
+      },
+      candles: {
+        latest: { pattern: "bullish_engulfing", close: 1.1500, open: 1.1480 },
+        confidence: 90,
+      },
+    };
+
+    const result = calculateMobileSignalRules(partialExtraction);
+    // RSI (8) + Candle (10) + baseline neutral struct (5) = 23 (NOT 100!)
+    expect(result.bullishScore).toBe(23);
+    expect(result.signal).toBe("WAIT");
+  });
+
+  // 8. mobileSignalRules issues BUY when 7-factor score >= 75 and trade quality >= 70
+  it("mobileSignalRules issues BUY when all 7 factors align with score >= 75 and tradeQuality >= 70", () => {
+    const fullBullishExtraction = {
+      macroTrend: { state: "Bullish", confidence: 90 },
+      confirmationTrend: { state: "Bullish", confidence: 90 },
+      trend: { state: "Bullish", confidence: 90 },
+      indicators: {
+        EMA: {
+          EMA20: { value: 1.1500, visible: true, confidence: 90 },
+          EMA50: { value: 1.1480, visible: true, confidence: 90 },
+        },
+        RSI: { visible: true, value: 62, direction: "bullish", confidence: 90 },
+        MACD: { visible: true, cross: "bullish", histogramDirection: "increasing", confidence: 90 },
+      },
+      candles: {
+        latest: { pattern: "bullish_engulfing" },
+        confidence: 90,
+      },
+      supportLevels: [{ value: 1.1501, type: "support" }],
+      currentPrice: { value: 1.1504 },
+      riskReward: 1.6,
+      extractionConfidence: 85,
+    };
+
+    const result = calculateMobileSignalRules(fullBullishExtraction);
+    expect(result.bullishScore).toBeGreaterThanOrEqual(75);
+    expect(result.tradeQuality).toBeGreaterThanOrEqual(70);
+    expect(result.signal).toBe("STRONG_BUY");
+  });
+});
+

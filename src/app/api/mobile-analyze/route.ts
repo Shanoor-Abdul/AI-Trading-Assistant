@@ -500,8 +500,18 @@ Classify setup into one of:
 5. SIDEWAYS_CHOP: Entangled EMAs and flat indicators (WAIT signal).
 
 ================================================================================
-SECTION 14: BULLISH vs BEARISH SEPARATION (COMPETITION ENGINE)
+SECTION 14: 7-FACTOR SCORING MODEL (0-100 INDEPENDENTLY FOR BUY AND SELL)
 ================================================================================
+Calculate points for BUY and SELL independently across 7 factors:
+1. Higher-Timeframe Alignment: Max 20 pts (4H Macro 10 pts + 1H Confirmation 10 pts)
+2. Market Structure: Max 20 pts (5M HH/HL / BOS / CHOCH)
+3. Momentum: Max 15 pts (RSI 8 pts + MACD 7 pts)
+4. Entry Location: Max 15 pts (EMA stack / Pullback zone)
+5. Support / Resistance: Max 10 pts (Clear room to barrier / Level bounce)
+6. Risk / Reward: Max 10 pts (RR >= 1.5 -> 10 pts, RR >= 1.1 -> 5 pts)
+7. Entry Confirmation: Max 10 pts (Trigger candle price action / anatomy)
+TOTAL = Exactly 100 points maximum. Missing factors contribute 0 points.
+
 Separately calculate:
 - whyBuy: Concrete institutional reasons favoring a long position.
 - whyNotBuy: Risks, overhead resistance, or negative divergence threatening a long.
@@ -521,9 +531,11 @@ Force signal to WAIT if:
 ================================================================================
 SECTION 16: SIGNAL DIRECTION DETERMINATION (BUY / SELL / WAIT)
 ================================================================================
-- Issue **BUY** when bullishScore >= 75 and bullishScore > bearishScore + 20 and no hard-blocks trigger.
-- Issue **SELL** when bearishScore >= 75 and bearishScore > bullishScore + 20 and no hard-blocks trigger.
-- Issue **WAIT** when market is entangled, scores are balanced, or hard-block trap conditions are active.
+- Issue **BUY** when bullishScore >= 75 AND bullishScore >= bearishScore + 10 AND tradeQuality >= 70 AND RR >= 1.1 AND no hard-blocks trigger.
+- Issue **SELL** when bearishScore >= 75 AND bearishScore >= bullishScore + 10 AND tradeQuality >= 70 AND RR >= 1.1 AND no hard-blocks trigger.
+- Issue **STRONG_BUY** when bullishScore >= 85 AND bullishScore - bearishScore >= 20 AND tradeQuality >= 80 AND RR >= 1.5 AND confirmed trigger candle.
+- Issue **STRONG_SELL** when bearishScore >= 85 AND bearishScore - bullishScore >= 20 AND tradeQuality >= 80 AND RR >= 1.5 AND confirmed trigger candle.
+- Issue **WAIT** when tradeQuality < 70, scores are balanced, confirmation missing, poor location, chop, RR < 1.1, or hard-block trap conditions are active.
 
 ================================================================================
 SECTION 17: MULTI-TIMEFRAME ALIGNMENT GATE

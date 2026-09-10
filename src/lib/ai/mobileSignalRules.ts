@@ -15,11 +15,22 @@ export type MobileSignalRulesResult = {
   bullishScore: number;
   bearishScore: number;
   confidence: number;
+  tradeQuality: number;
   availableWeight: number;
   evidenceCount: number;
   bullishEvidence: string[];
   bearishEvidence: string[];
   conflicts: string[];
+  factors?: {
+    htfAlignment: { bullish: number; bearish: number; max: number };
+    marketStructure: { bullish: number; bearish: number; max: number };
+    momentum: { bullish: number; bearish: number; max: number };
+    entryLocation: { bullish: number; bearish: number; max: number };
+    supportResistance: { bullish: number; bearish: number; max: number };
+    riskReward: { bullish: number; bearish: number; max: number };
+    entryConfirmation: { bullish: number; bearish: number; max: number };
+    total: { bullish: number; bearish: number; max: number };
+  };
 };
 
 function text(value: unknown): string {
@@ -40,14 +51,10 @@ function confidence(value: unknown): number {
 
 function direction(value: unknown): Direction | null {
   const v = text(value);
-  if (!v || v === "unknown" || v === "neutral" || v === "sideways" || v === "mixed") return null;
+  if (!v || v === "unknown" || v === "neutral" || v === "sideways" || v === "mixed" || v === "indecisive") return null;
   if (/bullish|bull|upward|rising|rise|positive|higher|buy|long/.test(v)) return "bullish";
   if (/bearish|bear|downward|falling|fall|negative|lower|sell|short/.test(v)) return "bearish";
   return null;
-}
-
-function add(items: ScoreItem[], item: ScoreItem): void {
-  if (item.direction && item.confidence > 0) items.push(item);
 }
 
 function indicatorDirection(indicator: any, kind: "rsi" | "macd" | "bb"): Direction | null {
@@ -86,7 +93,6 @@ function indicatorDirection(indicator: any, kind: "rsi" | "macd" | "bb"): Direct
 function emaDirection(ema: any): Direction | null {
   if (!ema || typeof ema !== "object") return null;
   
-  // Parse and sort EMA keys by numeric period (e.g., "EMA9" -> 9, "EMA50" -> 50)
   const entries = Object.entries(ema)
     .map(([key, value]: [string, any]) => {
       const periodMatch = key.match(/\d+/);
@@ -115,9 +121,6 @@ function rsiDirection(rsi: any): Direction | null {
   const direct = indicatorDirection(rsi, "rsi");
   if (direct) return direct;
 
-  // Prefer the primary RSI value. Stage 1 sets `value` to the first/fast
-  // series when multiple RSI values are printed, but keep fallbacks for older
-  // extraction responses that only returned rsi1/rsi2/rsi3.
   const value = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
   if (value !== null) {
     if (value > 50 && value < 70) return "bullish";
@@ -165,16 +168,11 @@ function trendDirection(extraction: any): Direction | null {
   return direction(extraction?.trend?.state) || direction(extraction?.marketStructure?.state);
 }
 
-function momentumDirection(extraction: any): Direction | null {
-  return direction(extraction?.momentum?.state);
-}
-
 function levelDirection(extraction: any, price: number | null): Direction | null {
   if (price === null) return null;
   const supports = Array.isArray(extraction?.supportLevels) ? extraction.supportLevels : [];
   const resistances = Array.isArray(extraction?.resistanceLevels) ? extraction.resistanceLevels : [];
   
-  // Tightened strict threshold for 5-minute precision (0.0003 ~ 3 Pips instead of 22 Pips)
   const proximityWindow = 0.0003; 
 
   const supportNearby = supports.some((x: any) => {
@@ -194,76 +192,241 @@ function levelDirection(extraction: any, price: number | null): Direction | null
 export function calculateMobileSignalRules(extraction: any): MobileSignalRulesResult {
   const indicators = extraction?.indicators || {};
   const price = number(extraction?.currentPrice?.value);
-  const items: ScoreItem[] = [];
+  const bullishEvidence: string[] = [];
+  const bearishEvidence: string[] = [];
+  const conflicts: string[] = [];
 
-  add(items, { key: "trend", label: "Trend / market structure", direction: trendDirection(extraction), weight: 20, confidence: confidence(extraction?.trend?.confidence || extraction?.marketStructure?.confidence), evidence: `Trend/structure: ${extraction?.trend?.state || extraction?.marketStructure?.state}.` });
+  // =========================================================================
+  // CANONICAL 7-FACTOR SCORING MODEL (Total Exactly 100 Pts Independent)
+  // =========================================================================
 
-  const ema = indicators.EMA;
-  const emaEntries = ema && typeof ema === "object" ? Object.values(ema).filter((x: any) => x && typeof x === "object") as any[] : [];
-  const emaConfidence = emaEntries.length ? Math.max(...emaEntries.map((x: any) => confidence(x.confidence))) : 0;
-  add(items, { key: "ema", label: "Moving-average alignment", direction: emaDirection(ema), weight: 15, confidence: emaConfidence, evidence: "Visible EMA/MA alignment supports the direction." });
+  // -------------------------------------------------------------------------
+  // Factor A: Higher-Timeframe Alignment (Max 20 pts: 4H 10 pts + 1H 10 pts)
+  // -------------------------------------------------------------------------
+  let htfBullish = 0;
+  let htfBearish = 0;
+
+  const macro4hDir = direction(
+    extraction?.macroTrend?.state ||
+    extraction?.higherTimeframe?.trend4h ||
+    extraction?.timeframeAnalysis?.["4h"]?.bias ||
+    extraction?.timeframeAnalysis?.["4h"]?.structure
+  );
+  if (macro4hDir === "bullish") {
+    htfBullish += 10;
+    bullishEvidence.push("Higher-Timeframe 4H Macro Trend is Bullish (+10)");
+  } else if (macro4hDir === "bearish") {
+    htfBearish += 10;
+    bearishEvidence.push("Higher-Timeframe 4H Macro Trend is Bearish (+10)");
+  }
+
+  const conf1hDir = direction(
+    extraction?.confirmationTrend?.state ||
+    extraction?.higherTimeframe?.trend1h ||
+    extraction?.timeframeAnalysis?.["1h"]?.bias ||
+    extraction?.timeframeAnalysis?.["1h"]?.structure
+  );
+  if (conf1hDir === "bullish") {
+    htfBullish += 10;
+    bullishEvidence.push("Higher-Timeframe 1H Confirmation Trend is Bullish (+10)");
+  } else if (conf1hDir === "bearish") {
+    htfBearish += 10;
+    bearishEvidence.push("Higher-Timeframe 1H Confirmation Trend is Bearish (+10)");
+  }
+
+  // -------------------------------------------------------------------------
+  // Factor B: Market Structure (Max 20 pts)
+  // -------------------------------------------------------------------------
+  let structBullish = 0;
+  let structBearish = 0;
+  const structDir = trendDirection(extraction);
+  if (structDir === "bullish") {
+    structBullish = 20;
+    bullishEvidence.push("5M Market Structure is Bullish (HH/HL) (+20)");
+  } else if (structDir === "bearish") {
+    structBearish = 20;
+    bearishEvidence.push("5M Market Structure is Bearish (LH/LL) (+20)");
+  } else {
+    // Neutral/transition structure provides baseline 5 pts
+    structBullish = 5;
+    structBearish = 5;
+  }
+
+  // -------------------------------------------------------------------------
+  // Factor C: Momentum (Max 15 pts: RSI 8 pts + MACD 7 pts)
+  // -------------------------------------------------------------------------
+  let momBullish = 0;
+  let momBearish = 0;
 
   const rsi = indicators.RSI;
   const rsiDir = rsiDirection(rsi);
-  if (rsi && rsi.visible !== false) {
-    // Keep heavy tracking weight (15) even on extremes to optimize sniper binary triggers
-    const rsiWeight = 15; 
-    const rsiValue = number(rsi.value ?? rsi.approximateValue ?? rsi.rsi1 ?? rsi.rsi2 ?? rsi.rsi3);
-    const rsiConf = confidence(rsi.confidence);
-    
-    const multi = [rsi.rsi1, rsi.rsi2, rsi.rsi3].map(number).filter((x): x is number => x !== null);
-    const multiText = multi.length > 1 ? ` (${multi.map((v, index) => `RSI${index + 1} ${v}`).join(", ")})` : "";
-    add(items, { key: "rsi", label: "RSI momentum", direction: rsiDir, weight: rsiWeight, confidence: rsiConf, evidence: rsiValue !== null ? `RSI ${rsiValue}${multiText}${rsi.direction ? `, ${rsi.direction}` : ""}.` : `RSI ${rsi.direction || rsi.zone || "visible"}.` });
+  if (rsiDir === "bullish") {
+    momBullish += 8;
+    bullishEvidence.push("RSI Momentum in Bullish Expansion (+8)");
+  } else if (rsiDir === "bearish") {
+    momBearish += 8;
+    bearishEvidence.push("RSI Momentum in Bearish Expansion (+8)");
   }
 
   const macd = indicators.MACD;
   const macdDir = macdDirection(macd);
-  if (macd && macd.visible !== false) {
-    add(items, { key: "macd", label: "MACD momentum", direction: macdDir, weight: 15, confidence: confidence(macd.confidence), evidence: `MACD: ${macd.cross || macd.lineRelationship || macd.histogramDirection || macd.state || "visible"}.` });
+  if (macdDir === "bullish") {
+    momBullish += 7;
+    bullishEvidence.push("MACD Histogram/Cross confirms Bullish Momentum (+7)");
+  } else if (macdDir === "bearish") {
+    momBearish += 7;
+    bearishEvidence.push("MACD Histogram/Cross confirms Bearish Momentum (+7)");
   }
 
+  // Fallback to extraction momentum if indicators missing
+  if (!rsi && !macd) {
+    const genericMom = direction(extraction?.momentum?.state);
+    if (genericMom === "bullish") {
+      momBullish = 15;
+      bullishEvidence.push("Momentum is Bullish (+15)");
+    } else if (genericMom === "bearish") {
+      momBearish = 15;
+      bearishEvidence.push("Momentum is Bearish (+15)");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Factor D: Entry Location (Max 15 pts: EMA Stack or Bollinger Position)
+  // -------------------------------------------------------------------------
+  let locBullish = 0;
+  let locBearish = 0;
+
+  const ema = indicators.EMA;
+  const emaDir = emaDirection(ema);
   const bb = indicators["Bollinger Bands"] || indicators.BollingerBands;
   const bbDir = bbDirection(bb, price);
-  if (bb && bb.visible !== false) {
-    let bbWeight = 10;
-    const cross = text(bb.crossDirection || bb.middleCross);
-    const close = text(bb.candleCloseConfirmation);
-    if ((/up|bull/.test(cross) && /confirm|yes|above/.test(close)) || (/down|bear/.test(cross) && /confirm|yes|below/.test(close))) bbWeight = 12;
-    const bbNumbers = [bb.upper, bb.middle, bb.lower].map(number).filter((x): x is number => x !== null);
-    const bbText = bbNumbers.length === 3 ? `; bands ${bbNumbers.join(" / ")}` : "";
-    add(items, { key: "bb", label: "Bollinger position / middle-band cross", direction: bbDir, weight: bbWeight, confidence: confidence(bb.confidence), evidence: `Bollinger: ${bb.position || "position unknown"}; cross ${bb.middleCross || "unknown"}; width ${bb.width || "unknown"}${bbText}.` });
+
+  if (emaDir === "bullish") {
+    locBullish = 15;
+    bullishEvidence.push("Price positioned above Bullish EMA stack (+15)");
+  } else if (emaDir === "bearish") {
+    locBearish = 15;
+    bearishEvidence.push("Price positioned below Bearish EMA stack (+15)");
+  } else if (bbDir === "bullish") {
+    locBullish = 12;
+    bullishEvidence.push("Price interacting favorably with Bollinger Bands (+12)");
+  } else if (bbDir === "bearish") {
+    locBearish = 12;
+    bearishEvidence.push("Price interacting favorably with Bollinger Bands (+12)");
   }
 
-  const candles = extraction?.candles;
-  add(items, { key: "candle", label: "Candlestick / price action", direction: candleDirection(candles), weight: 10, confidence: confidence(candles?.confidence), evidence: `Candles: ${candles?.latest?.pattern || candles?.recentDirection || candles?.priceAction || "visible"}.` });
-  add(items, { key: "momentum", label: "Momentum", direction: momentumDirection(extraction), weight: 10, confidence: confidence(extraction?.momentum?.confidence), evidence: `Momentum: ${extraction?.momentum?.state || "visible"}.` });
-  add(items, { key: "levels", label: "Support / resistance", direction: levelDirection(extraction, price), weight: 10, confidence: 50, evidence: "Price is interacting with a nearby extracted support/resistance level." });
+  // -------------------------------------------------------------------------
+  // Factor E: Support / Resistance (Max 10 pts)
+  // -------------------------------------------------------------------------
+  let srBullish = 0;
+  let srBearish = 0;
+  const lvlDir = levelDirection(extraction, price);
+  if (lvlDir === "bullish") {
+    srBullish = 10;
+    bullishEvidence.push("Support floor bounce confirmed with clear headroom (+10)");
+  } else if (lvlDir === "bearish") {
+    srBearish = 10;
+    bearishEvidence.push("Resistance ceiling rejection confirmed with clear room below (+10)");
+  }
 
-  const availableWeight = items.reduce((sum, item) => sum + item.weight, 0);
-  // FIX: Do not artificially penalize the score based on the AI's "reading" confidence.
-  // If the AI is at least 50% sure it saw a bullish signal, give it the full mathematical weight.
-  const bullishPoints = items.filter(x => x.direction === "bullish").reduce((sum, x) => sum + (x.confidence >= 50 ? x.weight : x.weight * 0.5), 0);
-  const bearishPoints = items.filter(x => x.direction === "bearish").reduce((sum, x) => sum + (x.confidence >= 50 ? x.weight : x.weight * 0.5), 0);
-  const bullishScore = availableWeight ? Math.round((bullishPoints / availableWeight) * 100) : 0;
-  const bearishScore = availableWeight ? Math.round((bearishPoints / availableWeight) * 100) : 0;
-  const evidenceCount = items.length;
+  // -------------------------------------------------------------------------
+  // Factor F: Risk / Reward (Max 10 pts)
+  // -------------------------------------------------------------------------
+  let rrBullish = 0;
+  let rrBearish = 0;
+  const rawRr = number(
+    extraction?.riskReward ??
+    extraction?.riskRewardRatio ??
+    extraction?.risk?.riskRewardRatio ??
+    extraction?.risk?.buy?.riskRewardRatio ??
+    extraction?.risk?.sell?.riskRewardRatio
+  );
+  if (rawRr !== null && rawRr >= 1.5) {
+    if (structBullish >= structBearish) rrBullish = 10;
+    if (structBearish >= structBullish) rrBearish = 10;
+    bullishEvidence.push(`Calculated Risk/Reward (${rawRr.toFixed(2)}) is optimal (>= 1.5) (+10)`);
+  } else if (rawRr !== null && rawRr >= 1.1) {
+    if (structBullish >= structBearish) rrBullish = 5;
+    if (structBearish >= structBullish) rrBearish = 5;
+    bullishEvidence.push(`Calculated Risk/Reward (${rawRr.toFixed(2)}) is acceptable (>= 1.1) (+5)`);
+  }
+
+  // -------------------------------------------------------------------------
+  // Factor G: Entry Confirmation (Max 10 pts)
+  // -------------------------------------------------------------------------
+  let confBullish = 0;
+  let confBearish = 0;
+  const cDir = candleDirection(extraction?.candles);
+  if (cDir === "bullish") {
+    confBullish = 10;
+    bullishEvidence.push("Trigger candle shows strong buyer rejection/expansion (+10)");
+  } else if (cDir === "bearish") {
+    confBearish = 10;
+    bearishEvidence.push("Trigger candle shows strong seller rejection/expansion (+10)");
+  }
+
+  // =========================================================================
+  // TOTAL SCORE COMPUTATION (NEVER redistribute missing weights)
+  // Missing factors contribute 0 points.
+  // =========================================================================
+  const bullishScore = Math.min(100, Math.max(0, htfBullish + structBullish + momBullish + locBullish + srBullish + rrBullish + confBullish));
+  const bearishScore = Math.min(100, Math.max(0, htfBearish + structBearish + momBearish + locBearish + srBearish + rrBearish + confBearish));
+
   const quality = confidence(extraction?.extractionConfidence || extraction?.visualQuality?.overallConfidence);
+  
+  // Trade quality independent from directional score
+  let tradeQuality = 40;
+  if (quality >= 70) tradeQuality += 20;
+  if (rawRr !== null && rawRr >= 1.5) tradeQuality += 20;
+  else if (rawRr !== null && rawRr >= 1.1) tradeQuality += 10;
+  if (lvlDir !== null) tradeQuality += 10;
+  if (cDir !== null) tradeQuality += 10;
+  tradeQuality = Math.min(100, tradeQuality);
+
   const strongest = Math.max(bullishScore, bearishScore);
   const weakest = Math.min(bullishScore, bearishScore);
   const gap = strongest - weakest;
   const directionConfidence = Math.min(100, strongest * 0.65 + gap * 0.35);
   const confidenceScore = Math.round(quality * 0.45 + directionConfidence * 0.55);
 
-  const hasBull = bullishPoints > 0;
-  const hasBear = bearishPoints > 0;
-  const conflicts = items.filter(x => x.direction && ((x.direction === "bullish" && hasBear) || (x.direction === "bearish" && hasBull))).map(x => `${x.label} conflicts with other directional evidence.`);
-  const hasMinimumEvidence = evidenceCount >= 3 && availableWeight >= 45;
+  if (bullishScore > 0 && bearishScore > 0) {
+    if (htfBullish > 0 && htfBearish > 0) conflicts.push("Higher-Timeframe trends conflict between 4H and 1H.");
+    if (structDir && cDir && structDir !== cDir) conflicts.push("Trigger candle conflicts with 5M market structure.");
+    if (rsiDir && macdDir && rsiDir !== macdDir) conflicts.push("RSI and MACD momentum directions conflict.");
+  }
 
+  // =========================================================================
+  // CANONICAL SIGNAL THRESHOLDS
+  // BUY: BUY_SCORE >= 75 AND BUY_SCORE >= SELL_SCORE + 10 AND tradeQuality >= 70 AND RR >= 1.1
+  // SELL: SELL_SCORE >= 75 AND SELL_SCORE >= BUY_SCORE + 10 AND tradeQuality >= 70 AND RR >= 1.1
+  // STRONG_BUY: BUY_SCORE >= 85 AND gap >= 20 AND tradeQuality >= 80 AND RR >= 1.5
+  // STRONG_SELL: SELL_SCORE >= 85 AND gap >= 20 AND tradeQuality >= 80 AND RR >= 1.5
+  // Otherwise: WAIT
+  // =========================================================================
   let signal: MobileSignalRulesResult["signal"] = "WAIT";
-  if (hasMinimumEvidence && bullishScore >= 70 && bullishScore - bearishScore >= 15) signal = bullishScore >= 85 && gap >= 20 ? "STRONG_BUY" : "BUY";
-  if (hasMinimumEvidence && bearishScore >= 70 && bearishScore - bullishScore >= 15) signal = bearishScore >= 85 && gap >= 20 ? "STRONG_SELL" : "SELL";
+
+  const isBuyValid = bullishScore >= 75 && bullishScore >= bearishScore + 10 && tradeQuality >= 70 && (rawRr === null || rawRr >= 1.1);
+  const isSellValid = bearishScore >= 75 && bearishScore >= bullishScore + 10 && tradeQuality >= 70 && (rawRr === null || rawRr >= 1.1);
+
+  if (isBuyValid) {
+    signal = bullishScore >= 85 && gap >= 20 && tradeQuality >= 80 && (rawRr === null || rawRr >= 1.5) && confBullish > 0 ? "STRONG_BUY" : "BUY";
+  } else if (isSellValid) {
+    signal = bearishScore >= 85 && gap >= 20 && tradeQuality >= 80 && (rawRr === null || rawRr >= 1.5) && confBearish > 0 ? "STRONG_SELL" : "SELL";
+  } else {
+    signal = "WAIT";
+  }
 
   const trend = bullishScore >= 55 && bullishScore > bearishScore + 10 ? "Bullish" : bearishScore >= 55 && bearishScore > bullishScore + 10 ? "Bearish" : "Sideways";
+
+  const evidenceCount = [
+    htfBullish || htfBearish,
+    structBullish || structBearish,
+    momBullish || momBearish,
+    locBullish || locBearish,
+    srBullish || srBearish,
+    rrBullish || rrBearish,
+    confBullish || confBearish,
+  ].filter(Boolean).length;
 
   return {
     signal,
@@ -271,10 +434,22 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
     bullishScore,
     bearishScore,
     confidence: Math.max(1, Math.min(100, confidenceScore)),
-    availableWeight,
+    tradeQuality,
+    availableWeight: 100,
     evidenceCount,
-    bullishEvidence: items.filter(x => x.direction === "bullish").map(x => `${x.label} (+${x.weight}): ${x.evidence}`),
-    bearishEvidence: items.filter(x => x.direction === "bearish").map(x => `${x.label} (+${x.weight}): ${x.evidence}`),
+    bullishEvidence,
+    bearishEvidence,
     conflicts: Array.from(new Set(conflicts)).slice(0, 6),
+    factors: {
+      htfAlignment: { bullish: htfBullish, bearish: htfBearish, max: 20 },
+      marketStructure: { bullish: structBullish, bearish: structBearish, max: 20 },
+      momentum: { bullish: momBullish, bearish: momBearish, max: 15 },
+      entryLocation: { bullish: locBullish, bearish: locBearish, max: 15 },
+      supportResistance: { bullish: srBullish, bearish: srBearish, max: 10 },
+      riskReward: { bullish: rrBullish, bearish: rrBearish, max: 10 },
+      entryConfirmation: { bullish: confBullish, bearish: confBearish, max: 10 },
+      total: { bullish: bullishScore, bearish: bearishScore, max: 100 },
+    },
   };
 }
+
