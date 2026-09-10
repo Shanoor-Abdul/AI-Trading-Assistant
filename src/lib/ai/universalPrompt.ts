@@ -9,9 +9,9 @@ export function buildUniversalPrompt(req: UniversalAIRequest): string {
   const previous = req.previousAnalysis ? JSON.stringify(req.previousAnalysis, null, 2) : "None";
   const primaryFrames = req.primaryTimeframePayload?.screenshots?.length || req.screenshots?.length || 0;
   const mtf = [
-    `4H Macro Trend Image: ${req.macroTimeframe ? "AVAILABLE" : "MISSING"}`,
+    `4H Macro Trend Image: ${(req.macroTimeframe || (req as any).macroTimeframeImage) ? "AVAILABLE" : "MISSING"}`,
     `1H Confirmation Image: ${req.confirmationTimeframeImage ? "AVAILABLE" : "MISSING"}`,
-    `15M Structure Image: ${req.structureTimeframe ? "AVAILABLE" : "MISSING"}`,
+    `15M Structure Image: ${(req.structureTimeframe || (req as any).structureTimeframeImage) ? "AVAILABLE" : "MISSING"}`,
     `5M Primary Frames: ${primaryFrames}`,
   ].join("\n");
 

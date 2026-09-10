@@ -77,7 +77,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   trend: null, signal: null, confidence: 0, entryPrice: null, stopLoss: null, takeProfit: null,
   recommendedTimeframe: null, requestedIndicators: null, open: null, high: null, low: null, close: null, explanation: "",
   capital: 1000, setCapital: (val) => set({ capital: val }), riskPercent: 1, setRiskPercent: (val) => set({ riskPercent: val }),
-  selectedProvider: "gemini", selectedModel: "gemini-2.0-flash",
+  selectedProvider: "anthropic", selectedModel: "claude-sonnet-5",
   setSelectedModel: (provider, model) => set({ selectedProvider: provider, selectedModel: model }),
   useDualModel: false, setUseDualModel: (val) => set({ useDualModel: val }),
   selectedReasoningProvider: "openrouter", selectedReasoningModel: "meta-llama/llama-3-8b-instruct:free",

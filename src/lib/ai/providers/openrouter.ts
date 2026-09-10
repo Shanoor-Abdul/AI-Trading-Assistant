@@ -39,19 +39,36 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     // processing. This prevents a long extraction prompt from becoming the model's
     // dominant attention target before it inspects the chart pixels.
     if (!isTextOnlyModel) {
-      if (req.screenshots?.length) {
-        for (const shot of req.screenshots) {
-          if (!shot?.base64) continue;
-          messagesContent.push({
-            type: "image_url",
-            image_url: { url: `data:${shot.mimeType};base64,${shot.base64}`, detail: "high" },
-          });
-        }
-      } else if (req.screenshot?.base64) {
+      const pushOpenRouterImage = (imgData: any) => {
+        if (!imgData) return;
+        const rawStr = typeof imgData === "string" ? imgData : (imgData.image || imgData.base64 || "");
+        if (!rawStr || typeof rawStr !== "string") return;
+        const cleanBase64 = rawStr.replace(/^data:image\/\w+;base64,/, "");
+        const mimeMatch = rawStr.match(/^data:(image\/\w+);base64,/);
+        const mimeType = imgData.mimeType || (mimeMatch ? mimeMatch[1] : "image/jpeg");
         messagesContent.push({
           type: "image_url",
-          image_url: { url: `data:${req.screenshot.mimeType};base64,${req.screenshot.base64}`, detail: "high" },
+          image_url: { url: `data:${mimeType};base64,${cleanBase64}`, detail: "high" },
         });
+      };
+
+      if (req.screenshots?.length) {
+        for (const shot of req.screenshots) {
+          pushOpenRouterImage(shot);
+        }
+      } else if (req.screenshot) {
+        pushOpenRouterImage(req.screenshot);
+      }
+
+      // Inject Multi-Timeframe Captured Frames (4H Macro, 1H Confirmation, 15M Structure)
+      if (req.macroTimeframe || (req as any).macroTimeframeImage) {
+        pushOpenRouterImage(req.macroTimeframe || (req as any).macroTimeframeImage);
+      }
+      if (req.confirmationTimeframeImage) {
+        pushOpenRouterImage(req.confirmationTimeframeImage);
+      }
+      if (req.structureTimeframe || (req as any).structureTimeframeImage) {
+        pushOpenRouterImage(req.structureTimeframe || (req as any).structureTimeframeImage);
       }
     }
 

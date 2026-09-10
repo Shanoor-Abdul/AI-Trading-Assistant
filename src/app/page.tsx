@@ -1311,38 +1311,18 @@ export default function Dashboard() {
                       </SelectTrigger>
                       <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
                         <SelectGroup>
-                          <SelectLabel className="text-zinc-500">
-                            Google (Free)
+                          <SelectLabel className="text-zinc-400 font-semibold text-xs">
+                            Anthropic (Claude Native)
                           </SelectLabel>
-                          {getModelsByProvider("gemini").map((m) => (
-                            <SelectItem key={m.id} value={`gemini:${m.id}`}>
+                          {getModelsByProvider("anthropic").map((m) => (
+                            <SelectItem key={m.id} value={`anthropic:${m.id}`}>
                               {m.name}
                             </SelectItem>
                           ))}
                         </SelectGroup>
                         <SelectGroup>
-                          <SelectLabel className="text-zinc-500 mt-2">
-                            Groq (Free)
-                          </SelectLabel>
-                          {getModelsByProvider("groq").map((m) => (
-                            <SelectItem key={m.id} value={`groq:${m.id}`}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                        <SelectGroup>
-                          <SelectLabel className="text-zinc-500 mt-2">
-                            OpenAI
-                          </SelectLabel>
-                          {getModelsByProvider("openai").map((m) => (
-                            <SelectItem key={m.id} value={`openai:${m.id}`}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                        <SelectGroup>
-                          <SelectLabel className="text-zinc-500 mt-2">
-                            OpenRouter
+                          <SelectLabel className="text-zinc-400 font-semibold text-xs mt-2">
+                            OpenRouter (Free Models)
                           </SelectLabel>
                           {getModelsByProvider("openrouter").map((m) => (
                             <SelectItem key={m.id} value={`openrouter:${m.id}`}>
@@ -1415,24 +1395,21 @@ export default function Dashboard() {
                         </SelectTrigger>
                         <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200 max-h-[300px]">
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500">
-                              OpenRouter (Text Only)
+                            <SelectLabel className="text-zinc-400 font-semibold text-xs">
+                              Anthropic (Claude Native)
                             </SelectLabel>
-                            {getModelsByProvider("openrouter").map((m) => (
-                              <SelectItem
-                                key={m.id}
-                                value={`openrouter:${m.id}`}
-                              >
+                            {getModelsByProvider("anthropic").map((m) => (
+                              <SelectItem key={m.id} value={`anthropic:${m.id}`}>
                                 {m.name}
                               </SelectItem>
                             ))}
                           </SelectGroup>
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500 mt-2">
-                              Groq (Text Only)
+                            <SelectLabel className="text-zinc-400 font-semibold text-xs mt-2">
+                              OpenRouter (Free Models)
                             </SelectLabel>
-                            {getModelsByProvider("groq").map((m) => (
-                              <SelectItem key={m.id} value={`groq:${m.id}`}>
+                            {getModelsByProvider("openrouter").map((m) => (
+                              <SelectItem key={m.id} value={`openrouter:${m.id}`}>
                                 {m.name}
                               </SelectItem>
                             ))}
@@ -1606,6 +1583,7 @@ export default function Dashboard() {
                           "RSI",
                           "MACD",
                           "Bollinger Bands",
+                          "Simple MA (SMA)",
                           "EMA 20",
                           "EMA 50",
                           "EMA 200",

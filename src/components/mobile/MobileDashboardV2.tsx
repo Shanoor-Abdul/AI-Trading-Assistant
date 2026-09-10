@@ -53,6 +53,7 @@ const INDICATOR_OPTIONS = [
   "RSI",
   "MACD",
   "Bollinger Bands",
+  "Simple MA (SMA)",
   "EMA 20",
   "EMA 50",
   "EMA 200",
@@ -315,39 +316,15 @@ export default function MobileDashboardV2() {
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   <SelectGroup>
-                    <SelectLabel className="text-zinc-500 text-xs">Google</SelectLabel>
-                    {getModelsByProvider("gemini").map((model) => (
-                      <SelectItem key={model.id} value={`gemini:${model.id}`}>
+                    <SelectLabel className="text-zinc-400 text-xs font-semibold">Anthropic (Claude Native)</SelectLabel>
+                    {getModelsByProvider("anthropic").map((model) => (
+                      <SelectItem key={model.id} value={`anthropic:${model.id}`}>
                         {model.name}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                   <SelectGroup>
-                    <SelectLabel className="text-zinc-500 text-xs mt-2">Groq</SelectLabel>
-                    {getModelsByProvider("groq").map((model) => (
-                      <SelectItem key={model.id} value={`groq:${model.id}`}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                  <SelectGroup>
-                    <SelectLabel className="text-zinc-500 text-xs mt-2">OpenAI</SelectLabel>
-                    {getModelsByProvider("openai").map((model) => (
-                      <SelectItem key={model.id} value={`openai:${model.id}`}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel className="text-zinc-500 text-xs mt-2">Anthropic</SelectLabel>
-                      {getModelsByProvider("anthropic").map((model) => (
-                        <SelectItem key={model.id} value={`anthropic:${model.id}`}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  <SelectGroup>
-                    <SelectLabel className="text-zinc-500 text-xs mt-2">OpenRouter</SelectLabel>
+                    <SelectLabel className="text-zinc-400 text-xs font-semibold mt-2">OpenRouter (Free Models)</SelectLabel>
                     {getModelsByProvider("openrouter").map((model) => (
                       <SelectItem key={model.id} value={`openrouter:${model.id}`}>
                         {model.name}

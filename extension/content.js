@@ -6,45 +6,46 @@ let latestMarketData = {
 let capturedMacro4H = null;
 let capturedMacro1H = null;
 
-// --- CONTINUOUS BACKGROUND READING ---
-setInterval(() => {
-  const pageText = document.body.innerText;
-  const rsiMatch = pageText.match(/RSI1?:\s*([0-9.]+)/i);
-  const macdMatch = pageText.match(/MACD.*?:\s*([-0-9.]+)/i);
-  const bollUpMatch = pageText.match(/UP:\s*([0-9.]+)/i);
-  const bollDnMatch = pageText.match(/DN:\s*([0-9.]+)/i);
-  
-  if (rsiMatch) latestMarketData.indicators.RSI = rsiMatch[1];
-  if (macdMatch) latestMarketData.indicators.MACD = macdMatch[1];
-  if (bollUpMatch) latestMarketData.indicators.BollingerUp = bollUpMatch[1];
-  if (bollDnMatch) latestMarketData.indicators.BollingerDown = bollDnMatch[1];
-  
-  // 1. First, try to find the active currency by looking for a symbol right above the "Investments" panel
-  // This is highly reliable for Pocket Option because the right-hand trading panel always shows the active asset.
-  let symbolMatch = pageText.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin|Ethereum|Gold|Silver|Oil)[\s\S]{0,100}Investments/i);
-  
-  // 2. Fallback to document title
-  if (!symbolMatch) {
-    symbolMatch = document.title.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin|Ethereum|Gold|Silver|Oil)/i);
-  }
-  
-  // 3. Absolute fallback to any symbol in the page text
-  if (!symbolMatch) {
-    symbolMatch = pageText.match(/([A-Z0-9]{3,5}\/[A-Z0-9]{3,5}(?:\s*\(?OTC\)?)?|[A-Z][a-z]+coin)/i);
+// Function to quickly detect the active currency symbol without scanning entire document.body
+function getActiveSymbol() {
+  const symbolRegex = /([A-Z]{3,5}\s*\/\s*[A-Z]{3,5}(?:\s*\(?OTC\)?)?|EURUSD|GBPUSD|USDJPY|AUDCAD|BTCUSD|Ethereum|Bitcoin|Gold|Silver|Oil)/i;
+
+  // 1. Check document title (instant, 0 CPU)
+  let match = document.title.match(symbolRegex);
+  if (match) return formatSymbol(match[1]);
+
+  // 2. Check active tabs (aria-selected="true" or active class)
+  const activeTabs = document.querySelectorAll('[aria-selected="true"], [class*="active"], [class*="selected"], [class*="current"]');
+  for (let tab of activeTabs) {
+    let tabMatch = (tab.textContent || "").match(symbolRegex);
+    if (tabMatch) return formatSymbol(tabMatch[1]);
   }
 
-  if (symbolMatch) {
-    // Clean up the symbol (e.g. remove parentheses around OTC)
-    let cleanSymbol = symbolMatch[1].toUpperCase().replace(/\(OTC\)/g, "OTC").trim();
-    latestMarketData.currentSymbol = cleanSymbol;
-    
-    // Auto-update the UI input if it exists
+  // 3. Check chart asset name/ticker headers
+  const headers = document.querySelectorAll('[class*="asset_name"], [class*="ticker"], [class*="asset"], [class*="instrument"], [class*="pair"]');
+  for (let header of headers) {
+    let headerMatch = (header.textContent || "").match(symbolRegex);
+    if (headerMatch) return formatSymbol(headerMatch[1]);
+  }
+
+  return null;
+}
+
+function formatSymbol(raw) {
+  if (!raw) return "";
+  return raw.toUpperCase().replace(/\s*\/\s*/, '/').replace(/\(OTC\)/g, "OTC").trim();
+}
+
+// Lightweight background ticker update (0% CPU impact, no document.body reflow)
+setInterval(() => {
+  const detected = getActiveSymbol();
+  if (detected) {
+    latestMarketData.currentSymbol = detected;
     const root = document.getElementById("ai-trading-root");
     if (root && root.shadowRoot) {
       const symInput = root.shadowRoot.getElementById("symbol");
-      // Only overwrite if the user isn't currently typing in the box, and if the value is actually different
-      if (symInput && document.activeElement !== symInput && symInput.value !== latestMarketData.currentSymbol) { 
-         symInput.value = latestMarketData.currentSymbol;
+      if (symInput && document.activeElement !== symInput && symInput.value !== detected) {
+        symInput.value = detected;
       }
     }
   }
@@ -194,17 +195,24 @@ function injectUI() {
         <option value="Simple MA" selected>Simple MA</option>
       </select>
 
+      <label>Analysis Mode</label>
+      <select id="analysisMode">
+        <option value="twelvedata" selected>TwelveData (API Math - High Accuracy)</option>
+        <option value="vision">Vision (Screenshot - Classic)</option>
+      </select>
+
       <label>AI Model</label>
       <select id="model">
-        <optgroup label="Anthropic (Native API)">
+        <optgroup label="Anthropic (Claude Native)">
           <option value="claude-sonnet-5" data-provider="anthropic" selected>Claude 5 Sonnet</option>
+          <option value="claude-opus-5" data-provider="anthropic">Claude 5 Opus</option>
           <option value="claude-haiku-4-5-20251001" data-provider="anthropic">Claude 4.5 Haiku</option>
-          <option value="claude-opus-5" data-provider="anthropic">Claude 4.5 Opus</option>
         </optgroup>
-        <optgroup label="OpenRouter">
-          <option value="openrouter/free" data-provider="openrouter">OpenRouter Free Models</option>
-          <option value="z-ai/glm-5.3-flash" data-provider="openrouter">GLM 5.3 Flash (Z-AI)</option>
-          <option value="z-ai/glm-5.3-flash:batch" data-provider="openrouter">GLM 5.3 Flash Batch</option>
+        <optgroup label="OpenRouter (100% Free)">
+          <option value="openrouter/free" data-provider="openrouter">Auto Free Models Router</option>
+          <option value="google/gemini-2.0-flash-lite-preview-02-05:free" data-provider="openrouter">Gemini 2.0 Flash Lite (Free)</option>
+          <option value="meta-llama/llama-3-8b-instruct:free" data-provider="openrouter">Llama 3 8B (Free)</option>
+          <option value="qwen/qwen-2-7b-instruct:free" data-provider="openrouter">Qwen 2 7B (Free)</option>
         </optgroup>
       </select>
 
@@ -217,6 +225,21 @@ function injectUI() {
           <input type="checkbox" id="autoTradeToggle">
           <span class="slider"></span>
         </label>
+      </div>
+
+      <div class="toggle-container" style="margin-top: 8px;">
+        <div>
+          <p class="toggle-label">🤖 Auto-Pilot Scanner</p>
+          <span style="font-size: 10px; color: #10b981;" id="autoPilotStatusText">Auto-scans 15s before candle close</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoPilotToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div id="autoPilotTimerBadge" style="display: none; background: #064e3b; color: #6ee7b7; padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 8px; font-weight: 500; text-align: center; border: 1px solid #059669;">
+        ⏱️ Auto-Pilot Active: Next scan in <span id="autoPilotCountdown" style="font-weight: bold; color: #ffffff;">--:--</span>
       </div>
 
       <div style="background: #18181b; padding: 12px; border-radius: 6px; border: 1px solid #3f3f46; margin-top: 16px;">
@@ -274,7 +297,7 @@ function bindEvents(shadow, container) {
   }
 
   // Load State
-  const elementsToSave = ["timeframe", "tradeDuration", "model", "autoTradeToggle", "symbol"];
+  const elementsToSave = ["timeframe", "tradeDuration", "model", "autoTradeToggle", "autoPilotToggle", "symbol"];
   chrome.storage.local.get(["popupState"], (result) => {
     if (result.popupState) {
       const state = result.popupState;
@@ -290,6 +313,9 @@ function bindEvents(shadow, container) {
         Array.from(indSelect.options).forEach(opt => {
           opt.selected = state.indicators.includes(opt.value);
         });
+      }
+      if (state.autoPilotToggle) {
+        startAutoPilot();
       }
     }
   });
@@ -309,6 +335,77 @@ function bindEvents(shadow, container) {
     shadow.getElementById(id).addEventListener("change", saveState);
   });
   shadow.getElementById("indicators").addEventListener("change", saveState);
+
+  // Auto-Pilot Background Loop
+  const autoPilotToggle = shadow.getElementById("autoPilotToggle");
+  const autoPilotBadge = shadow.getElementById("autoPilotTimerBadge");
+  const autoPilotCountdown = shadow.getElementById("autoPilotCountdown");
+  const timeframeSelect = shadow.getElementById("timeframe");
+  
+  let autoPilotInterval = null;
+  let isAutoPilotScanning = false;
+
+  function getTimeframeMinutes() {
+    const val = timeframeSelect.value;
+    if (val === "1m") return 1;
+    if (val === "15m") return 15;
+    return 5;
+  }
+
+  function updateAutoPilotTimer() {
+    if (!autoPilotToggle.checked) {
+      if (autoPilotBadge) autoPilotBadge.style.display = "none";
+      if (autoPilotInterval) {
+        clearInterval(autoPilotInterval);
+        autoPilotInterval = null;
+      }
+      return;
+    }
+
+    if (autoPilotBadge) autoPilotBadge.style.display = "block";
+
+    const tfMins = getTimeframeMinutes();
+    const intervalSecs = tfMins * 60;
+    const now = new Date();
+    const curSecs = now.getSeconds();
+    const curMins = now.getMinutes();
+
+    const elapsedInInterval = (curMins % tfMins) * 60 + curSecs;
+    const targetScanSec = intervalSecs - 15; // 15s before candle close
+
+    let remaining = targetScanSec - elapsedInInterval;
+    if (remaining <= 0) {
+      remaining += intervalSecs;
+    }
+
+    const minsDisplay = Math.floor(remaining / 60).toString().padStart(2, '0');
+    const secsDisplay = (remaining % 60).toString().padStart(2, '0');
+    if (autoPilotCountdown) autoPilotCountdown.innerText = `${minsDisplay}:${secsDisplay}`;
+
+    // When countdown hits 1 second, trigger scan automatically
+    if (remaining === 1 && !isAutoPilotScanning && !analyzeBtn.disabled) {
+      isAutoPilotScanning = true;
+      console.log("[AI Auto-Pilot] Triggering scheduled candle scan 15s before close...");
+      analyzeBtn.click();
+      setTimeout(() => { isAutoPilotScanning = false; }, 4000);
+    }
+  }
+
+  function startAutoPilot() {
+    updateAutoPilotTimer();
+    if (!autoPilotInterval) {
+      autoPilotInterval = setInterval(updateAutoPilotTimer, 1000);
+    }
+  }
+
+  autoPilotToggle.addEventListener("change", () => {
+    saveState();
+    if (autoPilotToggle.checked) {
+      startAutoPilot();
+    } else {
+      updateAutoPilotTimer();
+    }
+  });
 
   // Macro Capture Logic
   const cap4hBtn = shadow.getElementById("cap4hBtn");
@@ -379,6 +476,7 @@ function bindEvents(shadow, container) {
       symbol: shadow.getElementById("symbol").value,
       timeframe: shadow.getElementById("timeframe").value,
       tradeDuration: shadow.getElementById("tradeDuration").value,
+      dataSource: shadow.getElementById("analysisMode")?.value || "twelvedata",
       provider: provider,
       model: modelEl.value,
       macroTimeframeImage: capturedMacro4H,
@@ -475,6 +573,7 @@ function bindEvents(shadow, container) {
       symbol: shadow.getElementById("symbol").value,
       timeframe: shadow.getElementById("timeframe").value,
       tradeDuration: shadow.getElementById("tradeDuration").value,
+      dataSource: shadow.getElementById("analysisMode")?.value || "twelvedata",
       provider: provider,
       model: modelEl.value,
       imageBase64: base64Image,
@@ -561,12 +660,57 @@ function bindEvents(shadow, container) {
 }
 
 function clickTradeButton(direction) {
-  if (direction === "BUY") {
-    const buyBtn = document.evaluate("//button[contains(translate(., 'HIGHER', 'higher'), 'higher') or contains(translate(., 'UP', 'up'), 'up') or contains(translate(., 'CALL', 'call'), 'call')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-    if (buyBtn) buyBtn.click();
-  } else if (direction === "SELL") {
-    const sellBtn = document.evaluate("//button[contains(translate(., 'LOWER', 'lower'), 'lower') or contains(translate(., 'DOWN', 'down'), 'down') or contains(translate(., 'PUT', 'put'), 'put')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-    if (sellBtn) sellBtn.click();
+  const isBuy = direction === "BUY" || direction === "STRONG_BUY";
+  let targetBtn = null;
+
+  // 1. Try old XPath (Text based: HIGHER, UP, CALL, BUY / LOWER, DOWN, PUT, SELL)
+  if (!targetBtn) {
+    const xpath = isBuy 
+      ? "//button[contains(translate(., 'HIGHER', 'higher'), 'higher') or contains(translate(., 'UP', 'up'), 'up') or contains(translate(., 'CALL', 'call'), 'call') or contains(translate(., 'BUY', 'buy'), 'buy')]"
+      : "//button[contains(translate(., 'LOWER', 'lower'), 'lower') or contains(translate(., 'DOWN', 'down'), 'down') or contains(translate(., 'PUT', 'put'), 'put') or contains(translate(., 'SELL', 'sell'), 'sell')]";
+    targetBtn = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+  }
+
+  // 2. Try generic class names and unicode arrows (For platforms like Binany without text)
+  if (!targetBtn) {
+    const buttons = Array.from(document.querySelectorAll('button, div[class*="btn"], div[class*="button"], a[class*="btn"]'));
+    for (let btn of buttons) {
+      const html = btn.innerHTML.toLowerCase();
+      const cls = (btn.className || '').toLowerCase();
+      
+      if (isBuy) {
+        if (cls.includes('call') || cls.includes('up') || html.includes('arrow-up') || html.includes('&#8679;') || html.includes('??') || html.includes('??')) {
+          targetBtn = btn; break;
+        }
+      } else {
+        if (cls.includes('put') || cls.includes('down') || html.includes('arrow-down') || html.includes('&#8681;') || html.includes('??') || html.includes('??')) {
+          targetBtn = btn; break;
+        }
+      }
+    }
+  }
+  
+  // 3. Try to find by distinct button colors (Green = Buy, Red = Sell)
+  if (!targetBtn) {
+    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+    for (let btn of buttons) {
+      const style = window.getComputedStyle(btn);
+      const bg = style.backgroundColor;
+      if (bg.includes('rgb')) {
+        const match = bg.match(/\d+/g);
+        if (match && match.length >= 3) {
+          const r = parseInt(match[0]), g = parseInt(match[1]), b = parseInt(match[2]);
+          if (isBuy && g > r && g > b + 20) { targetBtn = btn; break; }
+          if (!isBuy && r > g + 20 && r > b) { targetBtn = btn; break; }
+        }
+      }
+    }
+  }
+
+  if (targetBtn) {
+    targetBtn.click();
+  } else {
+    console.error(`AI Auto-Trader: Could not find the ${direction} button!`);
   }
 }
 

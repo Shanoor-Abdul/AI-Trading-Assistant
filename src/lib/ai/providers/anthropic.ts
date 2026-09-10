@@ -17,22 +17,35 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
   const currentModel = req.model || "claude-sonnet-5";
 
   const content: any[] = [];
-  if (req.screenshot) {
-    const cleanBase64 = req.screenshot.base64.replace(/^data:image\/\w+;base64,/, "");
+  
+  // Helper to safely push image base64
+  const pushImage = (imgData: any) => {
+    if (!imgData) return;
+    const rawStr = typeof imgData === "string" ? imgData : (imgData.image || imgData.base64 || "");
+    if (!rawStr || typeof rawStr !== "string") return;
+    const cleanBase64 = rawStr.replace(/^data:image\/\w+;base64,/, "");
+    const mimeMatch = rawStr.match(/^data:(image\/\w+);base64,/);
+    const mimeType = imgData.mimeType || (mimeMatch ? mimeMatch[1] : "image/jpeg");
     content.push({
       type: "image",
-      source: { type: "base64", media_type: req.screenshot.mimeType || "image/jpeg", data: cleanBase64 },
+      source: { type: "base64", media_type: mimeType as any, data: cleanBase64 },
     });
+  };
+
+  if (req.screenshot) pushImage(req.screenshot);
+  if (req.screenshots) {
+    for (const shot of req.screenshots) pushImage(shot);
   }
 
-  if (req.screenshots) {
-    for (const shot of req.screenshots) {
-      const cleanBase64 = shot.base64.replace(/^data:image\/\w+;base64,/, "");
-      content.push({
-        type: "image",
-        source: { type: "base64", media_type: shot.mimeType || "image/jpeg", data: cleanBase64 },
-      });
-    }
+  // Inject Multi-Timeframe Captured Frames (4H Macro, 1H Confirmation, 15M Structure)
+  if (req.macroTimeframe || (req as any).macroTimeframeImage) {
+    pushImage(req.macroTimeframe || (req as any).macroTimeframeImage);
+  }
+  if (req.confirmationTimeframeImage) {
+    pushImage(req.confirmationTimeframeImage);
+  }
+  if (req.structureTimeframe || (req as any).structureTimeframeImage) {
+    pushImage(req.structureTimeframe || (req as any).structureTimeframeImage);
   }
 
   content.push({ type: "text", text: prompt });
