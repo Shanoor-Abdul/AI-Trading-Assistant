@@ -17,29 +17,22 @@ export const AI_MODELS: AIModel[] = [
   // Anthropic Claude (Native API)
   // ==========================================
   {
-    id: "claude-sonnet-5",
-    name: "Claude 5 Sonnet",
-    provider: "anthropic",
-    isFree: false,
-    vision: true,
-  },
-  {
-    id: "claude-opus-5",
-    name: "Claude 5 Opus",
-    provider: "anthropic",
-    isFree: false,
-    vision: true,
-  },
-  {
-    id: "claude-haiku-4-5-20251001",
-    name: "Claude 4.5 Haiku",
-    provider: "anthropic",
-    isFree: false,
-    vision: true,
-  },
-  {
     id: "claude-3-5-sonnet-20241022",
-    name: "Claude 3.5 Sonnet",
+    name: "Claude 3.5 Sonnet (Recommended)",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "claude-3-5-haiku-20241022",
+    name: "Claude 3.5 Haiku (Ultra Fast)",
+    provider: "anthropic",
+    isFree: false,
+    vision: true,
+  },
+  {
+    id: "claude-3-opus-20240229",
+    name: "Claude 3 Opus",
     provider: "anthropic",
     isFree: false,
     vision: true,
