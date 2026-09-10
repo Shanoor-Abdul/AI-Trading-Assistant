@@ -13,6 +13,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     throw new Error("ANTHROPIC_API_KEY_MISSING: Set ANTHROPIC_API_KEY on the server.");
   }
 
+  const prompt = req.promptOverride ? req.promptOverride : (buildUniversalPrompt(req) + buildPriceLevelInstruction(req));
   const currentModel = req.model || "claude-sonnet-5";
 
   const content: any[] = [];
