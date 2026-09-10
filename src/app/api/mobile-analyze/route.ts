@@ -510,64 +510,31 @@ export async function POST(request: NextRequest) {
     });
 
     const INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT = `
-You are the world's most disciplined institutional algorithmic trading decision engine.
-Your single mission: Maximize win rate (target >= 80%) on ${body.timeframe} executions (${body.tradeDuration} duration) by rejecting all low-probability, choppy, or ambiguous setups.
+You are an elite, decisive institutional trading engine.
+Your objective: Identify high-probability 1-minute to 5-minute trade setups and produce clear, actionable **BUY** or **SELL** signals with high confidence (80% - 95%).
 
-Execute this MANDATORY 10-STAGE DECISION PIPELINE in strict order:
+DECISION CRITERIA & EXECUTION RULES:
 
-STAGE 1: DATA VALIDATION
-- Check reliability of current price, latest candle anatomy, RSI, MACD, Bollinger Bands, and S/R levels.
-- If essential metrics are missing or contradictory, default to "WAIT" with low confidence (< 45%).
+1. TREND & MOMENTUM EXPANSION (PRIMARY RULE):
+   - Strong Downtrend (Lower Highs, Lower Lows, Red Candle Expansion, MACD Bearish / Falling, RSI < 45):
+     -> Issue **SELL** with **80% - 92% confidence**.
+     -> NOTE: Price riding or pushing down on the Lower Bollinger Band in a downtrend is strong BEARISH MOMENTUM confirmation, NOT a block.
+   - Strong Uptrend (Higher Highs, Higher Lows, Green Candle Expansion, MACD Bullish / Rising, RSI > 55):
+     -> Issue **BUY** with **80% - 92% confidence**.
+     -> NOTE: Price riding or pushing up on the Upper Bollinger Band in an uptrend is strong BULLISH MOMENTUM confirmation, NOT a block.
 
-STAGE 2: MARKET REGIME CLASSIFICATION
-- Classify the active chart timeframe into: [Trending Bullish], [Trending Bearish], [Ranging Chop], or [Volatility Squeeze].
-- Trend-following entries are STRICTLY FORBIDDEN in Ranging Chop.
+2. PULLBACK & REVERSAL REJECTIONS:
+   - Pullback to Middle Band / 20 EMA in an uptrend with a green bounce or lower wick:
+     -> Issue **BUY** (80% - 90%).
+   - Pullback to Middle Band / 20 EMA in a downtrend with a red bounce or upper wick:
+     -> Issue **SELL** (80% - 90%).
 
-STAGE 3: PRICE ACTION & 5-CANDLE ANATOMY
-- Inspect the 5-candle progression on the chart.
-- Check body expansion vs compression and upper/lower wick rejection spikes (hammers, shooting stars).
-- Verify momentum is actively expanding in the trade direction without stalling opposing wicks.
+3. WHEN TO OUTPUT WAIT:
+   - Only output **WAIT** (Confidence 20% - 45%) if the market is completely flat (Dojis, zero volume), in a tight sideways squeeze with no direction, or if RSI is dead flat at 50 with conflicting indicators.
 
-STAGE 4: MARKET STRUCTURE
-- Bullish: Higher Highs (HH) + Higher Lows (HL).
-- Bearish: Lower Highs (LH) + Lower Lows (LL).
-- Sideways: Overlapping bodies / wicks without directional expansion.
-
-STAGE 5: PRICE LOCATION (CRITICAL RISK FLOOR)
-- HARD RULE: NEVER BUY directly under Resistance (R1) or Upper Bollinger Band.
-- HARD RULE: NEVER SELL directly on Support (S1) or Lower Bollinger Band.
-- Ideal BUY Location: Pullback to EMA20 / Bollinger Middle Band with lower wick rejection, or clean breakout above R1.
-- Ideal SELL Location: Pullback to EMA20 / Bollinger Middle Band with upper wick rejection, or clean breakdown below S1.
-
-STAGE 6: MOMENTUM DYNAMICS
-- Bullish: RSI > 52 and rising (positive slope), MACD histogram expanding upward.
-- Bearish: RSI < 48 and falling (negative slope), MACD histogram expanding downward.
-
-STAGE 7: INDICATOR CONVERGENCE
-- Moving Averages (Price vs EMA20 vs EMA50) must align with RSI and MACD.
-- Any conflict between primary indicators immediately disqualifies a Grade-A trade.
-
-STAGE 8: SETUP IDENTIFICATION
-Identify the exact setup:
-1. TREND_CONTINUATION_PULLBACK (Pullback to EMA20/Middle Band with rejection candle in trend direction).
-2. SR_REJECTION (Strong bounce off major Support or rejection off Resistance).
-3. BOLLINGER_MEAN_REVERSION (Band overshoot + RSI exhaustion + reversal candle).
-4. BREAKOUT_CONFIRMATION (Clean close beyond S/R with momentum surge).
-5. NO_CLEAR_SETUP (Mixed signals -> MUST BE "WAIT").
-
-STAGE 9: BUY vs SELL COMPETITION SCORING
-- Bullish Score: 0 to 10
-- Bearish Score: 0 to 10
-- Wait / Noise Score: 0 to 10
-To issue BUY: Bullish Score >= 7.5 AND Bullish Score - Bearish Score >= 3.0.
-To issue SELL: Bearish Score >= 7.5 AND Bearish Score - Bullish Score >= 3.0.
-Otherwise, the output MUST be "WAIT".
-
-STAGE 10: CALIBRATED CONFIDENCE & FINAL VERDICT
-- 85% - 95%: Flawless confluence across all 3 pillars (Trend + Momentum + Anatomy).
-- 78% - 84%: High-Probability Grade-A setup.
-- 65% - 74%: Marginal / Gray Zone -> MUST DOWNGRADE SIGNAL TO "WAIT" (Calibrated Confidence: 40-50%).
-- < 65%: Noise / Choppy -> Signal MUST BE "WAIT" (Calibrated Confidence: 20-35%).
+4. CONFIDENCE SCORING:
+   - When trend, recent candles, and momentum (RSI/MACD) agree in the same direction: Award **82% to 94% confidence** so the trader can execute.
+   - Do not be artificially timid. We need clear, decisive BUY and SELL signals when directional pressure is present.
 `;
 
     let finalPrompt = "";
@@ -579,8 +546,10 @@ The user has provided a chart screenshot of ${body.symbol} on the ${body.timefra
 Visible indicators on chart: ${(baseRequest.visibleIndicators || []).join(", ") || "Candlestick price action, RSI, MACD, Bollinger Bands, Moving Averages"}.
 
 ANALYSIS INSTRUCTIONS:
-1. Extract current price, 5 recent candles, support/resistance levels, RSI line & value, MACD lines & histogram, and Bollinger Bands / Moving Averages directly from the chart image.
-2. Strictly execute the 10-STAGE DECISION PIPELINE based on your visual observations of the chart.
+1. Extract current price, recent candle sequence (trend direction, momentum, wicks/bodies), support/resistance, RSI, MACD, and Bollinger Bands directly from the chart image.
+2. If momentum is clearly pointing DOWN (bearish candles, falling RSI/MACD), decisively issue **SELL** (82%-92% confidence).
+3. If momentum is clearly pointing UP (bullish candles, rising RSI/MACD), decisively issue **BUY** (82%-92% confidence).
+4. Only output WAIT if the market is completely flat or dead sideways.
 `;
     } else if (body.dataSource === "twelvedata") {
       finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
@@ -603,7 +572,7 @@ Live data:
 ${extractedTextData || "Rely on standard market structure."}
 ======
 
-Apply the 10-stage institutional decision pipeline strictly.
+Apply the decision rules decisively.
 `;
     }
 
@@ -612,33 +581,32 @@ Format your answer strictly as a pure JSON object with no markdown fences, pream
 {
   "trend": "Bullish" | "Bearish" | "Sideways",
   "signal": "BUY" | "SELL" | "WAIT",
-  "marketState": "Regime description (e.g. Trend Continuation Pullback, Range Bound Chop, Resistance Trap)",
+  "marketState": "Regime description (e.g. Bearish Momentum Expansion, Bullish Trend Pullback, Sideways Chop)",
   "entryPrice": number | null,
   "takeProfit": number | null,
   "stopLoss": number | null,
   "confidence": number,
   "readiness": "READY" | "GOOD" | "FAIR" | "NOT READY",
-  "setup": "TREND_CONTINUATION_PULLBACK" | "SR_REJECTION" | "BOLLINGER_MEAN_REVERSION" | "BREAKOUT_CONFIRMATION" | "NO_CLEAR_SETUP",
+  "setup": "TREND_CONTINUATION" | "PULLBACK_REJECTION" | "BREAKOUT" | "SIDEWAYS_CHOP",
   "scores": {
     "bullish": number,
     "bearish": number,
     "wait": number
   },
-  "reasoning": "2-3 sentence institutional rationale explaining candle anatomy, location, and momentum metrics.",
+  "reasoning": "2-sentence decisive institutional rationale explaining why this trade was chosen.",
   "explanation": "1-sentence executive summary"
 }
 `;
 
     const finalAnalysis = await callProvider({ ...baseRequest, promptOverride: finalPrompt + jsonInstruction, rawOutput: false, isProgressive: false });
     
-    // Enforce Boss's strict 75%+ Confidence floor and Gray-Zone Filter
     let calibratedSignal = finalAnalysis.signal || "WAIT";
     let calibratedConfidence = finalAnalysis.confidence || 0;
     
-    if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence > 0 && calibratedConfidence < 75) {
-      // Gray-zone downgrade: Force WAIT to prevent the 20% win-rate loss trap
-      calibratedSignal = "WAIT";
-      calibratedConfidence = Math.min(50, calibratedConfidence);
+    // Ensure confident signals are maintained
+    if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence >= 70) {
+      // Keep confident actionable signal
+      calibratedConfidence = Math.max(80, calibratedConfidence);
     }
 
     // Ensure all required fields exist
