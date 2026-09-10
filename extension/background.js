@@ -27,9 +27,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request.payload)
     })
-    .then(res => res.json())
-    .then(data => sendResponse({ data: data }))
-    .catch(err => sendResponse({ error: err.message }));
+    .then(async (res) => {
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        sendResponse({ data: data });
+      } catch (parseErr) {
+        if (!res.ok) {
+          sendResponse({ error: `Server error (${res.status}): Please make sure 'npm run start' or 'npm run dev' is running on port 3000.` });
+        } else {
+          sendResponse({ error: `Invalid response format from server: ${text.slice(0, 100)}` });
+        }
+      }
+    })
+    .catch(err => {
+      sendResponse({ error: `Connection failed: ${err.message}. Ensure the Next.js server is running at http://127.0.0.1:3000` });
+    });
     
     return true; // Keep message channel open for async response
   }
