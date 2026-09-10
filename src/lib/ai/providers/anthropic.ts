@@ -13,14 +13,7 @@ export async function analyze(req: UniversalAIRequest): Promise<UniversalAIRespo
     throw new Error("ANTHROPIC_API_KEY_MISSING: Set ANTHROPIC_API_KEY on the server.");
   }
 
-  const modelMap: Record<string, string> = {
-    "claude-sonnet-5": "claude-3-5-sonnet-20241022",
-    "claude-opus-5": "claude-3-opus-20240229",
-    "claude-haiku-4-5-20251001": "claude-3-5-haiku-20241022",
-    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
-  };
-  const currentModel = modelMap[req.model || ""] || req.model || "claude-3-5-sonnet-20241022";
+  const currentModel = req.model || "claude-sonnet-5";
 
   const content: any[] = [];
   

@@ -32,6 +32,12 @@ export interface MarketStructureResult {
   isLowerLow: boolean;
   breakOfStructure: boolean;
   changeOfCharacter: boolean;
+  bullishBOS?: boolean;
+  bearishBOS?: boolean;
+  bullishCHOCH?: boolean;
+  bearishCHOCH?: boolean;
+  falseBreakout?: boolean;
+  breakoutConfirmed?: boolean;
   structureRetest: boolean;
 }
 
@@ -298,26 +304,57 @@ export class DeterministicApiDecisionEngine {
     // Break of Structure (BOS) & Change of Character (CHOCH) Detection
     let breakOfStructure = false;
     let changeOfCharacter = false;
+    let bullishBOS = false;
+    let bearishBOS = false;
+    let bullishCHOCH = false;
+    let bearishCHOCH = false;
+    let falseBreakout = false;
+    let breakoutConfirmed = false;
     let structureRetest = false;
 
     const latestCandle = candles[candles.length - 1];
     if (latestCandle && latestSwingHigh && latestSwingLow) {
-      if (structure === "BULLISH_STRUCTURE" && latestCandle.close > latestSwingHigh.price) {
-        breakOfStructure = true;
-      } else if (structure === "BEARISH_STRUCTURE" && latestCandle.close < latestSwingLow.price) {
-        breakOfStructure = true;
+      const isCloseAboveHigh = latestCandle.close > latestSwingHigh.price;
+      const isWickAboveHigh = latestCandle.high > latestSwingHigh.price && latestCandle.close <= latestSwingHigh.price;
+      const isCloseBelowLow = latestCandle.close < latestSwingLow.price;
+      const isWickBelowLow = latestCandle.low < latestSwingLow.price && latestCandle.close >= latestSwingLow.price;
+
+      // False Breakouts (Wick sweeps without candle close confirmation)
+      if (isWickAboveHigh || isWickBelowLow) {
+        falseBreakout = true;
       }
 
-      if (structure === "BULLISH_STRUCTURE" && latestCandle.close < latestSwingLow.price) {
-        changeOfCharacter = true;
-      } else if (structure === "BEARISH_STRUCTURE" && latestCandle.close > latestSwingHigh.price) {
-        changeOfCharacter = true;
+      // Bullish BOS: Existing Bullish Structure + Confirmed Close above Swing High
+      if (structure === "BULLISH_STRUCTURE" && isCloseAboveHigh) {
+        bullishBOS = true;
+        breakOfStructure = true;
+        breakoutConfirmed = true;
+      }
+      // Bearish BOS: Existing Bearish Structure + Confirmed Close below Swing Low
+      else if (structure === "BEARISH_STRUCTURE" && isCloseBelowLow) {
+        bearishBOS = true;
+        breakOfStructure = true;
+        breakoutConfirmed = true;
       }
 
+      // Bullish CHOCH: Bearish/Range Structure broken upward by Confirmed Close > Swing High
+      if (structure !== "BULLISH_STRUCTURE" && isCloseAboveHigh) {
+        bullishCHOCH = true;
+        changeOfCharacter = true;
+        breakoutConfirmed = true;
+      }
+      // Bearish CHOCH: Bullish/Range Structure broken downward by Confirmed Close < Swing Low
+      else if (structure !== "BEARISH_STRUCTURE" && isCloseBelowLow) {
+        bearishCHOCH = true;
+        changeOfCharacter = true;
+        breakoutConfirmed = true;
+      }
+
+      // Structure Retest (Price touches previous swing within tolerance)
       const distHigh = Math.abs(latestCandle.close - latestSwingHigh.price);
       const distLow = Math.abs(latestCandle.close - latestSwingLow.price);
       const avgCandleRange = Math.max(0.0001, latestCandle.high - latestCandle.low);
-      if (distHigh <= avgCandleRange * 0.5 || distLow <= avgCandleRange * 0.5) {
+      if (distHigh <= avgCandleRange * 0.4 || distLow <= avgCandleRange * 0.4) {
         structureRetest = true;
       }
     }
@@ -338,6 +375,12 @@ export class DeterministicApiDecisionEngine {
       isLowerLow,
       breakOfStructure,
       changeOfCharacter,
+      bullishBOS,
+      bearishBOS,
+      bullishCHOCH,
+      bearishCHOCH,
+      falseBreakout,
+      breakoutConfirmed,
       structureRetest,
     };
   }
@@ -1375,6 +1418,12 @@ export class DeterministicApiDecisionEngine {
       isLowerLow: false,
       breakOfStructure: false,
       changeOfCharacter: false,
+      bullishBOS: false,
+      bearishBOS: false,
+      bullishCHOCH: false,
+      bearishCHOCH: false,
+      falseBreakout: false,
+      breakoutConfirmed: false,
       structureRetest: false,
     };
 
