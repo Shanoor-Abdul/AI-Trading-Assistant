@@ -194,6 +194,8 @@ export class TwelveDataIndicatorAdapter {
   /**
    * Main Normalizer: Adapts TwelveData indicator responses into the normalized structure
    * consumed by DeterministicApiDecisionEngine.
+   * If any timeframe's indicator response is missing from TwelveData, automatically calculates
+   * it from fallbackCandles with mathematical parity so the engine always receives complete data.
    */
   static normalizeIndicators(
     twelveDataPayload: TwelveDataIndicatorsPayload | null | undefined,
@@ -203,120 +205,126 @@ export class TwelveDataIndicatorAdapter {
       "4h"?: Candle[];
     }
   ): NormalizedIndicatorSet {
-    const raw5m = twelveDataPayload?.["5m"];
-    const raw1h = twelveDataPayload?.["1h"];
-    const raw4h = twelveDataPayload?.["4h"];
-
-    // Check if TwelveData provided live indicator data
-    const hasTwelveData5m = Boolean(raw5m?.rsi14 || raw5m?.ema20 || raw5m?.macd);
-
-    if (hasTwelveData5m) {
-      // 1. Process 5M Indicators from TwelveData
-      const ema20_5m_arr = this.parseNumericSeries(raw5m?.ema20, "ema");
-      const ema50_5m_arr = this.parseNumericSeries(raw5m?.ema50, "ema");
-      const ema200_5m_arr = this.parseNumericSeries(raw5m?.ema200, "ema");
-      const rsi14_5m_arr = this.parseNumericSeries(raw5m?.rsi14, "rsi");
-      const macd_5m_arr = this.parseMacdSeries(raw5m?.macd);
-      const bb_5m_arr = this.parseBollingerSeries(raw5m?.bbands);
-      const atr14_5m_arr = this.parseNumericSeries(raw5m?.atr14, "atr");
-
-      const ema20_5m = ema20_5m_arr.length ? ema20_5m_arr[ema20_5m_arr.length - 1] : null;
-      const ema50_5m = ema50_5m_arr.length ? ema50_5m_arr[ema50_5m_arr.length - 1] : null;
-      const ema200_5m = ema200_5m_arr.length ? ema200_5m_arr[ema200_5m_arr.length - 1] : null;
-      const rsi_5m = rsi14_5m_arr.length ? rsi14_5m_arr[rsi14_5m_arr.length - 1] : null;
-      const rsiDelta_5m =
-        rsi14_5m_arr.length >= 3
-          ? rsi14_5m_arr[rsi14_5m_arr.length - 1] - rsi14_5m_arr[rsi14_5m_arr.length - 3]
-          : null;
-
-      const latestMacd5m = macd_5m_arr.length ? macd_5m_arr[macd_5m_arr.length - 1] : null;
-      let macdSlope_5m: Normalized5mIndicators["macdSlope"] = "Flat";
-      if (macd_5m_arr.length >= 3) {
-        const h0 = macd_5m_arr[macd_5m_arr.length - 3].histogram;
-        const h1 = macd_5m_arr[macd_5m_arr.length - 2].histogram;
-        const h2 = macd_5m_arr[macd_5m_arr.length - 1].histogram;
-        if (h2 > h1 && h1 > h0) macdSlope_5m = "Rising";
-        else if (h2 < h1 && h1 < h0) macdSlope_5m = "Falling";
-        else if (h2 > 0 && h1 < 0) macdSlope_5m = "Bullish Cross";
-        else if (h2 < 0 && h1 > 0) macdSlope_5m = "Bearish Cross";
-      }
-
-      const latestBb5m = bb_5m_arr.length ? bb_5m_arr[bb_5m_arr.length - 1] : null;
-      const atr_5m = atr14_5m_arr.length ? atr14_5m_arr[atr14_5m_arr.length - 1] : 0.0008;
-
-      // 2. Process 1H Indicators from TwelveData
-      const ema20_1h_arr = this.parseNumericSeries(raw1h?.ema20, "ema");
-      const ema50_1h_arr = this.parseNumericSeries(raw1h?.ema50, "ema");
-      const ema200_1h_arr = this.parseNumericSeries(raw1h?.ema200, "ema");
-      const rsi14_1h_arr = this.parseNumericSeries(raw1h?.rsi14, "rsi");
-      const macd_1h_arr = this.parseMacdSeries(raw1h?.macd);
-      const atr14_1h_arr = this.parseNumericSeries(raw1h?.atr14, "atr");
-
-      const ema20_1h = ema20_1h_arr.length ? ema20_1h_arr[ema20_1h_arr.length - 1] : null;
-      const ema50_1h = ema50_1h_arr.length ? ema50_1h_arr[ema50_1h_arr.length - 1] : null;
-      const ema200_1h = ema200_1h_arr.length ? ema200_1h_arr[ema200_1h_arr.length - 1] : null;
-      const rsi_1h = rsi14_1h_arr.length ? rsi14_1h_arr[rsi14_1h_arr.length - 1] : null;
-      const rsiDelta_1h =
-        rsi14_1h_arr.length >= 3
-          ? rsi14_1h_arr[rsi14_1h_arr.length - 1] - rsi14_1h_arr[rsi14_1h_arr.length - 3]
-          : null;
-      const latestMacd1h = macd_1h_arr.length ? macd_1h_arr[macd_1h_arr.length - 1] : null;
-      const atr_1h = atr14_1h_arr.length ? atr14_1h_arr[atr14_1h_arr.length - 1] : 0;
-
-      // 3. Process 4H Indicators from TwelveData
-      const ema50_4h_arr = this.parseNumericSeries(raw4h?.ema50, "ema");
-      const ema200_4h_arr = this.parseNumericSeries(raw4h?.ema200, "ema");
-      const atr14_4h_arr = this.parseNumericSeries(raw4h?.atr14, "atr");
-
-      const ema50_4h = ema50_4h_arr.length ? ema50_4h_arr[ema50_4h_arr.length - 1] : null;
-      const ema200_4h = ema200_4h_arr.length ? ema200_4h_arr[ema200_4h_arr.length - 1] : null;
-      const atr_4h = atr14_4h_arr.length ? atr14_4h_arr[atr14_4h_arr.length - 1] : 0;
-
-      return {
-        "5m": {
-          ema20: ema20_5m,
-          ema50: ema50_5m,
-          ema200: ema200_5m,
-          rsi: rsi_5m,
-          rsiDelta: rsiDelta_5m,
-          macd: {
-            macd: latestMacd5m ? latestMacd5m.macd : null,
-            signal: latestMacd5m ? latestMacd5m.signal : null,
-            histogram: latestMacd5m ? latestMacd5m.histogram : null,
-          },
-          macdSlope: macdSlope_5m,
-          bb: latestBb5m,
-          atr: atr_5m,
-        },
-        "1h": {
-          ema20: ema20_1h,
-          ema50: ema50_1h,
-          ema200: ema200_1h,
-          rsi: rsi_1h,
-          rsiDelta: rsiDelta_1h,
-          macd: {
-            macd: latestMacd1h ? latestMacd1h.macd : null,
-            signal: latestMacd1h ? latestMacd1h.signal : null,
-            histogram: latestMacd1h ? latestMacd1h.histogram : null,
-          },
-          atr: atr_1h,
-        },
-        "4h": {
-          ema50: ema50_4h,
-          ema200: ema200_4h,
-          atr: atr_4h,
-        },
-        source: "twelvedata_api",
-      };
-    }
-
-    // Offline / Replay / Backtest Fallback
-    // When live TwelveData indicator feeds are omitted, calculate indicators locally using exact matching formulas.
-    return this.calculateOfflineIndicators(
+    // 1. Calculate complete baseline indicators from fallback candles
+    const offlineSet = this.calculateOfflineIndicators(
       fallbackCandles?.["5m"] || [],
       fallbackCandles?.["1h"] || [],
       fallbackCandles?.["4h"] || []
     );
+
+    const raw5m = twelveDataPayload?.["5m"];
+    const raw1h = twelveDataPayload?.["1h"];
+    const raw4h = twelveDataPayload?.["4h"];
+
+    // Check if TwelveData provided any live indicator data
+    const hasAnyLiveIndicators = Boolean(
+      raw5m?.rsi14 || raw5m?.ema20 || raw5m?.macd ||
+      raw1h?.rsi14 || raw1h?.ema20 || raw1h?.macd ||
+      raw4h?.ema50 || raw4h?.ema200
+    );
+
+    if (!hasAnyLiveIndicators) {
+      return offlineSet;
+    }
+
+    // Overlay live TwelveData values onto the complete baseline
+    // 5M Overlay
+    const ema20_5m_arr = this.parseNumericSeries(raw5m?.ema20, "ema");
+    const ema50_5m_arr = this.parseNumericSeries(raw5m?.ema50, "ema");
+    const ema200_5m_arr = this.parseNumericSeries(raw5m?.ema200, "ema");
+    const rsi14_5m_arr = this.parseNumericSeries(raw5m?.rsi14, "rsi");
+    const macd_5m_arr = this.parseMacdSeries(raw5m?.macd);
+    const bb_5m_arr = this.parseBollingerSeries(raw5m?.bbands);
+    const atr14_5m_arr = this.parseNumericSeries(raw5m?.atr14, "atr");
+
+    const ema20_5m = ema20_5m_arr.length ? ema20_5m_arr[ema20_5m_arr.length - 1] : offlineSet["5m"].ema20;
+    const ema50_5m = ema50_5m_arr.length ? ema50_5m_arr[ema50_5m_arr.length - 1] : offlineSet["5m"].ema50;
+    const ema200_5m = ema200_5m_arr.length ? ema200_5m_arr[ema200_5m_arr.length - 1] : offlineSet["5m"].ema200;
+    const rsi_5m = rsi14_5m_arr.length ? rsi14_5m_arr[rsi14_5m_arr.length - 1] : offlineSet["5m"].rsi;
+    const rsiDelta_5m =
+      rsi14_5m_arr.length >= 3
+        ? rsi14_5m_arr[rsi14_5m_arr.length - 1] - rsi14_5m_arr[rsi14_5m_arr.length - 3]
+        : offlineSet["5m"].rsiDelta;
+
+    const latestMacd5m = macd_5m_arr.length ? macd_5m_arr[macd_5m_arr.length - 1] : null;
+    let macdSlope_5m: Normalized5mIndicators["macdSlope"] = offlineSet["5m"].macdSlope;
+    if (macd_5m_arr.length >= 3) {
+      const h0 = macd_5m_arr[macd_5m_arr.length - 3].histogram;
+      const h1 = macd_5m_arr[macd_5m_arr.length - 2].histogram;
+      const h2 = macd_5m_arr[macd_5m_arr.length - 1].histogram;
+      if (h2 > h1 && h1 > h0) macdSlope_5m = "Rising";
+      else if (h2 < h1 && h1 < h0) macdSlope_5m = "Falling";
+      else if (h2 > 0 && h1 < 0) macdSlope_5m = "Bullish Cross";
+      else if (h2 < 0 && h1 > 0) macdSlope_5m = "Bearish Cross";
+    }
+
+    const latestBb5m = bb_5m_arr.length ? bb_5m_arr[bb_5m_arr.length - 1] : offlineSet["5m"].bb;
+    const atr_5m = atr14_5m_arr.length ? atr14_5m_arr[atr14_5m_arr.length - 1] : offlineSet["5m"].atr;
+
+    // 1H Overlay
+    const ema20_1h_arr = this.parseNumericSeries(raw1h?.ema20, "ema");
+    const ema50_1h_arr = this.parseNumericSeries(raw1h?.ema50, "ema");
+    const ema200_1h_arr = this.parseNumericSeries(raw1h?.ema200, "ema");
+    const rsi14_1h_arr = this.parseNumericSeries(raw1h?.rsi14, "rsi");
+    const macd_1h_arr = this.parseMacdSeries(raw1h?.macd);
+    const atr14_1h_arr = this.parseNumericSeries(raw1h?.atr14, "atr");
+
+    const ema20_1h = ema20_1h_arr.length ? ema20_1h_arr[ema20_1h_arr.length - 1] : offlineSet["1h"].ema20;
+    const ema50_1h = ema50_1h_arr.length ? ema50_1h_arr[ema50_1h_arr.length - 1] : offlineSet["1h"].ema50;
+    const ema200_1h = ema200_1h_arr.length ? ema200_1h_arr[ema200_1h_arr.length - 1] : offlineSet["1h"].ema200;
+    const rsi_1h = rsi14_1h_arr.length ? rsi14_1h_arr[rsi14_1h_arr.length - 1] : offlineSet["1h"].rsi;
+    const rsiDelta_1h =
+      rsi14_1h_arr.length >= 3
+        ? rsi14_1h_arr[rsi14_1h_arr.length - 1] - rsi14_1h_arr[rsi14_1h_arr.length - 3]
+        : offlineSet["1h"].rsiDelta;
+    const latestMacd1h = macd_1h_arr.length ? macd_1h_arr[macd_1h_arr.length - 1] : null;
+    const atr_1h = atr14_1h_arr.length ? atr14_1h_arr[atr14_1h_arr.length - 1] : offlineSet["1h"].atr;
+
+    // 4H Overlay
+    const ema50_4h_arr = this.parseNumericSeries(raw4h?.ema50, "ema");
+    const ema200_4h_arr = this.parseNumericSeries(raw4h?.ema200, "ema");
+    const atr14_4h_arr = this.parseNumericSeries(raw4h?.atr14, "atr");
+
+    const ema50_4h = ema50_4h_arr.length ? ema50_4h_arr[ema50_4h_arr.length - 1] : offlineSet["4h"].ema50;
+    const ema200_4h = ema200_4h_arr.length ? ema200_4h_arr[ema200_4h_arr.length - 1] : offlineSet["4h"].ema200;
+    const atr_4h = atr14_4h_arr.length ? atr14_4h_arr[atr14_4h_arr.length - 1] : offlineSet["4h"].atr;
+
+    return {
+      "5m": {
+        ema20: ema20_5m,
+        ema50: ema50_5m,
+        ema200: ema200_5m,
+        rsi: rsi_5m,
+        rsiDelta: rsiDelta_5m,
+        macd: {
+          macd: latestMacd5m ? latestMacd5m.macd : offlineSet["5m"].macd.macd,
+          signal: latestMacd5m ? latestMacd5m.signal : offlineSet["5m"].macd.signal,
+          histogram: latestMacd5m ? latestMacd5m.histogram : offlineSet["5m"].macd.histogram,
+        },
+        macdSlope: macdSlope_5m,
+        bb: latestBb5m,
+        atr: atr_5m,
+      },
+      "1h": {
+        ema20: ema20_1h,
+        ema50: ema50_1h,
+        ema200: ema200_1h,
+        rsi: rsi_1h,
+        rsiDelta: rsiDelta_1h,
+        macd: {
+          macd: latestMacd1h ? latestMacd1h.macd : offlineSet["1h"].macd.macd,
+          signal: latestMacd1h ? latestMacd1h.signal : offlineSet["1h"].macd.signal,
+          histogram: latestMacd1h ? latestMacd1h.histogram : offlineSet["1h"].macd.histogram,
+        },
+        atr: atr_1h,
+      },
+      "4h": {
+        ema50: ema50_4h,
+        ema200: ema200_4h,
+        atr: atr_4h,
+      },
+      source: "twelvedata_api",
+    };
   }
 
   /**
@@ -372,7 +380,11 @@ export class TwelveDataIndicatorAdapter {
     }
 
     const latestBb5m = bb_5m_calc.length ? bb_5m_calc[bb_5m_calc.length - 1] : null;
-    const atr_5m = atr_5m_calc.length ? atr_5m_calc[atr_5m_calc.length - 1] : 0.0008;
+    const atr_5m = atr_5m_calc.length
+      ? atr_5m_calc[atr_5m_calc.length - 1]
+      : close5m.length >= 2
+      ? Math.abs(high5m[high5m.length - 1] - low5m[low5m.length - 1])
+      : 0;
 
     // 1H Indicators
     const close1h = candles1h.map((c) => c.close);

@@ -1160,58 +1160,111 @@ export class DeterministicApiDecisionEngine {
     const buyRisk = this.calculateRisk(currentPrice, "BUY", atr_5m, sr, struct5m, pipMultiplier);
     const sellRisk = this.calculateRisk(currentPrice, "SELL", atr_5m, sr, struct5m, pipMultiplier);
 
-    // 7. Deterministic Decision & Evidence Confidence
+    // 7. Calculate Trade Quality Independently from Direction
+    let buyTradeQuality = 30;
+    let sellTradeQuality = 30;
+
+    const pipsUnderR1Calc = sr.nearestResistance ? (sr.nearestResistance.price - currentPrice) * pipMultiplier : 999;
+    const pipsAboveS1Calc = sr.nearestSupport ? (currentPrice - sr.nearestSupport.price) * pipMultiplier : 999;
+
+    // BUY Trade Quality Assessment
+    if (evalResult.hardGates.buyAllowed && buyRisk.riskRewardRatio >= 1.1) {
+      let q = 40;
+      if (pipsUnderR1Calc >= 5.0) q += 20;
+      else if (pipsUnderR1Calc >= 3.0) q += 10;
+      if (buyRisk.riskRewardRatio >= 1.5) q += 15;
+      else if (buyRisk.riskRewardRatio >= 1.2) q += 10;
+      if (setupObj.quality >= 70) q += 15;
+      else if (setupObj.quality >= 50) q += 10;
+      if (struct5m.breakOfStructure) q += 10;
+      buyTradeQuality = Math.min(100, q);
+    } else {
+      buyTradeQuality = evalResult.hardGates.reasons.some((r) => r.includes("Resistance") || r.includes("Chop")) ? 20 : 35;
+    }
+
+    // SELL Trade Quality Assessment
+    if (evalResult.hardGates.sellAllowed && sellRisk.riskRewardRatio >= 1.1) {
+      let q = 40;
+      if (pipsAboveS1Calc >= 5.0) q += 20;
+      else if (pipsAboveS1Calc >= 3.0) q += 10;
+      if (sellRisk.riskRewardRatio >= 1.5) q += 15;
+      else if (sellRisk.riskRewardRatio >= 1.2) q += 10;
+      if (setupObj.quality >= 70) q += 15;
+      else if (setupObj.quality >= 50) q += 10;
+      if (struct5m.breakOfStructure) q += 10;
+      sellTradeQuality = Math.min(100, q);
+    } else {
+      sellTradeQuality = evalResult.hardGates.reasons.some((r) => r.includes("Support") || r.includes("Chop")) ? 20 : 35;
+    }
+
+    // 8. Deterministic Decision & Evidence-Based Confidence
     let signal: DeterministicDecisionResult["signal"] = "WAIT";
     let activeRisk = buyRisk;
-    let confidence = 35; // Default baseline for wait/indecision
+    let confidence = 35;
+    let tradeQuality = 30;
 
-    if (
+    const isBuyConfluent =
       evalResult.hardGates.buyAllowed &&
       evalResult.bullishScore >= 75 &&
-      evalResult.bullishScore > evalResult.bearishScore + 20 &&
-      buyRisk.riskRewardRatio >= 1.1
-    ) {
-      signal = "BUY";
-      activeRisk = buyRisk;
-      confidence = Math.min(95, Math.round(55 + (evalResult.bullishScore - 75) * 1.5 + buyRisk.riskRewardRatio * 5));
-    } else if (
+      evalResult.bullishScore >= evalResult.bearishScore + 10 &&
+      buyTradeQuality >= 70 &&
+      buyRisk.riskRewardRatio >= 1.1;
+
+    const isSellConfluent =
       evalResult.hardGates.sellAllowed &&
       evalResult.bearishScore >= 75 &&
-      evalResult.bearishScore > evalResult.bullishScore + 20 &&
-      sellRisk.riskRewardRatio >= 1.1
-    ) {
+      evalResult.bearishScore >= evalResult.bullishScore + 10 &&
+      sellTradeQuality >= 70 &&
+      sellRisk.riskRewardRatio >= 1.1;
+
+    if (isBuyConfluent) {
+      signal = "BUY";
+      activeRisk = buyRisk;
+      tradeQuality = buyTradeQuality;
+      // High quality setup + confirmed entry + good location + valid RR -> 75% to 92%
+      confidence = Math.min(
+        92,
+        Math.round(75 + (evalResult.bullishScore - 75) * 0.4 + (buyTradeQuality - 70) * 0.4 + Math.min(2.0, buyRisk.riskRewardRatio - 1.1) * 5)
+      );
+    } else if (isSellConfluent) {
       signal = "SELL";
       activeRisk = sellRisk;
-      confidence = Math.min(95, Math.round(55 + (evalResult.bearishScore - 75) * 1.5 + sellRisk.riskRewardRatio * 5));
+      tradeQuality = sellTradeQuality;
+      // High quality setup + confirmed entry + good location + valid RR -> 75% to 92%
+      confidence = Math.min(
+        92,
+        Math.round(75 + (evalResult.bearishScore - 75) * 0.4 + (sellTradeQuality - 70) * 0.4 + Math.min(2.0, sellRisk.riskRewardRatio - 1.1) * 5)
+      );
     } else {
       signal = "WAIT";
-      confidence = Math.min(45, Math.max(20, Math.round(evalResult.directionalLead * 0.4)));
+      activeRisk = evalResult.bullishScore >= evalResult.bearishScore ? buyRisk : sellRisk;
+      tradeQuality = Math.max(buyTradeQuality, sellTradeQuality);
+
+      // Confidence Ceilings for WAIT / Non-tradeable setups
+      let waitConfidence = 35;
+      if (!has4h || !has1h) {
+        waitConfidence = Math.min(40, Math.round(dataQualityScore * 0.4));
+      } else if (evalResult.hardGates.reasons.some((r) => r.includes("Chop"))) {
+        waitConfidence = 30;
+      } else if (evalResult.hardGates.reasons.some((r) => r.includes("Trap"))) {
+        waitConfidence = 45;
+      } else if (bias4h.includes("Bearish") && bias1h.includes("Bullish")) {
+        waitConfidence = 50; // Conflicting timeframes
+      } else {
+        waitConfidence = Math.min(55, Math.max(25, Math.round(evalResult.directionalLead * 0.5)));
+      }
+      confidence = waitConfidence;
     }
 
     // Directional Bias & Trade Quality Metrics
     let directionalBias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
-    if (evalResult.bullishScore >= evalResult.bearishScore + 15) {
+    if (evalResult.bullishScore >= evalResult.bearishScore + 10) {
       directionalBias = "BULLISH";
-    } else if (evalResult.bearishScore >= evalResult.bullishScore + 15) {
+    } else if (evalResult.bearishScore >= evalResult.bullishScore + 10) {
       directionalBias = "BEARISH";
     }
     const directionalStrength = Math.max(evalResult.bullishScore, evalResult.bearishScore);
     const tradeable = signal === "BUY" || signal === "SELL";
-
-    let tradeQuality = 30;
-    if (signal === "BUY") {
-      tradeQuality = Math.min(100, Math.max(50, Math.round(evalResult.bullishScore * 0.4 + setupObj.quality * 0.3 + Math.min(3.0, buyRisk.riskRewardRatio) * 10)));
-    } else if (signal === "SELL") {
-      tradeQuality = Math.min(100, Math.max(50, Math.round(evalResult.bearishScore * 0.4 + setupObj.quality * 0.3 + Math.min(3.0, sellRisk.riskRewardRatio) * 10)));
-    } else {
-      if (!evalResult.hardGates.buyAllowed && !evalResult.hardGates.sellAllowed) {
-        tradeQuality = 15;
-      } else if (evalResult.hardGates.reasons.some((r) => r.includes("Trap") || r.includes("Chop"))) {
-        tradeQuality = 25;
-      } else {
-        tradeQuality = Math.min(48, Math.round(setupObj.quality * 0.5));
-      }
-    }
 
     // Price location
     const latestBb = ind5m.bb;

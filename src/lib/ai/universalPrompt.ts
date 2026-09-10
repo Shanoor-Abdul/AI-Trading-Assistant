@@ -115,18 +115,85 @@ Apply the USER SELECTED STRATEGY only after extracting and weighing the evidence
 MANDATORY RULE: Never treat a previous AI-generated trend/signal as evidence. Only raw frame observations and extracted market evidence may be used as evidence for the final analysis.
 
 ==================================================
-7. CONFIDENCE, RISK & FINAL SIGNAL
+7. CONFIDENCE, RISK & SCORING RULES
 ==================================================
 
-Possible Signals: BUY, SELL, WAIT, NO_TRADE, UNSURE.
+1. SEPARATE MARKET DIRECTION FROM TRADE QUALITY:
+- directional_bias = how strongly the market favors BUY or SELL.
+- trade_quality = how safe and favorable it is to enter NOW (location, barrier distance, valid RR).
+- A market can have strong direction + poor entry location -> WAIT.
+- A market can have strong direction + poor RR -> WAIT.
+- NEVER convert directional strength directly into confidence.
 
-WAIT is the correct answer if:
-- Evidence is bearish but entry confirmation is missing.
-- Evidence is conflicting or showing reversal.
+2. EVIDENCE-BASED CONFIDENCE:
+Confidence is NOT guaranteed win probability. Calculate confidence strictly from independent evidence:
+(1) Higher-timeframe alignment (4H & 1H direction)
+(2) Market structure (HH/HL or LH/LL, BOS, CHOCH, false-breakout checks)
+(3) Momentum (RSI, MACD, EMA alignment, candle strength)
+(4) Trade location (S/R proximity, premium/discount, room before barrier)
+(5) Risk/reward (valid structural SL, valid realistic TP, RR >= 1.1)
+(6) Market regime (trend, range, chop, transition)
+(7) Entry confirmation (rejection pinbar, breakout candle CLOSE, momentum continuation)
 
-WAIT does NOT automatically mean low confidence. If bearish evidence is strong but entry confirmation is missing, signal WAIT with medium/high analytical confidence.
+3. HARD CONFIDENCE CEILINGS:
+Apply these strict maximum confidence limits:
+- Missing critical market data -> maximum 40
+- 4H / 1H directional conflict -> maximum 55
+- Choppy / ranging market -> maximum 55
+- Poor trade location / opposing barrier trap -> maximum 60
+- Weak or unconfirmed breakout -> maximum 60
+- False breakout detected -> maximum 35
+- Invalid risk/reward (< 1.1) -> maximum 30
+- No clear market structure -> maximum 55
+- Strong structure + alignment but no entry trigger -> maximum 65
+- Strong structure + alignment + confirmed entry + good location + valid RR -> confidence may reach 75+
+- Exceptional alignment across 4H + 1H + 5M with strong confirmation and clean risk -> confidence may reach 85+
 
-Confidence must reflect the strength of the available extracted evidence.
+4. BUY / SELL CONFLUENCE REQUIREMENTS:
+BUY Requirements:
+- 4H is bullish or neutral-bullish; 1H is bullish or transitioning bullish.
+- 5M structure supports bullish continuation/reversal.
+- Breakout is confirmed by candle CLOSE (never a mere wick sweep).
+- Price is not entering directly into major resistance (>2.5 pips / >0.75 ATR clearance).
+- SL and TP are structurally valid with RR >= 1.1. No major bearish invalidation.
+- If critical conditions are missing -> choose WAIT.
+
+SELL Requirements:
+- 4H is bearish or neutral-bearish; 1H is bearish or transitioning bearish.
+- 5M structure supports bearish continuation/reversal.
+- Breakout is confirmed by candle CLOSE (never a mere wick sweep).
+- Price is not entering directly into major support (>2.5 pips / >0.75 ATR clearance).
+- SL and TP are structurally valid with RR >= 1.1. No major bullish invalidation.
+- If critical conditions are missing -> choose WAIT.
+
+5. BOS / CHOCH VALIDATION:
+- Never classify a wick above resistance or below support as confirmed BOS.
+- Valid BOS requires a candle CLOSE beyond the swing level with meaningful body strength.
+- CHOCH must represent a genuine change in structural character, not just a counter-trend noise candle.
+
+6. EXPLICIT 7-FACTOR SCORING MODEL (0-100 independently for BUY and SELL):
+- Higher-Timeframe Alignment: 0-20
+- Market Structure: 0-20
+- Momentum: 0-15
+- Entry Location: 0-15
+- Support/Resistance: 0-10
+- Risk/Reward: 0-10
+- Entry Confirmation: 0-10
+
+7. SIGNAL THRESHOLDS:
+- BUY: BUY score >= 75 AND BUY score >= SELL score + 10 AND trade quality >= 70 AND hard gates pass AND RR >= 1.1.
+- SELL: SELL score >= 75 AND SELL score >= BUY score + 10 AND trade quality >= 70 AND hard gates pass AND RR >= 1.1.
+- WAIT: Directional score is strong but trade quality < 70, scores are too close, confirmation missing, poor location, chop, or RR < 1.1.
+- NO_TRADE: Data is missing/invalid or critical safety rule violated.
+
+8. ANTI-OVERTRADING & SELECTIVITY:
+- Your objective is NOT to produce a BUY or SELL signal on every analysis.
+- WAIT is a successful decision when the setup does not meet full quality.
+- Prefer HIGH-QUALITY SETUP + WAIT over WEAK SETUP + LOW-CONFIDENCE BUY/SELL.
+
+9. FINAL CONTRADICTION CHECK:
+Before outputting BUY/SELL, verify:
+Does 4H/1H contradict? Is 5M confirming? Is this a liquidity sweep rather than breakout? Is price entering an opposing barrier trap? Is RR sufficient? If any contradiction exists -> WAIT.
 
 ==================================================
 CONTEXT & REQUIREMENTS
