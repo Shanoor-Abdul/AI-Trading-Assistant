@@ -257,12 +257,10 @@ export async function POST(request: NextRequest) {
         fetch(`${baseUrl}/ema?${baseParams}&time_period=20&outputsize=1`).then(r => r.json()),
         fetch(`${baseUrl}/ema?${baseParams}&time_period=50&outputsize=1`).then(r => r.json()),
         fetch(`${baseUrl}/bbands?${baseParams}&time_period=20&sd=2&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/atr?${baseParams}&time_period=14&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/ema?symbol=${symbol}&interval=${macroInterval}&apikey=${apiKey}&time_period=50&outputsize=1`).then(r => r.json()),
-        fetch(`${baseUrl}/ema?symbol=${symbol}&interval=${macroInterval}&apikey=${apiKey}&time_period=200&outputsize=1`).then(r => r.json())
+        fetch(`${baseUrl}/atr?${baseParams}&time_period=14&outputsize=1`).then(r => r.json())
       ];
       
-      const [priceRes, rsiRes, macdRes, ema20Res, ema50Res, bbRes, atrRes, macroEmaRes, macroEma200Res] = await Promise.all(endpoints);
+      const [priceRes, rsiRes, macdRes, ema20Res, ema50Res, bbRes, atrRes] = await Promise.all(endpoints);
       
       if (priceRes.status === "error") throw new Error(priceRes.message);
       if (rsiRes.status === "error") throw new Error(rsiRes.message);
@@ -381,29 +379,22 @@ export async function POST(request: NextRequest) {
       }
 
       const atr = atrRes.values?.[0]?.atr ? parseFloat(atrRes.values[0].atr).toFixed(4) : 'N/A';
-      const macroEma50 = macroEmaRes.values?.[0]?.ema ? parseFloat(macroEmaRes.values[0].ema).toFixed(4) : 'N/A';
-      const macroEma200 = macroEma200Res.values?.[0]?.ema ? parseFloat(macroEma200Res.values[0].ema).toFixed(4) : 'N/A';
       
-      const macroTrend = (currentPrice !== 'N/A' && macroEma200 !== 'N/A') 
-        ? (parseFloat(String(currentPrice)) > parseFloat(String(macroEma200)) ? "Bullish" : "Bearish") 
-        : "Unknown";
+      const timeframeTrend = (currentPrice !== 'N/A' && ema50 !== 'N/A') 
+        ? (parseFloat(String(currentPrice)) > parseFloat(String(ema50)) ? "Bullish" : "Bearish") 
+        : "Sideways";
 
       const payloadObj = {
           asset: symbol,
-          macro_context: {
-              current_price: currentPrice,
-              macro_timeframe: macroInterval,
-              macro_ema_50: macroEma50,
-              macro_ema_200: macroEma200,
-              macro_trend: macroTrend
-          },
+          timeframe: body.timeframe || "5m",
+          timeframe_trend: timeframeTrend,
+          current_price: currentPrice,
           moving_average_alignment: {
               ema_20: ema20,
               ema_50: ema50,
               alignment_status: maAlignment
           },
           execution_indicators: {
-              timeframe: body.timeframe || "5m",
               rsi_value: currentRsi,
               rsi_3_candle_delta: rsiChange,
               macd_histogram: macd,
@@ -422,10 +413,10 @@ export async function POST(request: NextRequest) {
       };
 
       extractedTextData = JSON.stringify(payloadObj, null, 2);
-      rawImage = ""; // Strip out the image so it relies entirely on the math above
+      rawImage = ""; // In twelvedata mode, rely directly on structured math
 
       // =========================================================================
-      // SOLUTION 1 & 2: LOCAL PRE-FILTER GATEKEEPER & TELEMETRY DASHBOARD
+      // ZERO-TOKEN GATEKEEPER FILTER (ACTIVE TIMEFRAME TRAP DETECTION)
       // Zero AI Tokens spent on flat, trapped, or clearly invalid market conditions
       // =========================================================================
       const numRsi = parseFloat(String(currentRsi));
@@ -436,59 +427,46 @@ export async function POST(request: NextRequest) {
       let localFilterTriggered = false;
       let filterReason = "";
       let marketStateTitle = "";
-      let recheckTime = "5-10 minutes";
+      let recheckTime = "3-5 minutes";
 
-      // Gate 1: Trap under Resistance (Bullish Macro but hitting ceiling with falling momentum)
-      if (macroTrend === "Bullish" && !isNaN(numPipsToR1) && numPipsToR1 < 4.0 && !isNaN(numRsiDelta) && numRsiDelta <= 0) {
+      // Gate 1: Trap under Resistance (Bullish trend but hitting ceiling with falling momentum)
+      if (timeframeTrend === "Bullish" && !isNaN(numPipsToR1) && numPipsToR1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta <= 0) {
         localFilterTriggered = true;
         marketStateTitle = "Resistance Ceiling Trap";
         filterReason = `Price is sitting just ${numPipsToR1} pips below R1 Resistance with negative RSI momentum (${numRsiDelta}). High risk of a false breakout rejection.`;
-        recheckTime = "Wait 10-15 minutes for a clean structural break above R1.";
+        recheckTime = "Wait 3-5 minutes for a clean structural break above R1.";
       }
-      // Gate 2: Trap on Support (Bearish Macro but hitting floor with stalling downward momentum)
-      else if (macroTrend === "Bearish" && !isNaN(numPipsToS1) && numPipsToS1 < 4.0 && !isNaN(numRsiDelta) && numRsiDelta >= 0) {
+      // Gate 2: Trap on Support (Bearish trend but hitting floor with stalling downward momentum)
+      else if (timeframeTrend === "Bearish" && !isNaN(numPipsToS1) && numPipsToS1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta >= 0) {
         localFilterTriggered = true;
         marketStateTitle = "Support Floor Trap";
         filterReason = `Price is sitting directly on S1 Support (${numPipsToS1} pips away) with stalling downward momentum (${numRsiDelta} delta). High risk of bounce.`;
-        recheckTime = "Wait 10-15 minutes for a clean structural breakdown below S1.";
+        recheckTime = "Wait 3-5 minutes for a clean structural breakdown below S1.";
       }
       // Gate 3: Extreme Volatility Squeeze (Flat / Dead market)
-      else if (bbState.includes("Squeezing") && !isNaN(numRsiDelta) && Math.abs(numRsiDelta) < 1.0) {
+      else if (bbState.includes("Squeezing") && !isNaN(numRsiDelta) && Math.abs(numRsiDelta) < 0.8) {
         localFilterTriggered = true;
         marketStateTitle = "Volatility Squeeze (Dead Market)";
         filterReason = `Market is in an extreme Bollinger Squeeze with flat momentum (${numRsiDelta} delta). Energy is consolidating sideways.`;
-        recheckTime = "Standby 15-20 minutes for a volatility breakout.";
+        recheckTime = "Standby 5-10 minutes for a volatility breakout.";
       }
-      // Gate 4: Macro Trend Disconnect (Trading against the 1H 200 EMA)
-      else if (macroTrend === "Bullish" && !isNaN(numRsi) && numRsi < 45 && macdSlope === "Falling") {
-        localFilterTriggered = true;
-        marketStateTitle = "Deep Pullback Against 1H Trend";
-        filterReason = `1H Macro is Bullish, but 5m Micro indicators are strongly declining (RSI: ${numRsi}, MACD: Falling). No valid long setup yet.`;
-        recheckTime = "Wait 5-10 minutes for 5m RSI to turn back upward (>50).";
-      }
-      else if (macroTrend === "Bearish" && !isNaN(numRsi) && numRsi > 55 && macdSlope === "Rising") {
-        localFilterTriggered = true;
-        marketStateTitle = "Counter-Trend Rally";
-        filterReason = `1H Macro is Bearish, but 5m Micro indicators are rallying (RSI: ${numRsi}, MACD: Rising). No valid short setup yet.`;
-        recheckTime = "Wait 5-10 minutes for 5m RSI to turn back downward (<50).";
-      }
-      // Gate 5: Neutral Dead Zone / Choppy Indecision
-      else if (macroTrend === "Unknown" || (!isNaN(numRsi) && numRsi >= 46 && numRsi <= 54 && macdSlope === "Flat")) {
+      // Gate 4: Neutral Dead Zone / Choppy Indecision
+      else if (!isNaN(numRsi) && numRsi >= 48 && numRsi <= 52 && macdSlope === "Flat") {
         localFilterTriggered = true;
         marketStateTitle = "Neutral Dead Zone (Chop / Consolidation)";
         filterReason = `Market is in an indecisive range (RSI: ${currentRsi}, MACD: Flat). No directional conviction present.`;
-        recheckTime = "Standby 10-15 minutes for directional momentum to form.";
+        recheckTime = "Standby 3-5 minutes for directional momentum to form.";
       }
 
       if (localFilterTriggered) {
         const dashboardTelemetry = `🛑 [Zero-Token Gatekeeper Filter]\n` +
           `• State: ${marketStateTitle}\n` +
           `• Reason: ${filterReason}\n` +
-          `• Telemetry: 1H Trend: ${macroTrend} | 5m RSI: ${currentRsi} (Δ ${rsiChange}) | MACD: ${macdSlope} | R1: ${pipsUnderResistance}p | S1: ${pipsAboveSupport}p\n` +
+          `• Telemetry: Trend: ${timeframeTrend} | RSI: ${currentRsi} (Δ ${rsiChange}) | MACD: ${macdSlope} | R1: ${pipsUnderResistance}p | S1: ${pipsAboveSupport}p\n` +
           `• Next Check: ${recheckTime} (0 AI Tokens Used)`;
 
         return NextResponse.json({
-          trend: macroTrend,
+          trend: timeframeTrend,
           signal: "WAIT",
           confidence: 20,
           readiness: "NOT READY",
@@ -539,7 +517,7 @@ export async function POST(request: NextRequest) {
 
     const INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT = `
 You are the world's most disciplined institutional algorithmic trading decision engine.
-Your single mission: Maximize win rate (target >= 80%) on 5-minute / 15-minute executions by rejecting all low-probability, choppy, or ambiguous setups.
+Your single mission: Maximize win rate (target >= 80%) on ${body.timeframe} executions (${body.tradeDuration} duration) by rejecting all low-probability, choppy, or ambiguous setups.
 
 Execute this MANDATORY 10-STAGE DECISION PIPELINE in strict order:
 
@@ -548,11 +526,11 @@ STAGE 1: DATA VALIDATION
 - If essential metrics are missing or contradictory, default to "WAIT" with low confidence (< 45%).
 
 STAGE 2: MARKET REGIME CLASSIFICATION
-- Classify market into: [Trending Bullish], [Trending Bearish], [Ranging Chop], or [Volatility Squeeze].
+- Classify the active chart timeframe into: [Trending Bullish], [Trending Bearish], [Ranging Chop], or [Volatility Squeeze].
 - Trend-following entries are STRICTLY FORBIDDEN in Ranging Chop.
 
 STAGE 3: PRICE ACTION & 5-CANDLE ANATOMY
-- Inspect the 5-candle progression.
+- Inspect the 5-candle progression on the chart.
 - Check body expansion vs compression and upper/lower wick rejection spikes (hammers, shooting stars).
 - Verify momentum is actively expanding in the trade direction without stalling opposing wicks.
 
@@ -568,8 +546,8 @@ STAGE 5: PRICE LOCATION (CRITICAL RISK FLOOR)
 - Ideal SELL Location: Pullback to EMA20 / Bollinger Middle Band with upper wick rejection, or clean breakdown below S1.
 
 STAGE 6: MOMENTUM DYNAMICS
-- Bullish: RSI > 52 and rising (positive delta), MACD histogram expanding upward.
-- Bearish: RSI < 48 and falling (negative delta), MACD histogram expanding downward.
+- Bullish: RSI > 52 and rising (positive slope), MACD histogram expanding upward.
+- Bearish: RSI < 48 and falling (negative slope), MACD histogram expanding downward.
 
 STAGE 7: INDICATOR CONVERGENCE
 - Moving Averages (Price vs EMA20 vs EMA50) must align with RSI and MACD.
@@ -577,7 +555,7 @@ STAGE 7: INDICATOR CONVERGENCE
 
 STAGE 8: SETUP IDENTIFICATION
 Identify the exact setup:
-1. TREND_CONTINUATION_PULLBACK (Best for 5m: Macro trend pullback to EMA20/Middle Band with rejection candle).
+1. TREND_CONTINUATION_PULLBACK (Pullback to EMA20/Middle Band with rejection candle in trend direction).
 2. SR_REJECTION (Strong bounce off major Support or rejection off Resistance).
 3. BOLLINGER_MEAN_REVERSION (Band overshoot + RSI exhaustion + reversal candle).
 4. BREAKOUT_CONFIRMATION (Clean close beyond S/R with momentum surge).
@@ -599,7 +577,18 @@ STAGE 10: CALIBRATED CONFIDENCE & FINAL VERDICT
 `;
 
     let finalPrompt = "";
-    if (body.dataSource === "twelvedata") {
+    if (rawImage) {
+      // PRIMARY VISUAL MODE: Extract from screenshot directly!
+      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
+
+The user has provided a chart screenshot of ${body.symbol} on the ${body.timeframe} timeframe (${body.tradeDuration} trade duration).
+Visible indicators on chart: ${(baseRequest.visibleIndicators || []).join(", ") || "Candlestick price action, RSI, MACD, Bollinger Bands, Moving Averages"}.
+
+ANALYSIS INSTRUCTIONS:
+1. Extract current price, 5 recent candles, support/resistance levels, RSI line & value, MACD lines & histogram, and Bollinger Bands / Moving Averages directly from the chart image.
+2. Strictly execute the 10-STAGE DECISION PIPELINE based on your visual observations of the chart.
+`;
+    } else if (body.dataSource === "twelvedata") {
       finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
 
 LIVE STRUCTURED MARKET DATASET TO ANALYZE:
@@ -611,24 +600,16 @@ Calculate Stop Loss (SL) and Take Profit (TP) levels dynamically:
 - For BUY: SL = 2 pips below nearest_support_s1. TP = 1 pip below nearest_resistance_r1.
 - For SELL: SL = 2 pips above nearest_resistance_r1. TP = 1 pip above nearest_support_s1.
 `;
-    } else if (extractedTextData) {
-      finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
-
-The user is trading ${body.symbol} on the ${body.timeframe} timeframe with ${body.tradeDuration} duration.
-Scraped live broker text data:
-======
-${extractedTextData}
-======
-
-Apply the 10-stage institutional decision pipeline strictly to the extracted prices and indicators.
-`;
     } else {
       finalPrompt = `${INSTITUTIONAL_10_STAGE_SYSTEM_PROMPT}
 
-The user has provided a chart screenshot of ${body.symbol} on the ${body.timeframe} timeframe (${body.tradeDuration} duration).
-Visible indicators on chart: ${(baseRequest.visibleIndicators || []).join(", ") || "RSI, MACD, Bollinger Bands, Moving Averages"}.
+The user is trading ${body.symbol} on the ${body.timeframe} timeframe with ${body.tradeDuration} duration.
+Live data:
+======
+${extractedTextData || "Rely on standard market structure."}
+======
 
-Extract all visible price action, 5 recent candles, support/resistance, RSI, MACD, and Bollinger Bands, and strictly run the 10-stage decision pipeline.
+Apply the 10-stage institutional decision pipeline strictly.
 `;
     }
 
