@@ -283,123 +283,85 @@ export async function POST(request: NextRequest) {
         }
       };
 
-      // Fetch primary execution timeframe series and parallel query for 1H and 4H macro contexts + execution indicators
-      const [execRes, tf1hRes, tf4hRes, rsi5mRes, macd5mRes, ema20_5mRes, ema50_5mRes] = await Promise.all([
+      // Fast parallel fetch for execution, 1H, and 4H candle series (3 requests only to stay well within free tier limits)
+      const [execRes, tf1hRes, tf4hRes] = await Promise.all([
         safeFetchSeries(execInterval, 100),
         safeFetchSeries("1h", 100),
         safeFetchSeries("4h", 100),
-        safeFetchIndicator("rsi", { interval: execInterval, time_period: "14", outputsize: "30" }),
-        safeFetchIndicator("macd", { interval: execInterval, fast_period: "12", slow_period: "26", signal_period: "9", outputsize: "30" }),
-        safeFetchIndicator("ema", { interval: execInterval, time_period: "20", outputsize: "30" }),
-        safeFetchIndicator("ema", { interval: execInterval, time_period: "50", outputsize: "30" }),
       ]);
 
       if (!execRes.success || !execRes.values.length) {
         throw new Error(`TwelveData API error: ${execRes.message || `Failed to retrieve price series for ${symbol} on ${executionTf}`}. If using the free tier (8 calls/min), please retry in 10-15 seconds.`);
       }
 
-      const rawIndicatorsPayload = {
-        "5m": {
-          rsi14: rsi5mRes,
-          macd: macd5mRes,
-          ema20: ema20_5mRes,
-          ema50: ema50_5mRes,
-        },
-      };
-
-      // Process complete deterministic market structure, S/R, momentum, and risk calculations
+      // Process complete deterministic market structure, S/R, momentum, indicators, and risk calculations
       deterministicData = DeterministicApiDecisionEngine.processTwelveDataMarketData(
         symbol,
         executionTf,
         tf4hRes.values || [],
         tf1hRes.values || [],
         execRes.values || [],
-        body.tradeDuration || "5m",
-        rawIndicatorsPayload
+        body.tradeDuration || "5m"
       );
 
-      // Assemble structured numerical dataset for the 26-section reasoning layer
-      const payloadObj = {
-        data_source: "twelvedata_api_mode",
-        asset: symbol,
-        trade_duration: body.tradeDuration || "5m",
-        execution_timeframe: executionTf,
-        data_quality: deterministicData.dataQuality,
-        macro_timeframe_4h: {
-          status: tf4hRes.success ? "VALID" : "UNAVAILABLE",
-          latest_close: deterministicData.timeframeAnalysis["4h"].latestClose,
-          ema_50: deterministicData.timeframeAnalysis["4h"].ema50,
-          ema_200: deterministicData.timeframeAnalysis["4h"].ema200,
-          macro_bias: deterministicData.timeframeAnalysis["4h"].bias,
-          structure: deterministicData.timeframeAnalysis["4h"].structure,
-          atr: deterministicData.timeframeAnalysis["4h"].atr,
-          swing_high: deterministicData.timeframeAnalysis["4h"].swingHigh,
-          swing_low: deterministicData.timeframeAnalysis["4h"].swingLow
+      // Instant fast return in TwelveData API mode: 100% deterministic, zero LLM queuing latency
+      const sig = deterministicData.signal;
+      const conf = deterministicData.confidence;
+      const entry = deterministicData.risk.active.entryPrice;
+      const tp = deterministicData.risk.active.takeProfit;
+      const sl = deterministicData.risk.active.stopLoss;
+      const rr = deterministicData.risk.active.riskRewardRatio;
+
+      const summaryReason = deterministicData.hardGates?.reasons?.length 
+        ? deterministicData.hardGates.reasons.join(". ")
+        : "Deterministic structural decision.";
+
+      const finalData = {
+        trend: deterministicData.timeframeAnalysis["5m"].trend || "Sideways",
+        signal: sig,
+        marketState: deterministicData.marketRegime || "Unknown",
+        marketRegime: deterministicData.marketRegime || "Unknown",
+        entryPrice: entry,
+        takeProfit: tp,
+        stopLoss: sl,
+        confidence: conf,
+        readiness: conf >= 78 ? "READY" : conf >= 60 ? "FAIR" : "NOT READY",
+        setup: deterministicData.setup || "NO_CLEAR_SETUP",
+        timeframeAnalysis: deterministicData.timeframeAnalysis,
+        dataQuality: deterministicData.dataQuality?.score || 95,
+        bullishScore: deterministicData.bullishScore,
+        bearishScore: deterministicData.bearishScore,
+        directionalBias: deterministicData.directionalBias,
+        directionalStrength: deterministicData.directionalStrength,
+        tradeQuality: deterministicData.tradeQuality,
+        tradeable: deterministicData.tradeable,
+        whyBuy: deterministicData.whyBuy || [],
+        whyNotBuy: deterministicData.whyNotBuy || [],
+        whySell: deterministicData.whySell || [],
+        whyNotSell: deterministicData.whyNotSell || [],
+        scores: {
+          bullish: deterministicData.bullishScore,
+          bearish: deterministicData.bearishScore,
+          wait: sig === "WAIT" ? 80 : 20
         },
-        intermediate_timeframe_1h: {
-          status: tf1hRes.success ? "VALID" : "UNAVAILABLE",
-          latest_close: deterministicData.timeframeAnalysis["1h"].latestClose,
-          ema_20: deterministicData.timeframeAnalysis["1h"].ema20,
-          ema_50: deterministicData.timeframeAnalysis["1h"].ema50,
-          ema_200: deterministicData.timeframeAnalysis["1h"].ema200,
-          rsi_value: deterministicData.timeframeAnalysis["1h"].rsi,
-          rsi_delta_3c: deterministicData.timeframeAnalysis["1h"].rsiDelta,
-          macd_histogram: deterministicData.timeframeAnalysis["1h"].macdHist,
-          intermediate_bias: deterministicData.timeframeAnalysis["1h"].bias,
-          structure: deterministicData.timeframeAnalysis["1h"].structure,
-          atr: deterministicData.timeframeAnalysis["1h"].atr,
-          swing_high: deterministicData.timeframeAnalysis["1h"].swingHigh,
-          swing_low: deterministicData.timeframeAnalysis["1h"].swingLow
-        },
-        execution_timeframe_5m: {
-          current_price: deterministicData.timeframeAnalysis["5m"].currentPrice,
-          chart_trend: deterministicData.timeframeAnalysis["5m"].trend,
-          structure: deterministicData.timeframeAnalysis["5m"].structure,
-          moving_average_alignment: {
-            ema_20: deterministicData.timeframeAnalysis["5m"].ema20,
-            ema_50: deterministicData.timeframeAnalysis["5m"].ema50,
-            ema_200: deterministicData.timeframeAnalysis["5m"].ema200,
-            alignment_status: deterministicData.timeframeAnalysis["5m"].maAlignment
-          },
-          execution_indicators: {
-            rsi_value: deterministicData.timeframeAnalysis["5m"].rsi,
-            rsi_3_candle_delta: deterministicData.timeframeAnalysis["5m"].rsiDelta,
-            macd_histogram: deterministicData.timeframeAnalysis["5m"].macdHist,
-            macd_histogram_slope: deterministicData.timeframeAnalysis["5m"].macdSlope,
-            atr: deterministicData.timeframeAnalysis["5m"].atr
-          },
-          market_structure_and_location: {
-            bollinger_bands: {
-              bollinger_state: deterministicData.priceLocation.bollingerState,
-              bollinger_percent_b: deterministicData.priceLocation.bollingerPercentB,
-              location_quality: deterministicData.priceLocation.locationQuality
-            },
-            nearest_resistance_r1: deterministicData.priceLocation.nearestResistance?.price || "N/A",
-            pips_under_resistance: deterministicData.priceLocation.pipsUnderResistance,
-            nearest_support_s1: deterministicData.priceLocation.nearestSupport?.price || "N/A",
-            pips_above_support: deterministicData.priceLocation.pipsAboveSupport,
-            opposing_barrier_risk: deterministicData.priceLocation.opposingLevelRisk
-          },
-          deterministic_engine_evaluation: {
-            market_regime: deterministicData.marketRegime,
-            setup_detected: deterministicData.setup,
-            setup_quality: deterministicData.setupQuality,
-            bullish_score: deterministicData.bullishScore,
-            bearish_score: deterministicData.bearishScore,
-            directional_lead: deterministicData.directionalLead,
-            directional_bias: deterministicData.directionalBias,
-            directional_strength: deterministicData.directionalStrength,
-            trade_quality: deterministicData.tradeQuality,
-            tradeable: deterministicData.tradeable,
-            hard_gates: deterministicData.hardGates,
-            risk_profile: deterministicData.risk.active
-          },
-          recent_5_candles_anatomy: deterministicData.recent5CandlesAnatomy
+        reasoning: summaryReason,
+        explanation: summaryReason,
+        riskReward: rr,
+        validationAudit: { override: false, reason: summaryReason },
+        unifiedMarketData: {
+          currentPrice: { value: deterministicData.timeframeAnalysis["5m"].currentPrice || entry || 0, confidence: 95 },
         }
       };
 
-      extractedTextData = JSON.stringify(payloadObj, null, 2);
-      rawImage = ""; // Zero image dependency in TwelveData API mode
+      const validated = UniversalAIResponseSchema.parse(finalData);
+
+      return NextResponse.json({
+        ...validated,
+        analysisType: "mobile_api",
+        extractionOnly: false,
+        source: "twelvedata_multi_timeframe_api",
+        timings: { totalMs: performance.now() - started },
+      });
     }
 
     if (!rawImage && !extractedTextData) return NextResponse.json({ error: "A chart screenshot or text data is required.", code: "MOBILE_IMAGE_MISSING", analysisType: "mobile_visual" }, { status: 400 });
@@ -735,60 +697,47 @@ Format your answer strictly as a pure JSON object with trend, signal (BUY/SELL/W
     
     let calibratedSignal = finalAnalysis.signal || "WAIT";
     let calibratedConfidence = finalAnalysis.confidence || 0;
-    let validationAudit = { override: false, reason: "Analysis completed" };
+    const validationAudit = { override: false, reason: "Analysis completed" };
 
-    if (deterministicData) {
-      // Server-side final signal validator (Server is the final authority)
-      const validated = DeterministicApiDecisionEngine.validateFinalSignal(deterministicData, finalAnalysis);
-      calibratedSignal = validated.finalSignal;
-      calibratedConfidence = validated.finalConfidence;
-      validationAudit = { override: validated.validationOverride, reason: validated.validationReason };
-    } else {
-      // Ensure confident signals are maintained for visual mode
-      if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence >= 70) {
-        calibratedConfidence = Math.max(80, calibratedConfidence);
-      }
+    if ((calibratedSignal === "BUY" || calibratedSignal === "SELL") && calibratedConfidence >= 70) {
+      calibratedConfidence = Math.max(80, calibratedConfidence);
     }
 
     // Ensure all required fields exist and pass through
     const finalData = {
-      trend: deterministicData ? deterministicData.timeframeAnalysis["5m"].trend : (finalAnalysis.trend || "Sideways"),
+      trend: finalAnalysis.trend || "Sideways",
       signal: calibratedSignal,
-      marketState: finalAnalysis.marketState || deterministicData?.marketRegime || "Unknown",
-      marketRegime: deterministicData?.marketRegime || finalAnalysis.marketRegime || finalAnalysis.marketState || "Unknown",
-      entryPrice: deterministicData ? deterministicData.risk.active.entryPrice : (finalAnalysis.entryPrice || finalAnalysis.entry || null),
-      takeProfit: deterministicData ? deterministicData.risk.active.takeProfit : (finalAnalysis.takeProfit || null),
-      stopLoss: deterministicData ? deterministicData.risk.active.stopLoss : (finalAnalysis.stopLoss || null),
+      marketState: finalAnalysis.marketState || finalAnalysis.marketRegime || "Unknown",
+      marketRegime: finalAnalysis.marketRegime || finalAnalysis.marketState || "Unknown",
+      entryPrice: finalAnalysis.entryPrice || finalAnalysis.entry || null,
+      takeProfit: finalAnalysis.takeProfit || null,
+      stopLoss: finalAnalysis.stopLoss || null,
       confidence: calibratedConfidence,
       readiness: finalAnalysis.readiness || (calibratedConfidence >= 78 ? "READY" : calibratedConfidence >= 60 ? "FAIR" : "NOT READY"),
-      setup: deterministicData?.setup || finalAnalysis.setup || "NO_CLEAR_SETUP",
-      timeframeAnalysis: finalAnalysis.timeframeAnalysis || deterministicData?.timeframeAnalysis || undefined,
-      dataQuality: deterministicData?.dataQuality?.score || finalAnalysis.dataQuality || (body.dataSource === "twelvedata" ? 95 : 85),
-      bullishScore: deterministicData ? deterministicData.bullishScore : (finalAnalysis.bullishScore || finalAnalysis.scores?.bullish || (calibratedSignal === "BUY" ? calibratedConfidence : 20)),
-      bearishScore: deterministicData ? deterministicData.bearishScore : (finalAnalysis.bearishScore || finalAnalysis.scores?.bearish || (calibratedSignal === "SELL" ? calibratedConfidence : 20)),
-      directionalBias: deterministicData ? deterministicData.directionalBias : (calibratedSignal === "BUY" ? "BULLISH" : calibratedSignal === "SELL" ? "BEARISH" : "NEUTRAL"),
-      directionalStrength: deterministicData ? deterministicData.directionalStrength : (calibratedConfidence || 0),
-      tradeQuality: deterministicData ? deterministicData.tradeQuality : (calibratedConfidence || 0),
-      tradeable: deterministicData ? deterministicData.tradeable : (calibratedSignal === "BUY" || calibratedSignal === "SELL"),
-      whyBuy: deterministicData?.whyBuy?.length ? deterministicData.whyBuy : (Array.isArray(finalAnalysis.whyBuy) ? finalAnalysis.whyBuy : []),
-      whyNotBuy: deterministicData?.whyNotBuy?.length ? deterministicData.whyNotBuy : (Array.isArray(finalAnalysis.whyNotBuy) ? finalAnalysis.whyNotBuy : []),
-      whySell: deterministicData?.whySell?.length ? deterministicData.whySell : (Array.isArray(finalAnalysis.whySell) ? finalAnalysis.whySell : []),
-      whyNotSell: deterministicData?.whyNotSell?.length ? deterministicData.whyNotSell : (Array.isArray(finalAnalysis.whyNotSell) ? finalAnalysis.whyNotSell : []),
-      scores: deterministicData ? {
-        bullish: deterministicData.bullishScore,
-        bearish: deterministicData.bearishScore,
-        wait: calibratedSignal === "WAIT" ? 80 : 20
-      } : (finalAnalysis.scores || {
+      setup: finalAnalysis.setup || "NO_CLEAR_SETUP",
+      timeframeAnalysis: finalAnalysis.timeframeAnalysis || undefined,
+      dataQuality: finalAnalysis.dataQuality || 85,
+      bullishScore: finalAnalysis.bullishScore || finalAnalysis.scores?.bullish || (calibratedSignal === "BUY" ? calibratedConfidence : 20),
+      bearishScore: finalAnalysis.bearishScore || finalAnalysis.scores?.bearish || (calibratedSignal === "SELL" ? calibratedConfidence : 20),
+      directionalBias: calibratedSignal === "BUY" ? "BULLISH" : calibratedSignal === "SELL" ? "BEARISH" : "NEUTRAL",
+      directionalStrength: calibratedConfidence || 0,
+      tradeQuality: calibratedConfidence || 0,
+      tradeable: calibratedSignal === "BUY" || calibratedSignal === "SELL",
+      whyBuy: Array.isArray(finalAnalysis.whyBuy) ? finalAnalysis.whyBuy : [],
+      whyNotBuy: Array.isArray(finalAnalysis.whyNotBuy) ? finalAnalysis.whyNotBuy : [],
+      whySell: Array.isArray(finalAnalysis.whySell) ? finalAnalysis.whySell : [],
+      whyNotSell: Array.isArray(finalAnalysis.whyNotSell) ? finalAnalysis.whyNotSell : [],
+      scores: finalAnalysis.scores || {
         bullish: finalAnalysis.bullishScore || (calibratedSignal === "BUY" ? calibratedConfidence : 20),
         bearish: finalAnalysis.bearishScore || (calibratedSignal === "SELL" ? calibratedConfidence : 20),
         wait: calibratedSignal === "WAIT" ? 80 : 20
-      }),
+      },
       reasoning: finalAnalysis.reasoning || validationAudit.reason,
       explanation: finalAnalysis.explanation || validationAudit.reason,
-      riskReward: deterministicData ? deterministicData.risk.active.riskRewardRatio : finalAnalysis.riskReward,
+      riskReward: finalAnalysis.riskReward,
       validationAudit,
       unifiedMarketData: {
-        currentPrice: { value: deterministicData ? deterministicData.timeframeAnalysis["5m"].currentPrice : (finalAnalysis.entryPrice || finalAnalysis.entry || 0), confidence: 95 },
+        currentPrice: { value: finalAnalysis.entryPrice || finalAnalysis.entry || 0, confidence: 95 },
       }
     };
 
@@ -796,9 +745,9 @@ Format your answer strictly as a pure JSON object with trend, signal (BUY/SELL/W
 
     return NextResponse.json({
       ...validated,
-      analysisType: body.dataSource === "twelvedata" ? "mobile_api" : "mobile_visual",
+      analysisType: "mobile_visual",
       extractionOnly: false,
-      source: body.dataSource === "twelvedata" ? "twelvedata_multi_timeframe_api" : "mobile_single_prompt",
+      source: "mobile_single_prompt",
       timings: { totalMs: performance.now() - started },
     });
   } catch (error: any) {

@@ -399,31 +399,35 @@ function bindEvents(shadow, container) {
   // Analyze Button Logic
   analyzeBtn.addEventListener("click", async () => {
     const btnText = analyzeBtn.innerText;
-    
-    // EVASION PROTOCOL: Hide the UI
-    container.style.opacity = "0";
-    
-    // Wait 150ms for the browser to repaint the screen so the UI is truly gone
-    await new Promise(r => setTimeout(r, 150));
+    const currentMode = shadow.getElementById("analysisMode")?.value || "twelvedata";
     
     let base64Image = null;
-    try {
-      // Ask background script to take the screenshot
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "TAKE_SCREENSHOT" }, resolve);
-      });
-      if (response && response.dataUrl) {
-        base64Image = response.dataUrl;
-        console.log("[AI Trading] Evasion Protocol: Screenshot captured cleanly.");
-      } else {
-        console.error("Screenshot failed:", response?.error);
-      }
-    } catch (e) {
-      console.error("Screenshot error:", e);
-    }
     
-    // EVASION PROTOCOL OVER: Show the UI again
-    container.style.opacity = "1";
+    if (currentMode === "vision") {
+      // EVASION PROTOCOL: Hide the UI for Vision Mode only
+      container.style.opacity = "0";
+      
+      // Wait 150ms for the browser to repaint the screen so the UI is truly gone
+      await new Promise(r => setTimeout(r, 150));
+      
+      try {
+        // Ask background script to take the screenshot
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: "TAKE_SCREENSHOT" }, resolve);
+        });
+        if (response && response.dataUrl) {
+          base64Image = response.dataUrl;
+          console.log("[AI Trading] Vision Mode: Screenshot captured cleanly.");
+        } else {
+          console.error("Screenshot failed:", response?.error);
+        }
+      } catch (e) {
+        console.error("Screenshot error:", e);
+      }
+      
+      // EVASION PROTOCOL OVER: Show the UI again
+      container.style.opacity = "1";
+    }
     
     analyzeBtn.disabled = true;
     analyzeBtn.innerText = "Analyzing...";
