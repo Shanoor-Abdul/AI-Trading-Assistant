@@ -236,6 +236,7 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
 
   // -------------------------------------------------------------------------
   // Factor B: Market Structure (Max 20 pts)
+  // Missing / neutral structure contributes 0 points.
   // -------------------------------------------------------------------------
   let structBullish = 0;
   let structBearish = 0;
@@ -247,9 +248,9 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
     structBearish = 20;
     bearishEvidence.push("5M Market Structure is Bearish (LH/LL) (+20)");
   } else {
-    // Neutral/transition structure provides baseline 5 pts
-    structBullish = 5;
-    structBearish = 5;
+    // Neutral / unknown / transition contributes exactly 0 points
+    structBullish = 0;
+    structBearish = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -291,7 +292,8 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   }
 
   // -------------------------------------------------------------------------
-  // Factor D: Entry Location (Max 15 pts: EMA Stack or Bollinger Position)
+  // Factor D: Entry Location (Max 15 pts)
+  // Evaluates: MA Position (Max 7) + S/R Room (Max 5) + Value Zone (Max 3)
   // -------------------------------------------------------------------------
   let locBullish = 0;
   let locBearish = 0;
@@ -300,33 +302,49 @@ export function calculateMobileSignalRules(extraction: any): MobileSignalRulesRe
   const emaDir = emaDirection(ema);
   const bb = indicators["Bollinger Bands"] || indicators.BollingerBands;
   const bbDir = bbDirection(bb, price);
+  const lvlDir = levelDirection(extraction, price);
 
+  let emaLocBull = 0;
+  let emaLocBear = 0;
   if (emaDir === "bullish") {
-    locBullish = 15;
-    bullishEvidence.push("Price positioned above Bullish EMA stack (+15)");
+    emaLocBull = 7;
+    bullishEvidence.push("Price positioned above Bullish EMA stack (+7)");
   } else if (emaDir === "bearish") {
-    locBearish = 15;
-    bearishEvidence.push("Price positioned below Bearish EMA stack (+15)");
+    emaLocBear = 7;
+    bearishEvidence.push("Price positioned below Bearish EMA stack (+7)");
   } else if (bbDir === "bullish") {
-    locBullish = 12;
-    bullishEvidence.push("Price interacting favorably with Bollinger Bands (+12)");
+    emaLocBull = 5;
+    bullishEvidence.push("Price interacting favorably with Bollinger Bands (+5)");
   } else if (bbDir === "bearish") {
-    locBearish = 12;
-    bearishEvidence.push("Price interacting favorably with Bollinger Bands (+12)");
+    emaLocBear = 5;
+    bearishEvidence.push("Price interacting favorably with Bollinger Bands (+5)");
   }
 
+  let barrierLocBull = lvlDir === "bullish" ? 5 : lvlDir === "bearish" ? 0 : 3;
+  let barrierLocBear = lvlDir === "bearish" ? 5 : lvlDir === "bullish" ? 0 : 3;
+  let valueLocBull = rsiDir !== "bearish" ? 3 : 0;
+  let valueLocBear = rsiDir !== "bullish" ? 3 : 0;
+
+  locBullish = Math.min(15, emaLocBull + barrierLocBull + valueLocBull);
+  locBearish = Math.min(15, emaLocBear + barrierLocBear + valueLocBear);
+
   // -------------------------------------------------------------------------
-  // Factor E: Support / Resistance (Max 10 pts)
+  // Factor E: Support / Resistance (Max 10 pts: Directional Opportunity)
   // -------------------------------------------------------------------------
   let srBullish = 0;
   let srBearish = 0;
-  const lvlDir = levelDirection(extraction, price);
   if (lvlDir === "bullish") {
     srBullish = 10;
+    srBearish = 0;
     bullishEvidence.push("Support floor bounce confirmed with clear headroom (+10)");
   } else if (lvlDir === "bearish") {
     srBearish = 10;
+    srBullish = 0;
     bearishEvidence.push("Resistance ceiling rejection confirmed with clear room below (+10)");
+  } else {
+    // Clear mid-range
+    srBullish = 5;
+    srBearish = 5;
   }
 
   // -------------------------------------------------------------------------

@@ -82,6 +82,7 @@ export interface HardGateStatus {
 
 export interface DeterministicDecisionResult {
   signal: "BUY" | "SELL" | "WAIT" | "NO_TRADE";
+  signalStrength: "NORMAL" | "STRONG";
   confidence: number;
   bullishScore: number;
   bearishScore: number;
@@ -688,7 +689,7 @@ export class DeterministicApiDecisionEngine {
 
   /**
    * Section 14: Server-Side Dynamic SL / TP & Risk/Reward Calculation
-   * Guarantees geometric invariants:
+   * Guarantees geometric invariants and realistic structural targets:
    * BUY:  SL < Entry < TP  (riskPips > 0, rewardPips > 0)
    * SELL: TP < Entry < SL  (riskPips > 0, rewardPips > 0)
    */
@@ -725,10 +726,19 @@ export class DeterministicApiDecisionEngine {
       // Hard clamp SL below entry by at least minBuffer
       slPrice = Math.min(slPrice, entryPrice - minBuffer);
 
-      // Target TP is near resistance or 1.5x ATR
+      // Realistic structural target: choose nearest realistic barrier between swing high, resistance, and 1.5 ATR
       let tpPrice = entryPrice + safeAtr * 1.5;
+      if (swings.latestSwingHigh && swings.latestSwingHigh.price > entryPrice + minBuffer) {
+        const swingTp = swings.latestSwingHigh.price - safeAtr * 0.15;
+        if (swingTp > entryPrice + minBuffer) {
+          tpPrice = Math.min(tpPrice, swingTp);
+        }
+      }
       if (sr.nearestResistance && sr.nearestResistance.price > entryPrice + minBuffer) {
-        tpPrice = Math.max(entryPrice + minBuffer, sr.nearestResistance.price - safeAtr * 0.2);
+        const resTp = sr.nearestResistance.price - safeAtr * 0.2;
+        if (resTp > entryPrice + minBuffer) {
+          tpPrice = Math.min(tpPrice, resTp);
+        }
       }
       // Hard clamp TP above entry by at least minBuffer
       tpPrice = Math.max(tpPrice, entryPrice + minBuffer);
@@ -770,10 +780,19 @@ export class DeterministicApiDecisionEngine {
       // Hard clamp SL above entry by at least minBuffer
       slPrice = Math.max(slPrice, entryPrice + minBuffer);
 
-      // Target TP is near support or 1.5x ATR
+      // Realistic structural target: choose nearest realistic barrier between swing low, support, and 1.5 ATR
       let tpPrice = entryPrice - safeAtr * 1.5;
+      if (swings.latestSwingLow && swings.latestSwingLow.price < entryPrice - minBuffer) {
+        const swingTp = swings.latestSwingLow.price + safeAtr * 0.15;
+        if (swingTp < entryPrice - minBuffer) {
+          tpPrice = Math.max(tpPrice, swingTp);
+        }
+      }
       if (sr.nearestSupport && sr.nearestSupport.price < entryPrice - minBuffer) {
-        tpPrice = Math.min(entryPrice - minBuffer, sr.nearestSupport.price + safeAtr * 0.2);
+        const suppTp = sr.nearestSupport.price + safeAtr * 0.2;
+        if (suppTp < entryPrice - minBuffer) {
+          tpPrice = Math.max(tpPrice, suppTp);
+        }
       }
       // Hard clamp TP below entry by at least minBuffer
       tpPrice = Math.min(tpPrice, entryPrice - minBuffer);
@@ -869,6 +888,7 @@ export class DeterministicApiDecisionEngine {
 
     // =========================================================================
     // 2. 5M Market Structure (Max 20 pts)
+    // Missing / neutral structure contributes 0 points.
     // =========================================================================
     let structBullish = 0;
     let structBearish = 0;
@@ -882,8 +902,9 @@ export class DeterministicApiDecisionEngine {
       whySell.push("5M prints Lower Highs and Lower Lows / Bearish BOS (+20)");
       whyNotBuy.push("5M structure is structurally Bearish");
     } else {
-      structBullish = 5;
-      structBearish = 5;
+      // Neutral / unknown / transition contributes exactly 0 points
+      structBullish = 0;
+      structBearish = 0;
     }
 
     bullishScore += structBullish;
@@ -938,57 +959,123 @@ export class DeterministicApiDecisionEngine {
     bearishScore += Math.min(15, momBearish);
 
     // =========================================================================
-    // 4. Entry Location / Moving Average Alignment (Max 15 pts)
+    // 4. Entry Location (Max 15 pts)
+    // Evaluates:
+    // (a) Moving Average Alignment / Pullback Position (Max 7 pts)
+    // (b) Opposing Barrier Clearance (Max 5 pts)
+    // (c) Value Zone & Not Overextended (Max 3 pts)
     // =========================================================================
     let locBullish = 0;
     let locBearish = 0;
 
     const e20 = indicators5m.ema20;
     const e50 = indicators5m.ema50;
+
+    // (a) MA Position
+    let emaLocBull = 0;
+    let emaLocBear = 0;
     if (e20 && e50) {
       if (currentPrice > e20 && e20 > e50) {
-        locBullish = 15;
-        whyBuy.push("Full bullish EMA stack (Price > EMA20 > EMA50) (+15)");
+        emaLocBull = 7;
+        whyBuy.push("Price positioned above Bullish EMA stack (+7)");
       } else if (currentPrice < e20 && e20 < e50) {
-        locBearish = 15;
-        whySell.push("Full bearish EMA stack (Price < EMA20 < EMA50) (+15)");
+        emaLocBear = 7;
+        whySell.push("Price positioned below Bearish EMA stack (+7)");
       } else if (e20 > currentPrice && currentPrice > e50) {
-        locBullish = 8;
-        whyBuy.push("Bullish pullback zone (EMA20 > Price > EMA50) (+8)");
+        emaLocBull = 5;
+        whyBuy.push("Bullish pullback zone into dynamic support (+5)");
       } else if (e20 < currentPrice && currentPrice < e50) {
-        locBearish = 8;
-        whySell.push("Bearish pullback zone (EMA20 < Price < EMA50) (+8)");
+        emaLocBear = 5;
+        whySell.push("Bearish pullback zone into dynamic resistance (+5)");
       }
     }
 
-    bullishScore += locBullish;
-    bearishScore += locBearish;
-
-    // =========================================================================
-    // 5. Support / Resistance Clearance & Interaction (Max 10 pts)
-    // =========================================================================
-    let srBullish = 0;
-    let srBearish = 0;
-
+    // (b) S/R Barrier Clearance
     const pipsUnderR1 = sr.nearestResistance ? (sr.nearestResistance.price - currentPrice) * pipMultiplier : 999;
     const distAtrR1 = sr.nearestResistance ? (sr.nearestResistance.price - currentPrice) / safeAtr : 99;
     const pipsAboveS1 = sr.nearestSupport ? (currentPrice - sr.nearestSupport.price) * pipMultiplier : 999;
     const distAtrS1 = sr.nearestSupport ? (currentPrice - sr.nearestSupport.price) / safeAtr : 99;
 
-    if (pipsUnderR1 >= 3.0 && distAtrR1 >= 0.75) {
-      srBullish = 10;
-      whyBuy.push(`Clear headroom to Resistance ceiling (${pipsUnderR1.toFixed(1)}p) (+10)`);
-    } else if (setupObj.setup === "SUPPORT_REJECTION") {
-      srBullish = 10;
-      whyBuy.push("Support floor rejection confirmed (+10)");
+    let barrierLocBull = 0;
+    let barrierLocBear = 0;
+
+    if (pipsUnderR1 >= 5.0 || distAtrR1 >= 1.5) {
+      barrierLocBull = 5;
+      whyBuy.push(`Substantial runway to resistance (${pipsUnderR1.toFixed(1)}p) (+5)`);
+    } else if (pipsUnderR1 >= 3.0) {
+      barrierLocBull = 3;
+      whyBuy.push(`Adequate clearance to resistance (${pipsUnderR1.toFixed(1)}p) (+3)`);
+    } else {
+      barrierLocBull = 0; // Trapped or near ceiling
     }
 
-    if (pipsAboveS1 >= 3.0 && distAtrS1 >= 0.75) {
-      srBearish = 10;
-      whySell.push(`Clear room to Support floor (${pipsAboveS1.toFixed(1)}p) (+10)`);
-    } else if (setupObj.setup === "RESISTANCE_REJECTION") {
-      srBearish = 10;
-      whySell.push("Resistance ceiling rejection confirmed (+10)");
+    if (pipsAboveS1 >= 5.0 || distAtrS1 >= 1.5) {
+      barrierLocBear = 5;
+      whySell.push(`Substantial runway to support (${pipsAboveS1.toFixed(1)}p) (+5)`);
+    } else if (pipsAboveS1 >= 3.0) {
+      barrierLocBear = 3;
+      whySell.push(`Adequate clearance to support (${pipsAboveS1.toFixed(1)}p) (+3)`);
+    } else {
+      barrierLocBear = 0; // Trapped or near floor
+    }
+
+    // (c) Value Zone & Overextension check
+    let valueLocBull = 0;
+    let valueLocBear = 0;
+    if (rsi == null || rsi <= 68) {
+      valueLocBull = 3;
+    }
+    if (rsi == null || rsi >= 32) {
+      valueLocBear = 3;
+    }
+
+    locBullish = Math.min(15, emaLocBull + barrierLocBull + valueLocBull);
+    locBearish = Math.min(15, emaLocBear + barrierLocBear + valueLocBear);
+
+    bullishScore += locBullish;
+    bearishScore += locBearish;
+
+    // =========================================================================
+    // 5. Support / Resistance (Max 10 pts: Directional Opportunity)
+    // Evaluates bounce/rejection, discount/premium zone, and barrier risk.
+    // =========================================================================
+    let srBullish = 0;
+    let srBearish = 0;
+
+    // BUY S/R Evaluation
+    if (pipsUnderR1 < 2.5 || distAtrR1 < 0.75) {
+      srBullish = 0; // Directly at ceiling
+    } else if (pipsAboveS1 <= 2.5 || setupObj.setup === "SUPPORT_REJECTION") {
+      srBullish = 10; // Floor bounce confirmed
+      whyBuy.push("Support floor bounce confirmed with clear headroom (+10)");
+    } else if (pipsAboveS1 < pipsUnderR1 && pipsUnderR1 >= 3.0) {
+      srBullish = 8; // Discount zone with room
+      whyBuy.push(`Price in favorable discount zone near support (${pipsAboveS1.toFixed(1)}p) with clear room (+8)`);
+    } else if (pipsUnderR1 >= 4.0 && pipsAboveS1 >= 4.0) {
+      srBullish = 5; // Balanced mid-range with clear room both ways
+      whyBuy.push("Adequate clearance to overhead resistance (+5)");
+    } else if (pipsUnderR1 >= 3.0) {
+      srBullish = 2; // In upper half of range
+    } else {
+      srBullish = 0;
+    }
+
+    // SELL S/R Evaluation
+    if (pipsAboveS1 < 2.5 || distAtrS1 < 0.75) {
+      srBearish = 0; // Directly at floor
+    } else if (pipsUnderR1 <= 2.5 || setupObj.setup === "RESISTANCE_REJECTION") {
+      srBearish = 10; // Ceiling rejection confirmed
+      whySell.push("Resistance ceiling rejection confirmed with clear room below (+10)");
+    } else if (pipsUnderR1 < pipsAboveS1 && pipsAboveS1 >= 3.0) {
+      srBearish = 8; // Premium zone with room
+      whySell.push(`Price in favorable premium zone near resistance (${pipsUnderR1.toFixed(1)}p) with clear room (+8)`);
+    } else if (pipsAboveS1 >= 4.0 && pipsUnderR1 >= 4.0) {
+      srBearish = 5; // Balanced mid-range with clear room both ways
+      whySell.push("Adequate clearance to underlying support (+5)");
+    } else if (pipsAboveS1 >= 3.0) {
+      srBearish = 2; // In lower half of range
+    } else {
+      srBearish = 0;
     }
 
     bullishScore += srBullish;
@@ -1384,6 +1471,13 @@ export class DeterministicApiDecisionEngine {
     const directionalStrength = Math.max(evalResult.bullishScore, evalResult.bearishScore);
     const tradeable = signal === "BUY" || signal === "SELL";
 
+    let signalStrength: "NORMAL" | "STRONG" = "NORMAL";
+    if (signal === "BUY" && evalResult.bullishScore >= 85 && evalResult.directionalLead >= 20 && buyTradeQuality >= 80 && buyRisk.riskRewardRatio >= 1.5) {
+      signalStrength = "STRONG";
+    } else if (signal === "SELL" && evalResult.bearishScore >= 85 && evalResult.directionalLead >= 20 && sellTradeQuality >= 80 && sellRisk.riskRewardRatio >= 1.5) {
+      signalStrength = "STRONG";
+    }
+
     // Price location
     const latestBb = ind5m.bb;
     let bbPercentB: number | null = null;
@@ -1427,6 +1521,7 @@ export class DeterministicApiDecisionEngine {
 
     return {
       signal,
+      signalStrength,
       confidence,
       bullishScore: evalResult.bullishScore,
       bearishScore: evalResult.bearishScore,
@@ -1675,6 +1770,7 @@ export class DeterministicApiDecisionEngine {
 
     return {
       signal: "NO_TRADE",
+      signalStrength: "NORMAL",
       confidence: 0,
       bullishScore: 0,
       bearishScore: 0,
