@@ -61,8 +61,8 @@ function confidenceOf(value: any): number {
 function extractDirection(textValue: string | null | undefined): "bull" | "bear" | "neutral" {
   if (!textValue) return "neutral";
   const t = String(textValue).toLowerCase();
-  if (/(bull|upward|higher|buy|long|hh|hl)/.test(t)) return "bull";
-  if (/(bear|downward|lower|sell|short|lh|ll)/.test(t)) return "bear";
+  if (/(bull|upward|higher|buy|long|hh|hl|support confirmed)/.test(t)) return "bull";
+  if (/(bear|downward|lower|sell|short|lh|ll|resistance confirmed)/.test(t)) return "bear";
   return "neutral";
 }
 
@@ -251,7 +251,7 @@ export function generateFastSignal(input: FastSignalInput): FastSignalResult {
 
   let explanation = "WAIT: Insufficient independent confluence.";
   if (candidateSignal !== "WAIT" && riskDecision === "WAIT") {
-    explanation = "WAIT: Exact current price, invalidation and opposing target levels are not all reliably available from visual evidence.";
+    explanation = "WAIT: Missing precise visual risk data (exact current price, invalidation, and opposing target levels are not all reliably available).";
   } else if (candidateSignal !== "WAIT" && riskDecision === "REJECTED") {
     explanation = `WAIT: Risk Gate rejected the setup because required risk/reward is below 1.2 (R:R ${riskReward?.toFixed(2) ?? "unavailable"}).`;
   } else if (candidateSignal !== "WAIT" && !isConfirmed) {

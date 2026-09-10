@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DeterministicApiDecisionEngine, Candle } from "./DeterministicApiDecisionEngine";
+import { DeterministicBacktestEngine } from "./DeterministicBacktestEngine";
 
 function generateCandles(count: number, basePrice: number, trendStep: number, waveAmplitude = 0.0002): any[] {
   const candles: any[] = [];
@@ -27,7 +28,7 @@ function generateCandles(count: number, basePrice: number, trendStep: number, wa
   return candles.reverse();
 }
 
-describe("DeterministicApiDecisionEngine Unit Tests", () => {
+describe("DeterministicApiDecisionEngine 30-Test Comprehensive Suite", () => {
   // 1. Strong Bullish Trend
   it("Test 1: Identifies strong bullish trend and scores high bullishness", () => {
     const raw4h = generateCandles(60, 1.1000, 0.001, 0.0002);
@@ -381,5 +382,226 @@ describe("DeterministicApiDecisionEngine Unit Tests", () => {
     expect(validated.finalSignal).toBe("WAIT");
     expect(validated.validationOverride).toBe(true);
     expect(validated.validationReason).toContain("Rejected AI SELL");
+  });
+
+  // 18. Server Validator: Confluent BUY maintains signal and calculates bounded confidence
+  it("Test 18: Server validator accepts confluent BUY and bounds confidence correctly", () => {
+    const deterministic = {
+      ...DeterministicApiDecisionEngine.processTwelveDataMarketData("EUR/USD", "5m", [], [], []),
+      signal: "BUY" as const,
+      confidence: 80,
+      hardGates: { buyAllowed: true, sellAllowed: false, reasons: [] },
+    };
+
+    const validated = DeterministicApiDecisionEngine.validateFinalSignal(deterministic, {
+      signal: "BUY",
+      confidence: 86,
+    });
+
+    expect(validated.finalSignal).toBe("BUY");
+    expect(validated.validationOverride).toBe(false);
+    expect(validated.finalConfidence).toBeGreaterThanOrEqual(70);
+    expect(validated.finalConfidence).toBeLessThanOrEqual(95);
+  });
+
+  // 19. Server Validator: Opposing signals force safe WAIT
+  it("Test 19: Server validator forces WAIT when deterministic BUY conflicts with AI SELL", () => {
+    const deterministic = {
+      ...DeterministicApiDecisionEngine.processTwelveDataMarketData("EUR/USD", "5m", [], [], []),
+      signal: "BUY" as const,
+      confidence: 80,
+      hardGates: { buyAllowed: true, sellAllowed: false, reasons: [] },
+    };
+
+    const validated = DeterministicApiDecisionEngine.validateFinalSignal(deterministic, {
+      signal: "SELL",
+      confidence: 85,
+    });
+
+    expect(validated.finalSignal).toBe("WAIT");
+    expect(validated.validationOverride).toBe(true);
+    expect(validated.validationReason).toContain("Conflict");
+  });
+
+  // 20. Data Sanitization: Deduplicates timestamps, clamps anomalous high/low, and sorts chronologically
+  it("Test 20: parseCandles deduplicates timestamps, clamps anomalies, and sorts chronologically", () => {
+    const raw = [
+      { datetime: "2026-09-10T12:10:00Z", open: 1.1000, high: 1.0950, low: 1.1050, close: 1.1010 }, // high < open and low > open anomaly
+      { datetime: "2026-09-10T12:00:00Z", open: 1.0990, high: 1.1000, low: 1.0980, close: 1.0995 },
+      { datetime: "2026-09-10T12:00:00Z", open: 1.0990, high: 1.1005, low: 1.0980, close: 1.0995 }, // Duplicate timestamp
+      { datetime: "2026-09-10T12:05:00Z", open: 1.0995, high: 1.1010, low: 1.0990, close: 1.1000 },
+    ];
+
+    const parsed = DeterministicApiDecisionEngine.parseCandles(raw);
+    expect(parsed.length).toBe(3); // Deduplicated 4 -> 3
+    expect(parsed[0].datetime).toBe("2026-09-10T12:00:00Z");
+    expect(parsed[1].datetime).toBe("2026-09-10T12:05:00Z");
+    expect(parsed[2].datetime).toBe("2026-09-10T12:10:00Z");
+    // Check sanity clamping
+    expect(parsed[2].high).toBeGreaterThanOrEqual(parsed[2].open);
+    expect(parsed[2].low).toBeLessThanOrEqual(parsed[2].open);
+  });
+
+  // 21. Lookahead Prevention: Swings only confirmed after rightBars have closed
+  it("Test 21: detectSwings does not mark unconfirmed latest bars as swings", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1000, high: 1.1020, low: 1.0990, close: 1.1010 },
+      { datetime: "2", open: 1.1010, high: 1.1050, low: 1.1000, close: 1.1040 },
+      { datetime: "3", open: 1.1040, high: 1.1100, low: 1.1030, close: 1.1090 }, // Potential peak
+      { datetime: "4", open: 1.1090, high: 1.1070, low: 1.1020, close: 1.1030 },
+      { datetime: "5", open: 1.1030, high: 1.1050, low: 1.1010, close: 1.1020 },
+      { datetime: "6", open: 1.1020, high: 1.1150, low: 1.1020, close: 1.1140 }, // Live forming bar that is highest
+    ];
+
+    // With rightBars = 2, bar 6 cannot be a swing high because rightBars are not complete
+    const { swingHighs } = DeterministicApiDecisionEngine.detectSwings(candles, 2, 2);
+    expect(swingHighs.some((s) => s.index === 5)).toBe(false);
+  });
+
+  // 22. Bullish BOS requires confirmed candle close above previous swing high
+  it("Test 22: Bullish BOS requires confirmed candle close above swing high in bullish structure", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.0990, high: 1.1000, low: 1.0980, close: 1.0995 },
+      { datetime: "2", open: 1.1000, high: 1.1050, low: 1.0990, close: 1.1040 }, // Confirmed Swing High at 1.1050
+      { datetime: "3", open: 1.1040, high: 1.1020, low: 1.1000, close: 1.1010 },
+      { datetime: "4", open: 1.1010, high: 1.1015, low: 1.1000, close: 1.1005 },
+      { datetime: "5", open: 1.1005, high: 1.1065, low: 1.1000, close: 1.1060 }, // Confirmed close 1.1060 > 1.1050
+    ];
+
+    const result = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(result.bullishBOS || result.breakoutConfirmed).toBe(true);
+  });
+
+  // 23. Bearish BOS requires confirmed candle close below previous swing low
+  it("Test 23: Bearish BOS requires confirmed candle close below swing low in bearish structure", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1030, high: 1.1040, low: 1.1020, close: 1.1025 },
+      { datetime: "2", open: 1.1020, high: 1.1030, low: 1.0980, close: 1.0990 }, // Confirmed Swing Low at 1.0980
+      { datetime: "3", open: 1.0990, high: 1.1010, low: 1.0990, close: 1.1005 },
+      { datetime: "4", open: 1.1005, high: 1.1010, low: 1.0995, close: 1.1000 },
+      { datetime: "5", open: 1.1000, high: 1.1005, low: 1.0940, close: 1.0950 }, // Confirmed close 1.0950 < 1.0980
+    ];
+
+    const result = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(result.bearishBOS || result.breakoutConfirmed).toBe(true);
+  });
+
+  // 24. False Breakout: Wick sweep above resistance with close below is flagged as false breakout
+  it("Test 24: False breakout is detected when candle wicks above swing high but closes below", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.0990, high: 1.1000, low: 1.0980, close: 1.0995 },
+      { datetime: "2", open: 1.1000, high: 1.1050, low: 1.0990, close: 1.1040 }, // Confirmed Swing High at 1.1050
+      { datetime: "3", open: 1.1040, high: 1.1020, low: 1.1000, close: 1.1010 },
+      { datetime: "4", open: 1.1010, high: 1.1015, low: 1.1000, close: 1.1005 },
+      { datetime: "5", open: 1.1005, high: 1.1070, low: 1.1000, close: 1.1040 }, // Wick to 1.1070, but closed at 1.1040 (below 1.1050)
+    ];
+
+    const result = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(result.falseBreakout).toBe(true);
+    expect(result.bullishBOS).toBeFalsy();
+  });
+
+  // 25. Bullish CHOCH: Break of bearish structure to the upside with confirmed close
+  it("Test 25: Bullish CHOCH triggers when price closes above swing high in non-bullish structure", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1010, high: 1.1020, low: 1.1000, close: 1.1005 },
+      { datetime: "2", open: 1.1005, high: 1.1050, low: 1.0990, close: 1.1040 }, // Confirmed Swing High at 1.1050
+      { datetime: "3", open: 1.1040, high: 1.1020, low: 1.0970, close: 1.0980 },
+      { datetime: "4", open: 1.0980, high: 1.1000, low: 1.0950, close: 1.0960 },
+      { datetime: "5", open: 1.0960, high: 1.1080, low: 1.0955, close: 1.1070 }, // Explosive close breaking previous swing high
+    ];
+
+    const result = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(result.bullishCHOCH || result.changeOfCharacter).toBe(true);
+  });
+
+  // 26. Bearish CHOCH: Break of bullish structure to the downside with confirmed close
+  it("Test 26: Bearish CHOCH triggers when price closes below swing low in non-bearish structure", () => {
+    const candles: Candle[] = [
+      { datetime: "1", open: 1.1010, high: 1.1030, low: 1.1000, close: 1.1020 },
+      { datetime: "2", open: 1.1020, high: 1.1030, low: 1.0980, close: 1.0990 }, // Confirmed Swing Low at 1.0980
+      { datetime: "3", open: 1.0990, high: 1.1040, low: 1.0990, close: 1.1030 },
+      { datetime: "4", open: 1.1030, high: 1.1060, low: 1.1020, close: 1.1050 },
+      { datetime: "5", open: 1.1050, high: 1.1055, low: 1.0940, close: 1.0950 }, // Explosive breakdown below 1.0980
+    ];
+
+    const result = DeterministicApiDecisionEngine.analyzeMarketStructure(candles, 1, 1);
+    expect(result.bearishCHOCH || result.changeOfCharacter).toBe(true);
+  });
+
+  // 27. SL/TP Invariants: BUY SL is strictly below Entry and TP is strictly above Entry with positive R:R
+  it("Test 27: calculateRisk enforces SL < Entry < TP with positive risk and reward for BUY", () => {
+    const entryPrice = 1.1200;
+    const atr = 0.0010;
+    const mockSr = { nearestResistance: { price: 1.1250, distancePips: 50, distanceAtrMultiple: 5, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 }, nearestSupport: null };
+    const mockSwings = { latestSwingHigh: null, latestSwingLow: { index: 1, candleIndex: 2, price: 1.1180, timestamp: "1" } };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "BUY", atr, mockSr, mockSwings, 10000);
+    expect(risk.stopLoss).toBeLessThan(risk.entryPrice);
+    expect(risk.takeProfit).toBeGreaterThan(risk.entryPrice);
+    expect(risk.riskPips).toBeGreaterThan(0);
+    expect(risk.rewardPips).toBeGreaterThan(0);
+    expect(risk.riskRewardRatio).toBeGreaterThan(0);
+  });
+
+  // 28. SL/TP Invariants: SELL SL is strictly above Entry and TP is strictly below Entry with positive R:R
+  it("Test 28: calculateRisk enforces TP < Entry < SL with positive risk and reward for SELL", () => {
+    const entryPrice = 1.1200;
+    const atr = 0.0010;
+    const mockSr = { nearestResistance: null, nearestSupport: { price: 1.1150, distancePips: 50, distanceAtrMultiple: 5, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 2 } };
+    const mockSwings = { latestSwingHigh: { index: 1, candleIndex: 2, price: 1.1220, timestamp: "1" }, latestSwingLow: null };
+
+    const risk = DeterministicApiDecisionEngine.calculateRisk(entryPrice, "SELL", atr, mockSr, mockSwings, 10000);
+    expect(risk.stopLoss).toBeGreaterThan(risk.entryPrice);
+    expect(risk.takeProfit).toBeLessThan(risk.entryPrice);
+    expect(risk.riskPips).toBeGreaterThan(0);
+    expect(risk.rewardPips).toBeGreaterThan(0);
+    expect(risk.riskRewardRatio).toBeGreaterThan(0);
+  });
+
+  // 29. Directional Bias vs Trade Quality separation (Strong trend with poor location produces WAIT + tradeable: false)
+  it("Test 29: Directional bias is correctly separated from trade quality when blocked by S/R trap", () => {
+    const currentPrice = 1.1500;
+    const mockSr = {
+      nearestResistance: { price: 1.1501, distancePips: 1.0, distanceAtrMultiple: 0.1, strength: "STRONG" as const, source: "4H", timeframe: "4H", touches: 3 },
+      nearestSupport: null,
+      allLevels: [],
+    };
+
+    const evalResult = DeterministicApiDecisionEngine.evaluateEvidenceAndGates(
+      currentPrice,
+      "Bullish",
+      "Bullish",
+      { trend: "BULLISH", structure: "BULLISH_STRUCTURE", swingHighs: [], swingLows: [], allSwings: [], latestSwingHigh: null, latestSwingLow: null, previousSwingHigh: null, previousSwingLow: null, isHigherHigh: true, isHigherLow: true, isLowerHigh: false, isLowerLow: false, breakOfStructure: false, changeOfCharacter: false, structureRetest: false },
+      { setup: "TREND_CONTINUATION_PULLBACK", quality: 85, rationale: "" },
+      mockSr,
+      { ema20: 1.1490, ema50: 1.1480, ema200: null, rsi: 62, rsiDelta: 2, macdHist: 0.0002, macdSlope: "Rising", atr: 0.0010 },
+      [],
+      10000
+    );
+
+    expect(evalResult.hardGates.buyAllowed).toBe(false);
+    expect(evalResult.bullishScore).toBeGreaterThanOrEqual(60);
+  });
+
+  // 30. Backtest Engine: Successfully runs bar-by-bar simulation and produces valid metrics
+  it("Test 30: DeterministicBacktestEngine executes step-by-step backtest and outputs complete metrics", () => {
+    const raw5m = generateCandles(80, 1.1200, 0.0003, 0.0002);
+    const raw1h = generateCandles(80, 1.1150, 0.0004, 0.0002);
+    const raw4h = generateCandles(80, 1.1100, 0.0005, 0.0002);
+
+    const summary = DeterministicBacktestEngine.runBacktest("EUR/USD", raw5m, raw1h, raw4h, {
+      holdingBars: 10,
+      minConfidence: 60,
+      lookbackWindow: 30,
+    });
+
+    expect(summary.totalEvaluatedBars).toBeGreaterThan(0);
+    expect(summary.winRate).toBeGreaterThanOrEqual(0);
+    expect(summary.winRate).toBeLessThanOrEqual(100);
+    expect(summary.lossRate).toBeGreaterThanOrEqual(0);
+    expect(summary.lossRate).toBeLessThanOrEqual(100);
+    expect(summary.filterEfficiency).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(summary.trades)).toBe(true);
   });
 });

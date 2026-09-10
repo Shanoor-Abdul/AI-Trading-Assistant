@@ -86,6 +86,10 @@ export interface DeterministicDecisionResult {
   bullishScore: number;
   bearishScore: number;
   directionalLead: number;
+  directionalBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  directionalStrength: number;
+  tradeQuality: number;
+  tradeable: boolean;
   marketRegime: string;
   setup: "TREND_CONTINUATION_PULLBACK" | "BREAKOUT_CONFIRMED" | "BREAKOUT_WATCH" | "BREAKOUT_FAILED" | "BREAKOUT_RETEST" | "SUPPORT_REJECTION" | "RESISTANCE_REJECTION" | "REVERSAL_ATTEMPT" | "RANGE" | "CHOP" | "NONE";
   setupQuality: number;
@@ -176,28 +180,62 @@ export interface DeterministicDecisionResult {
 export class DeterministicApiDecisionEngine {
   /**
    * Safe parser for TwelveData raw candle format
-   * Ensures chronological order (oldest to newest)
+   * Ensures data validity, deduplication by datetime, and strict chronological order (oldest to newest)
    */
   static parseCandles(rawValues: any[]): Candle[] {
     if (!Array.isArray(rawValues) || rawValues.length === 0) return [];
     
-    // TwelveData returns newest first; reverse to get chronological [oldest ... newest]
-    const list = [...rawValues].reverse().map((c) => ({
-      datetime: String(c.datetime || ""),
-      open: parseFloat(c.open),
-      high: parseFloat(c.high),
-      low: parseFloat(c.low),
-      close: parseFloat(c.close),
-      volume: c.volume != null ? parseFloat(c.volume) : undefined,
-    }));
+    // Parse valid raw entries
+    const parsed: Candle[] = [];
+    for (const c of rawValues) {
+      if (!c || typeof c !== "object") continue;
+      const open = typeof c.open === "number" ? c.open : parseFloat(c.open);
+      const high = typeof c.high === "number" ? c.high : parseFloat(c.high);
+      const low = typeof c.low === "number" ? c.low : parseFloat(c.low);
+      const close = typeof c.close === "number" ? c.close : parseFloat(c.close);
+      const volume = c.volume != null ? (typeof c.volume === "number" ? c.volume : parseFloat(c.volume)) : undefined;
+      const datetime = String(c.datetime || c.time || c.timestamp || "");
 
-    return list.filter(
-      (c) =>
-        Number.isFinite(c.open) &&
-        Number.isFinite(c.high) &&
-        Number.isFinite(c.low) &&
-        Number.isFinite(c.close)
-    );
+      if (
+        Number.isFinite(open) && open > 0 &&
+        Number.isFinite(high) && high > 0 &&
+        Number.isFinite(low) && low > 0 &&
+        Number.isFinite(close) && close > 0
+      ) {
+        // Enforce structural OHLC sanity (high is at least max(open, close, high), low is at most min(open, close, low))
+        const saneHigh = Math.max(high, open, close);
+        const saneLow = Math.min(low, open, close);
+        parsed.push({
+          datetime,
+          open,
+          high: saneHigh,
+          low: saneLow,
+          close,
+          volume: Number.isFinite(volume) ? volume : undefined,
+        });
+      }
+    }
+
+    if (parsed.length === 0) return [];
+
+    // Deduplicate by datetime while preserving order
+    const seen = new Map<string, Candle>();
+    for (const candle of parsed) {
+      seen.set(candle.datetime, candle);
+    }
+    const deduplicated = Array.from(seen.values());
+
+    // Sort ascending chronologically (oldest first, newest last)
+    deduplicated.sort((a, b) => {
+      const timeA = new Date(a.datetime).getTime();
+      const timeB = new Date(b.datetime).getTime();
+      if (!isNaN(timeA) && !isNaN(timeB)) {
+        return timeA - timeB;
+      }
+      return a.datetime.localeCompare(b.datetime);
+    });
+
+    return deduplicated;
   }
 
   /**
@@ -313,49 +351,63 @@ export class DeterministicApiDecisionEngine {
     let structureRetest = false;
 
     const latestCandle = candles[candles.length - 1];
-    if (latestCandle && latestSwingHigh && latestSwingLow) {
-      const isCloseAboveHigh = latestCandle.close > latestSwingHigh.price;
-      const isWickAboveHigh = latestCandle.high > latestSwingHigh.price && latestCandle.close <= latestSwingHigh.price;
-      const isCloseBelowLow = latestCandle.close < latestSwingLow.price;
-      const isWickBelowLow = latestCandle.low < latestSwingLow.price && latestCandle.close >= latestSwingLow.price;
+    if (latestCandle) {
+      if (latestSwingHigh) {
+        const isCloseAboveHigh = latestCandle.close > latestSwingHigh.price;
+        const isWickAboveHigh = latestCandle.high > latestSwingHigh.price && latestCandle.close <= latestSwingHigh.price;
 
-      // False Breakouts (Wick sweeps without candle close confirmation)
-      if (isWickAboveHigh || isWickBelowLow) {
-        falseBreakout = true;
-      }
+        // False Breakout (Wick sweep without candle close confirmation)
+        if (isWickAboveHigh) {
+          falseBreakout = true;
+        }
 
-      // Bullish BOS: Existing Bullish Structure + Confirmed Close above Swing High
-      if (structure === "BULLISH_STRUCTURE" && isCloseAboveHigh) {
-        bullishBOS = true;
-        breakOfStructure = true;
-        breakoutConfirmed = true;
-      }
-      // Bearish BOS: Existing Bearish Structure + Confirmed Close below Swing Low
-      else if (structure === "BEARISH_STRUCTURE" && isCloseBelowLow) {
-        bearishBOS = true;
-        breakOfStructure = true;
-        breakoutConfirmed = true;
-      }
+        // Bullish BOS: Existing Bullish Structure + Confirmed Close above Swing High
+        if (isCloseAboveHigh) {
+          breakoutConfirmed = true;
+          if (structure === "BULLISH_STRUCTURE") {
+            bullishBOS = true;
+            breakOfStructure = true;
+          } else {
+            // Bullish CHOCH: Non-bullish structure broken upward by Confirmed Close > Swing High
+            bullishCHOCH = true;
+            changeOfCharacter = true;
+          }
+        }
 
-      // Bullish CHOCH: Bearish/Range Structure broken upward by Confirmed Close > Swing High
-      if (structure !== "BULLISH_STRUCTURE" && isCloseAboveHigh) {
-        bullishCHOCH = true;
-        changeOfCharacter = true;
-        breakoutConfirmed = true;
-      }
-      // Bearish CHOCH: Bullish/Range Structure broken downward by Confirmed Close < Swing Low
-      else if (structure !== "BEARISH_STRUCTURE" && isCloseBelowLow) {
-        bearishCHOCH = true;
-        changeOfCharacter = true;
-        breakoutConfirmed = true;
+        const distHigh = Math.abs(latestCandle.close - latestSwingHigh.price);
+        const avgCandleRange = Math.max(0.0001, latestCandle.high - latestCandle.low);
+        if (distHigh <= avgCandleRange * 0.4) {
+          structureRetest = true;
+        }
       }
 
-      // Structure Retest (Price touches previous swing within tolerance)
-      const distHigh = Math.abs(latestCandle.close - latestSwingHigh.price);
-      const distLow = Math.abs(latestCandle.close - latestSwingLow.price);
-      const avgCandleRange = Math.max(0.0001, latestCandle.high - latestCandle.low);
-      if (distHigh <= avgCandleRange * 0.4 || distLow <= avgCandleRange * 0.4) {
-        structureRetest = true;
+      if (latestSwingLow) {
+        const isCloseBelowLow = latestCandle.close < latestSwingLow.price;
+        const isWickBelowLow = latestCandle.low < latestSwingLow.price && latestCandle.close >= latestSwingLow.price;
+
+        // False Breakout (Wick sweep without candle close confirmation)
+        if (isWickBelowLow) {
+          falseBreakout = true;
+        }
+
+        // Bearish BOS: Existing Bearish Structure + Confirmed Close below Swing Low
+        if (isCloseBelowLow) {
+          breakoutConfirmed = true;
+          if (structure === "BEARISH_STRUCTURE") {
+            bearishBOS = true;
+            breakOfStructure = true;
+          } else {
+            // Bearish CHOCH: Non-bearish structure broken downward by Confirmed Close < Swing Low
+            bearishCHOCH = true;
+            changeOfCharacter = true;
+          }
+        }
+
+        const distLow = Math.abs(latestCandle.close - latestSwingLow.price);
+        const avgCandleRange = Math.max(0.0001, latestCandle.high - latestCandle.low);
+        if (distLow <= avgCandleRange * 0.4) {
+          structureRetest = true;
+        }
       }
     }
 
@@ -670,6 +722,9 @@ export class DeterministicApiDecisionEngine {
 
   /**
    * Section 14: Server-Side Dynamic SL / TP & Risk/Reward Calculation
+   * Guarantees geometric invariants:
+   * BUY:  SL < Entry < TP  (riskPips > 0, rewardPips > 0)
+   * SELL: TP < Entry < SL  (riskPips > 0, rewardPips > 0)
    */
   static calculateRisk(
     entryPrice: number,
@@ -680,28 +735,40 @@ export class DeterministicApiDecisionEngine {
     pipMultiplier: number
   ): RiskCalculationResult {
     const safeAtr = Math.max(0.0001, atr5m);
+    const minBuffer = Math.max(0.0001, safeAtr * 0.5);
 
     if (direction === "BUY") {
-      // Invalidation is below recent swing low or 5M support, with 0.5 ATR buffer
+      // Invalidation SL is below recent swing low or structural support, with ATR buffer
       let slPrice = entryPrice - safeAtr * 1.2;
       let invalidationReason = "1.2x ATR Technical Invalidation";
 
       if (swings.latestSwingLow && swings.latestSwingLow.price < entryPrice) {
-        slPrice = Math.min(slPrice, swings.latestSwingLow.price - safeAtr * 0.3);
-        invalidationReason = `Recent 5M Swing Low (${swings.latestSwingLow.price}) buffer`;
+        const swingSl = swings.latestSwingLow.price - safeAtr * 0.3;
+        if (swingSl < entryPrice) {
+          slPrice = Math.min(slPrice, swingSl);
+          invalidationReason = `Recent 5M Swing Low (${swings.latestSwingLow.price}) buffer`;
+        }
       } else if (sr.nearestSupport && sr.nearestSupport.price < entryPrice) {
-        slPrice = Math.min(slPrice, sr.nearestSupport.price - safeAtr * 0.3);
-        invalidationReason = `Structural Support (${sr.nearestSupport.price}) buffer`;
+        const supportSl = sr.nearestSupport.price - safeAtr * 0.3;
+        if (supportSl < entryPrice) {
+          slPrice = Math.min(slPrice, supportSl);
+          invalidationReason = `Structural Support (${sr.nearestSupport.price}) buffer`;
+        }
       }
 
-      // Target is near resistance or 1.5x ATR
+      // Hard clamp SL below entry by at least minBuffer
+      slPrice = Math.min(slPrice, entryPrice - minBuffer);
+
+      // Target TP is near resistance or 1.5x ATR
       let tpPrice = entryPrice + safeAtr * 1.5;
-      if (sr.nearestResistance && sr.nearestResistance.price > entryPrice) {
-        tpPrice = sr.nearestResistance.price - safeAtr * 0.2;
+      if (sr.nearestResistance && sr.nearestResistance.price > entryPrice + minBuffer) {
+        tpPrice = Math.max(entryPrice + minBuffer, sr.nearestResistance.price - safeAtr * 0.2);
       }
+      // Hard clamp TP above entry by at least minBuffer
+      tpPrice = Math.max(tpPrice, entryPrice + minBuffer);
 
-      const riskDist = Math.max(0.00005, entryPrice - slPrice);
-      const rewardDist = Math.max(0.00005, tpPrice - entryPrice);
+      const riskDist = Math.max(minBuffer, entryPrice - slPrice);
+      const rewardDist = Math.max(minBuffer, tpPrice - entryPrice);
       const riskPips = parseFloat((riskDist * pipMultiplier).toFixed(1));
       const rewardPips = parseFloat((rewardDist * pipMultiplier).toFixed(1));
       const riskRewardRatio = parseFloat((rewardDist / riskDist).toFixed(2));
@@ -721,20 +788,32 @@ export class DeterministicApiDecisionEngine {
       let invalidationReason = "1.2x ATR Technical Invalidation";
 
       if (swings.latestSwingHigh && swings.latestSwingHigh.price > entryPrice) {
-        slPrice = Math.max(slPrice, swings.latestSwingHigh.price + safeAtr * 0.3);
-        invalidationReason = `Recent 5M Swing High (${swings.latestSwingHigh.price}) buffer`;
+        const swingSl = swings.latestSwingHigh.price + safeAtr * 0.3;
+        if (swingSl > entryPrice) {
+          slPrice = Math.max(slPrice, swingSl);
+          invalidationReason = `Recent 5M Swing High (${swings.latestSwingHigh.price}) buffer`;
+        }
       } else if (sr.nearestResistance && sr.nearestResistance.price > entryPrice) {
-        slPrice = Math.max(slPrice, sr.nearestResistance.price + safeAtr * 0.3);
-        invalidationReason = `Structural Resistance (${sr.nearestResistance.price}) buffer`;
+        const resSl = sr.nearestResistance.price + safeAtr * 0.3;
+        if (resSl > entryPrice) {
+          slPrice = Math.max(slPrice, resSl);
+          invalidationReason = `Structural Resistance (${sr.nearestResistance.price}) buffer`;
+        }
       }
 
+      // Hard clamp SL above entry by at least minBuffer
+      slPrice = Math.max(slPrice, entryPrice + minBuffer);
+
+      // Target TP is near support or 1.5x ATR
       let tpPrice = entryPrice - safeAtr * 1.5;
-      if (sr.nearestSupport && sr.nearestSupport.price < entryPrice) {
-        tpPrice = sr.nearestSupport.price + safeAtr * 0.2;
+      if (sr.nearestSupport && sr.nearestSupport.price < entryPrice - minBuffer) {
+        tpPrice = Math.min(entryPrice - minBuffer, sr.nearestSupport.price + safeAtr * 0.2);
       }
+      // Hard clamp TP below entry by at least minBuffer
+      tpPrice = Math.min(tpPrice, entryPrice - minBuffer);
 
-      const riskDist = Math.max(0.00005, slPrice - entryPrice);
-      const rewardDist = Math.max(0.00005, entryPrice - tpPrice);
+      const riskDist = Math.max(minBuffer, slPrice - entryPrice);
+      const rewardDist = Math.max(minBuffer, entryPrice - tpPrice);
       const riskPips = parseFloat((riskDist * pipMultiplier).toFixed(1));
       const rewardPips = parseFloat((rewardDist * pipMultiplier).toFixed(1));
       const riskRewardRatio = parseFloat((rewardDist / riskDist).toFixed(2));
@@ -1018,10 +1097,11 @@ export class DeterministicApiDecisionEngine {
     const ind1h = this.calculateIndicators(candles1h);
     const ind5m = this.calculateIndicators(candles5m);
 
-    // 2. Swings & Market Structure
+    // 2. Swings & Market Structure (Using completed candles to prevent in-candle repainting)
+    const completedCandles5m = candles5m.length > 20 ? candles5m.slice(0, -1) : candles5m;
     const struct4h = this.analyzeMarketStructure(candles4h, 3, 3);
     const struct1h = this.analyzeMarketStructure(candles1h, 3, 3);
-    const struct5m = this.analyzeMarketStructure(candles5m, 2, 2);
+    const struct5m = this.analyzeMarketStructure(completedCandles5m, 2, 2);
 
     const currentCandle = candles5m[candles5m.length - 1];
     const currentPrice = currentCandle.close;
@@ -1153,6 +1233,31 @@ export class DeterministicApiDecisionEngine {
       confidence = Math.min(45, Math.max(20, Math.round(evalResult.directionalLead * 0.4)));
     }
 
+    // Directional Bias & Trade Quality Metrics
+    let directionalBias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+    if (evalResult.bullishScore >= evalResult.bearishScore + 15) {
+      directionalBias = "BULLISH";
+    } else if (evalResult.bearishScore >= evalResult.bullishScore + 15) {
+      directionalBias = "BEARISH";
+    }
+    const directionalStrength = Math.max(evalResult.bullishScore, evalResult.bearishScore);
+    const tradeable = signal === "BUY" || signal === "SELL";
+
+    let tradeQuality = 30;
+    if (signal === "BUY") {
+      tradeQuality = Math.min(100, Math.max(50, Math.round(evalResult.bullishScore * 0.4 + setupObj.quality * 0.3 + Math.min(3.0, buyRisk.riskRewardRatio) * 10)));
+    } else if (signal === "SELL") {
+      tradeQuality = Math.min(100, Math.max(50, Math.round(evalResult.bearishScore * 0.4 + setupObj.quality * 0.3 + Math.min(3.0, sellRisk.riskRewardRatio) * 10)));
+    } else {
+      if (!evalResult.hardGates.buyAllowed && !evalResult.hardGates.sellAllowed) {
+        tradeQuality = 15;
+      } else if (evalResult.hardGates.reasons.some((r) => r.includes("Trap") || r.includes("Chop"))) {
+        tradeQuality = 25;
+      } else {
+        tradeQuality = Math.min(48, Math.round(setupObj.quality * 0.5));
+      }
+    }
+
     // Price location
     const latestBb = ind5m.bb.length ? ind5m.bb[ind5m.bb.length - 1] : null;
     let bbPercentB: number | null = null;
@@ -1200,6 +1305,10 @@ export class DeterministicApiDecisionEngine {
       bullishScore: evalResult.bullishScore,
       bearishScore: evalResult.bearishScore,
       directionalLead: evalResult.directionalLead,
+      directionalBias,
+      directionalStrength,
+      tradeQuality,
+      tradeable,
       marketRegime: bias4h,
       setup: setupObj.setup,
       setupQuality: setupObj.quality,
@@ -1337,26 +1446,7 @@ export class DeterministicApiDecisionEngine {
       };
     }
 
-    // Rule 3: Hard Gate enforcement
-    if (rawAiSignal === "BUY" && !deterministic.hardGates.buyAllowed) {
-      return {
-        finalSignal: "WAIT",
-        finalConfidence: Math.min(45, deterministic.confidence),
-        validationOverride: true,
-        validationReason: `Rejected AI BUY: Hard gate failed (${deterministic.hardGates.reasons.join(", ")}).`,
-      };
-    }
-
-    if (rawAiSignal === "SELL" && !deterministic.hardGates.sellAllowed) {
-      return {
-        finalSignal: "WAIT",
-        finalConfidence: Math.min(45, deterministic.confidence),
-        validationOverride: true,
-        validationReason: `Rejected AI SELL: Hard gate failed (${deterministic.hardGates.reasons.join(", ")}).`,
-      };
-    }
-
-    // Rule 4: Opposing Signals (Deterministic says SELL, AI says BUY or vice versa)
+    // Rule 3: Opposing Signals (Deterministic says BUY and AI says SELL or vice versa)
     if (deterministic.signal === "BUY" && rawAiSignal === "SELL") {
       return {
         finalSignal: "WAIT",
@@ -1372,6 +1462,25 @@ export class DeterministicApiDecisionEngine {
         finalConfidence: 30,
         validationOverride: true,
         validationReason: "Conflict: Deterministic SELL vs AI BUY. Forcing WAIT for risk safety.",
+      };
+    }
+
+    // Rule 4: Hard Gate enforcement
+    if (rawAiSignal === "BUY" && !deterministic.hardGates.buyAllowed) {
+      return {
+        finalSignal: "WAIT",
+        finalConfidence: Math.min(45, deterministic.confidence),
+        validationOverride: true,
+        validationReason: `Rejected AI BUY: Hard gate failed (${deterministic.hardGates.reasons.join(", ")}).`,
+      };
+    }
+
+    if (rawAiSignal === "SELL" && !deterministic.hardGates.sellAllowed) {
+      return {
+        finalSignal: "WAIT",
+        finalConfidence: Math.min(45, deterministic.confidence),
+        validationOverride: true,
+        validationReason: `Rejected AI SELL: Hard gate failed (${deterministic.hardGates.reasons.join(", ")}).`,
       };
     }
 
@@ -1443,6 +1552,10 @@ export class DeterministicApiDecisionEngine {
       bullishScore: 0,
       bearishScore: 0,
       directionalLead: 0,
+      directionalBias: "NEUTRAL",
+      directionalStrength: 0,
+      tradeQuality: 0,
+      tradeable: false,
       marketRegime: "UNAVAILABLE",
       setup: "NONE",
       setupQuality: 0,
