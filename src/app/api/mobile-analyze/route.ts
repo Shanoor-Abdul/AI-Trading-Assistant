@@ -250,6 +250,7 @@ export async function POST(request: NextRequest) {
       const baseUrl = `https://api.twelvedata.com`;
       const baseParams = `symbol=${symbol}&interval=${interval}&apikey=${apiKey}`;
       
+      // Single-Timeframe Execution Endpoints (Current Chart Only)
       const endpoints = [
         fetch(`${baseUrl}/time_series?${baseParams}&outputsize=20`).then(r => r.json()),
         fetch(`${baseUrl}/rsi?${baseParams}&time_period=14&outputsize=3`).then(r => r.json()),
@@ -263,18 +264,16 @@ export async function POST(request: NextRequest) {
       const [priceRes, rsiRes, macdRes, ema20Res, ema50Res, bbRes, atrRes] = await Promise.all(endpoints);
       
       if (priceRes.status === "error") throw new Error(priceRes.message);
-      if (rsiRes.status === "error") throw new Error(rsiRes.message);
       
       const getHistory = (arr: any[], key: string, limit = 5) => {
           if (!arr || !arr.length) return [];
-          // TwelveData returns newest first. We take limit, reverse to show Oldest -> Prev -> Newest
           return arr.slice(0, limit).map((v: any) => parseFloat(v[key])).reverse();
       };
 
+      // Current Chart Execution Data & 5-Candle Anatomy
       const closeHistory = getHistory(priceRes.values, 'close', 5);
       const currentPrice = closeHistory[closeHistory.length - 1] || 'N/A';
       
-      // 5-Candle Anatomy & Pattern Feature Engineering
       const rawCandles = priceRes.values?.slice(0, 5) || [];
       const fiveCandles = [...rawCandles].reverse().map((c: any, idx: number) => {
         const o = parseFloat(c.open);
@@ -312,7 +311,6 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      // Support & Resistance via Local High/Low (Boss's fallback)
       const r1 = priceRes.values?.length ? Math.max(...priceRes.values.map((v: any) => parseFloat(v.high))) : null;
       const s1 = priceRes.values?.length ? Math.min(...priceRes.values.map((v: any) => parseFloat(v.low))) : null;
       
@@ -321,13 +319,11 @@ export async function POST(request: NextRequest) {
       const pipsUnderResistance = (r1 && currentPrice !== 'N/A') ? ((r1 - (currentPrice as number)) * pipMultiplier).toFixed(1) : 'N/A';
       const pipsAboveSupport = (s1 && currentPrice !== 'N/A') ? (((currentPrice as number) - s1) * pipMultiplier).toFixed(1) : 'N/A';
 
-      // Momentum Deltas & Slopes (Feature Engineering)
       const rsiArr = getHistory(rsiRes.values, 'rsi', 3);
       const rsiChange = rsiArr.length === 3 ? (rsiArr[2] - rsiArr[0]).toFixed(2) : 'N/A';
       const currentRsi = rsiArr[rsiArr.length - 1]?.toFixed(2) || 'N/A';
 
       const macdHistArr = getHistory(macdRes.values, 'macd_hist', 3);
-      const macdHistChange = macdHistArr.length === 3 ? (macdHistArr[2] - macdHistArr[0]).toFixed(4) : 'N/A';
       let macdSlope = "Flat";
       if (macdHistArr.length === 3) {
          if (macdHistArr[2] > macdHistArr[1] && macdHistArr[1] > macdHistArr[0]) macdSlope = "Rising";
@@ -378,16 +374,14 @@ export async function POST(request: NextRequest) {
          }
       }
 
-      const atr = atrRes.values?.[0]?.atr ? parseFloat(atrRes.values[0].atr).toFixed(4) : 'N/A';
-      
-      const timeframeTrend = (currentPrice !== 'N/A' && ema50 !== 'N/A') 
+      const chartTrend = (currentPrice !== 'N/A' && ema50 !== 'N/A') 
         ? (parseFloat(String(currentPrice)) > parseFloat(String(ema50)) ? "Bullish" : "Bearish") 
         : "Sideways";
 
       const payloadObj = {
           asset: symbol,
           timeframe: body.timeframe || "5m",
-          timeframe_trend: timeframeTrend,
+          chart_trend: chartTrend,
           current_price: currentPrice,
           moving_average_alignment: {
               ema_20: ema20,
@@ -416,8 +410,8 @@ export async function POST(request: NextRequest) {
       rawImage = ""; // In twelvedata mode, rely directly on structured math
 
       // =========================================================================
-      // ZERO-TOKEN GATEKEEPER FILTER (ACTIVE TIMEFRAME TRAP DETECTION)
-      // Zero AI Tokens spent on flat, trapped, or clearly invalid market conditions
+      // ZERO-TOKEN GATEKEEPER FILTER (CURRENT TIMEFRAME TRAP DETECTION)
+      // Zero AI Tokens spent on flat, trapped, or clearly conflicting conditions
       // =========================================================================
       const numRsi = parseFloat(String(currentRsi));
       const numRsiDelta = parseFloat(String(rsiChange));
@@ -429,19 +423,19 @@ export async function POST(request: NextRequest) {
       let marketStateTitle = "";
       let recheckTime = "3-5 minutes";
 
-      // Gate 1: Trap under Resistance (Bullish trend but hitting ceiling with falling momentum)
-      if (timeframeTrend === "Bullish" && !isNaN(numPipsToR1) && numPipsToR1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta <= 0) {
+      // Gate 1: Trap under Resistance
+      if (chartTrend === "Bullish" && !isNaN(numPipsToR1) && numPipsToR1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta <= 0) {
         localFilterTriggered = true;
         marketStateTitle = "Resistance Ceiling Trap";
-        filterReason = `Price is sitting just ${numPipsToR1} pips below R1 Resistance with negative RSI momentum (${numRsiDelta}). High risk of a false breakout rejection.`;
-        recheckTime = "Wait 3-5 minutes for a clean structural break above R1.";
+        filterReason = `Price is sitting just ${numPipsToR1} pips below Resistance with stalling RSI momentum (${numRsiDelta}). High risk of a false breakout rejection.`;
+        recheckTime = "Wait 3-5 minutes for a clean structural break above Resistance.";
       }
-      // Gate 2: Trap on Support (Bearish trend but hitting floor with stalling downward momentum)
-      else if (timeframeTrend === "Bearish" && !isNaN(numPipsToS1) && numPipsToS1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta >= 0) {
+      // Gate 2: Trap on Support
+      else if (chartTrend === "Bearish" && !isNaN(numPipsToS1) && numPipsToS1 < 3.0 && !isNaN(numRsiDelta) && numRsiDelta >= 0) {
         localFilterTriggered = true;
         marketStateTitle = "Support Floor Trap";
-        filterReason = `Price is sitting directly on S1 Support (${numPipsToS1} pips away) with stalling downward momentum (${numRsiDelta} delta). High risk of bounce.`;
-        recheckTime = "Wait 3-5 minutes for a clean structural breakdown below S1.";
+        filterReason = `Price is sitting directly on Support (${numPipsToS1} pips away) with stalling downward momentum (${numRsiDelta} delta). High risk of bounce.`;
+        recheckTime = "Wait 3-5 minutes for a clean structural breakdown below Support.";
       }
       // Gate 3: Extreme Volatility Squeeze (Flat / Dead market)
       else if (bbState.includes("Squeezing") && !isNaN(numRsiDelta) && Math.abs(numRsiDelta) < 0.8) {
@@ -462,11 +456,11 @@ export async function POST(request: NextRequest) {
         const dashboardTelemetry = `🛑 [Zero-Token Gatekeeper Filter]\n` +
           `• State: ${marketStateTitle}\n` +
           `• Reason: ${filterReason}\n` +
-          `• Telemetry: Trend: ${timeframeTrend} | RSI: ${currentRsi} (Δ ${rsiChange}) | MACD: ${macdSlope} | R1: ${pipsUnderResistance}p | S1: ${pipsAboveSupport}p\n` +
+          `• Telemetry: Trend: ${chartTrend} | RSI: ${currentRsi} (Δ ${rsiChange}) | MACD: ${macdSlope} | R1: ${pipsUnderResistance}p | S1: ${pipsAboveSupport}p\n` +
           `• Next Check: ${recheckTime} (0 AI Tokens Used)`;
 
         return NextResponse.json({
-          trend: timeframeTrend,
+          trend: chartTrend,
           signal: "WAIT",
           confidence: 20,
           readiness: "NOT READY",
