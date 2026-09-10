@@ -1,4 +1,4 @@
-import { EMA, RSI, MACD, BollingerBands, ATR } from "technicalindicators";
+import { TwelveDataIndicatorAdapter, NormalizedIndicatorSet, TwelveDataIndicatorsPayload } from "./TwelveDataIndicatorAdapter";
 
 export interface Candle {
   datetime: string;
@@ -523,51 +523,7 @@ export class DeterministicApiDecisionEngine {
     };
   }
 
-  /**
-   * Section 7: Technical Indicator Engine (Pure OHLC computation)
-   */
-  static calculateIndicators(candles: Candle[]) {
-    if (candles.length < 20) {
-      return {
-        ema20: [],
-        ema50: [],
-        ema200: [],
-        rsi14: [],
-        macd: [],
-        bb: [],
-        atr: [],
-      };
-    }
 
-    const closePrices = candles.map((c) => c.close);
-    const highPrices = candles.map((c) => c.high);
-    const lowPrices = candles.map((c) => c.low);
-
-    const ema20 = EMA.calculate({ period: 20, values: closePrices });
-    const ema50 = EMA.calculate({ period: Math.min(50, closePrices.length), values: closePrices });
-    const ema200 = closePrices.length >= 100 ? EMA.calculate({ period: Math.min(200, closePrices.length), values: closePrices }) : [];
-    const rsi14 = RSI.calculate({ period: 14, values: closePrices });
-    const macd = MACD.calculate({
-      fastPeriod: 12,
-      slowPeriod: 26,
-      signalPeriod: 9,
-      SimpleMAOscillator: false,
-      SimpleMASignal: false,
-      values: closePrices,
-    });
-    const bb = BollingerBands.calculate({ period: 20, stdDev: 2, values: closePrices });
-    const atr = ATR.calculate({ period: 14, high: highPrices, low: lowPrices, close: closePrices });
-
-    return {
-      ema20,
-      ema50,
-      ema200,
-      rsi14,
-      macd,
-      bb,
-      atr,
-    };
-  }
 
   /**
    * Section 9-12: Deterministic Setup & Chop Classification Engine
@@ -1069,7 +1025,8 @@ export class DeterministicApiDecisionEngine {
     raw4hValues: any[],
     raw1hValues: any[],
     raw5mValues: any[],
-    tradeDuration = "5m"
+    tradeDuration = "5m",
+    twelveDataIndicators?: TwelveDataIndicatorsPayload | NormalizedIndicatorSet | null
   ): DeterministicDecisionResult {
     const candles4h = this.parseCandles(raw4hValues);
     const candles1h = this.parseCandles(raw1hValues);
@@ -1092,10 +1049,19 @@ export class DeterministicApiDecisionEngine {
 
     const pipMultiplier = symbol.includes("JPY") || symbol.includes("XAU") || symbol.includes("XAG") ? 100 : 10000;
 
-    // 1. Indicators
-    const ind4h = this.calculateIndicators(candles4h);
-    const ind1h = this.calculateIndicators(candles1h);
-    const ind5m = this.calculateIndicators(candles5m);
+    // 1. Indicators (Normalized from TwelveData API or lookahead-free offline calculation fallback)
+    const normalizedInds: NormalizedIndicatorSet =
+      twelveDataIndicators && "source" in twelveDataIndicators && twelveDataIndicators["5m"]
+        ? (twelveDataIndicators as NormalizedIndicatorSet)
+        : TwelveDataIndicatorAdapter.normalizeIndicators(twelveDataIndicators as TwelveDataIndicatorsPayload, {
+            "5m": candles5m,
+            "1h": candles1h,
+            "4h": candles4h,
+          });
+
+    const ind5m = normalizedInds["5m"];
+    const ind1h = normalizedInds["1h"];
+    const ind4h = normalizedInds["4h"];
 
     // 2. Swings & Market Structure (Using completed candles to prevent in-candle repainting)
     const completedCandles5m = candles5m.length > 20 ? candles5m.slice(0, -1) : candles5m;
@@ -1107,30 +1073,19 @@ export class DeterministicApiDecisionEngine {
     const currentPrice = currentCandle.close;
 
     // Indicator extracts
-    const ema20_5m = ind5m.ema20.length ? ind5m.ema20[ind5m.ema20.length - 1] : null;
-    const ema50_5m = ind5m.ema50.length ? ind5m.ema50[ind5m.ema50.length - 1] : null;
-    const ema200_5m = ind5m.ema200.length ? ind5m.ema200[ind5m.ema200.length - 1] : null;
-    const rsi_5m = ind5m.rsi14.length ? ind5m.rsi14[ind5m.rsi14.length - 1] : null;
-    const rsiDelta_5m = ind5m.rsi14.length >= 3 ? ind5m.rsi14[ind5m.rsi14.length - 1] - ind5m.rsi14[ind5m.rsi14.length - 3] : null;
-    const macdLatest = ind5m.macd.length ? ind5m.macd[ind5m.macd.length - 1] : null;
-    const macdHist_5m = macdLatest ? Number(macdLatest.histogram) : null;
-    const atr_5m = ind5m.atr.length ? ind5m.atr[ind5m.atr.length - 1] : 0.0008;
-
-    let macdSlope_5m = "Flat";
-    if (ind5m.macd.length >= 3) {
-      const h0 = Number(ind5m.macd[ind5m.macd.length - 3].histogram);
-      const h1 = Number(ind5m.macd[ind5m.macd.length - 2].histogram);
-      const h2 = Number(ind5m.macd[ind5m.macd.length - 1].histogram);
-      if (h2 > h1 && h1 > h0) macdSlope_5m = "Rising";
-      else if (h2 < h1 && h1 < h0) macdSlope_5m = "Falling";
-      else if (h2 > 0 && h1 < 0) macdSlope_5m = "Bullish Cross";
-      else if (h2 < 0 && h1 > 0) macdSlope_5m = "Bearish Cross";
-    }
+    const ema20_5m = ind5m.ema20;
+    const ema50_5m = ind5m.ema50;
+    const ema200_5m = ind5m.ema200;
+    const rsi_5m = ind5m.rsi;
+    const rsiDelta_5m = ind5m.rsiDelta;
+    const macdHist_5m = ind5m.macd.histogram;
+    const macdSlope_5m = ind5m.macdSlope;
+    const atr_5m = ind5m.atr;
 
     // 4H Bias
     const c4h = candles4h.length ? candles4h[candles4h.length - 1].close : currentPrice;
-    const e50_4h = ind4h.ema50.length ? ind4h.ema50[ind4h.ema50.length - 1] : null;
-    const e200_4h = ind4h.ema200.length ? ind4h.ema200[ind4h.ema200.length - 1] : null;
+    const e50_4h = ind4h.ema50;
+    const e200_4h = ind4h.ema200;
     let bias4h = "Neutral / Indecisive";
     if (e50_4h) {
       if (e200_4h && c4h > e50_4h && e50_4h > e200_4h) bias4h = "Strong Macro Bullish (Price > EMA50 > EMA200)";
@@ -1141,8 +1096,8 @@ export class DeterministicApiDecisionEngine {
 
     // 1H Bias
     const c1h = candles1h.length ? candles1h[candles1h.length - 1].close : currentPrice;
-    const e20_1h = ind1h.ema20.length ? ind1h.ema20[ind1h.ema20.length - 1] : null;
-    const e50_1h = ind1h.ema50.length ? ind1h.ema50[ind1h.ema50.length - 1] : null;
+    const e20_1h = ind1h.ema20;
+    const e50_1h = ind1h.ema50;
     let bias1h = "Neutral / Range";
     if (e20_1h && e50_1h) {
       if (c1h > e20_1h && e20_1h > e50_1h) bias1h = "Bullish Momentum Expansion (Price > EMA20 > EMA50)";
@@ -1259,10 +1214,10 @@ export class DeterministicApiDecisionEngine {
     }
 
     // Price location
-    const latestBb = ind5m.bb.length ? ind5m.bb[ind5m.bb.length - 1] : null;
+    const latestBb = ind5m.bb;
     let bbPercentB: number | null = null;
     let bbState: PriceLocationResult["bollingerState"] = "NORMAL";
-    if (latestBb && latestBb.upper > latestBb.lower) {
+    if (latestBb && latestBb.upper != null && latestBb.lower != null && latestBb.middle != null && latestBb.upper > latestBb.lower) {
       bbPercentB = parseFloat(((currentPrice - latestBb.lower) / (latestBb.upper - latestBb.lower)).toFixed(2));
       const width = (latestBb.upper - latestBb.lower) / latestBb.middle;
       if (width < 0.001) bbState = "SQUEEZING";
@@ -1320,7 +1275,7 @@ export class DeterministicApiDecisionEngine {
           latestClose: c4h,
           ema50: e50_4h,
           ema200: e200_4h,
-          atr: ind4h.atr.length ? ind4h.atr[ind4h.atr.length - 1] : 0,
+          atr: ind4h.atr,
           swingHigh: struct4h.latestSwingHigh ? struct4h.latestSwingHigh.price : null,
           swingLow: struct4h.latestSwingLow ? struct4h.latestSwingLow.price : null,
         },
@@ -1330,11 +1285,11 @@ export class DeterministicApiDecisionEngine {
           latestClose: c1h,
           ema20: e20_1h,
           ema50: e50_1h,
-          ema200: ind1h.ema200.length ? ind1h.ema200[ind1h.ema200.length - 1] : null,
-          rsi: ind1h.rsi14.length ? ind1h.rsi14[ind1h.rsi14.length - 1] : null,
-          rsiDelta: ind1h.rsi14.length >= 3 ? ind1h.rsi14[ind1h.rsi14.length - 1] - ind1h.rsi14[ind1h.rsi14.length - 3] : null,
-          macdHist: ind1h.macd.length ? Number(ind1h.macd[ind1h.macd.length - 1].histogram) : null,
-          atr: ind1h.atr.length ? ind1h.atr[ind1h.atr.length - 1] : 0,
+          ema200: ind1h.ema200,
+          rsi: ind1h.rsi,
+          rsiDelta: ind1h.rsiDelta,
+          macdHist: ind1h.macd.histogram,
+          atr: ind1h.atr,
           swingHigh: struct1h.latestSwingHigh ? struct1h.latestSwingHigh.price : null,
           swingLow: struct1h.latestSwingLow ? struct1h.latestSwingLow.price : null,
         },

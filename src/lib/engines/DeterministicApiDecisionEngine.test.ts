@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DeterministicApiDecisionEngine, Candle } from "./DeterministicApiDecisionEngine";
+import { TwelveDataIndicatorAdapter } from "./TwelveDataIndicatorAdapter";
 import { DeterministicBacktestEngine } from "./DeterministicBacktestEngine";
 
 function generateCandles(count: number, basePrice: number, trendStep: number, waveAmplitude = 0.0002): any[] {
@@ -325,10 +326,10 @@ describe("DeterministicApiDecisionEngine 30-Test Comprehensive Suite", () => {
   // 13. Missing Indicator / Short Data
   it("Test 13: Handles short candle history safely with fallback", () => {
     const shortCandles = generateCandles(10, 1.1000, 0.0001);
-    const ind = DeterministicApiDecisionEngine.calculateIndicators(
+    const ind = TwelveDataIndicatorAdapter.calculateOfflineIndicators(
       DeterministicApiDecisionEngine.parseCandles(shortCandles)
     );
-    expect(ind.ema20).toEqual([]);
+    expect(ind["5m"].ema20).toBeNull();
   });
 
   // 14. Stale Data Handling

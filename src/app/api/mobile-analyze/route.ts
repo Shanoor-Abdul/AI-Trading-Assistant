@@ -11,8 +11,8 @@ import { getModelCapabilities } from "@/lib/ai/providerCapabilities";
 import { buildMobileExtractionPrompt } from "@/lib/ai/mobileExtractionPrompt";
 import { buildMobileSignalPrompt } from "@/lib/ai/mobileSignalPrompt";
 import { calculateMobileSignalConfidence, calculateMobileSignalRules } from "@/lib/ai/mobileSignalConfidence";
-import { EMA, RSI, MACD, BollingerBands, ATR } from "technicalindicators";
 import { DeterministicApiDecisionEngine, DeterministicDecisionResult } from "@/lib/engines/DeterministicApiDecisionEngine";
+import { TwelveDataIndicatorAdapter } from "@/lib/engines/TwelveDataIndicatorAdapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -265,16 +265,47 @@ export async function POST(request: NextRequest) {
         }
       };
 
-      // Fetch primary execution timeframe series and parallel query for 1H and 4H macro contexts (3 API calls total)
-      const [execRes, tf1hRes, tf4hRes] = await Promise.all([
+      const safeFetchIndicator = async (endpoint: string, params: Record<string, string>) => {
+        try {
+          const query = new URLSearchParams({
+            symbol,
+            apikey: apiKey,
+            ...params,
+          });
+          const res = await fetch(`${baseUrl}/${endpoint}?${query.toString()}`);
+          const data = await res.json();
+          if (data?.status === "error" || !Array.isArray(data?.values) || data.values.length === 0) {
+            return null;
+          }
+          return data;
+        } catch {
+          return null;
+        }
+      };
+
+      // Fetch primary execution timeframe series and parallel query for 1H and 4H macro contexts + execution indicators
+      const [execRes, tf1hRes, tf4hRes, rsi5mRes, macd5mRes, ema20_5mRes, ema50_5mRes] = await Promise.all([
         safeFetchSeries(execInterval, 100),
         safeFetchSeries("1h", 100),
-        safeFetchSeries("4h", 100)
+        safeFetchSeries("4h", 100),
+        safeFetchIndicator("rsi", { interval: execInterval, time_period: "14", outputsize: "30" }),
+        safeFetchIndicator("macd", { interval: execInterval, fast_period: "12", slow_period: "26", signal_period: "9", outputsize: "30" }),
+        safeFetchIndicator("ema", { interval: execInterval, time_period: "20", outputsize: "30" }),
+        safeFetchIndicator("ema", { interval: execInterval, time_period: "50", outputsize: "30" }),
       ]);
 
       if (!execRes.success || !execRes.values.length) {
         throw new Error(`TwelveData API error: ${execRes.message || `Failed to retrieve price series for ${symbol} on ${executionTf}`}. If using the free tier (8 calls/min), please retry in 10-15 seconds.`);
       }
+
+      const rawIndicatorsPayload = {
+        "5m": {
+          rsi14: rsi5mRes,
+          macd: macd5mRes,
+          ema20: ema20_5mRes,
+          ema50: ema50_5mRes,
+        },
+      };
 
       // Process complete deterministic market structure, S/R, momentum, and risk calculations
       deterministicData = DeterministicApiDecisionEngine.processTwelveDataMarketData(
@@ -283,7 +314,8 @@ export async function POST(request: NextRequest) {
         tf4hRes.values || [],
         tf1hRes.values || [],
         execRes.values || [],
-        body.tradeDuration || "5m"
+        body.tradeDuration || "5m",
+        rawIndicatorsPayload
       );
 
       // Assemble structured numerical dataset for the 26-section reasoning layer
