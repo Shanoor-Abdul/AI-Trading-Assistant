@@ -125,17 +125,20 @@ function injectUI() {
     button { background: #3b82f6; cursor: pointer; font-weight: bold; margin-top: 20px; border: none; padding: 12px; font-size: 14px; transition: background 0.2s; }
     button:hover { background: #2563eb; }
     button:disabled { background: #3f3f46; cursor: not-allowed; }
-    #result { margin-top: 16px; padding: 12px; background: #18181b; border-radius: 6px; display: none; font-size: 13px; border: 1px solid #3f3f46; }
-    .signal { font-size: 18px; font-weight: bold; margin-bottom: 8px; text-align: center; }
+    #result { margin-top: 16px; padding: 14px; background: #121215; border-radius: 8px; display: none; font-size: 13px; border: 1px solid #27272a; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+    .signal { font-size: 20px; font-weight: 800; margin-bottom: 10px; text-align: center; letter-spacing: 0.5px; }
     .buy { color: #22c55e; }
     .sell { color: #ef4444; }
     .wait { color: #eab308; }
     optgroup { font-weight: bold; color: #93c5fd; background: #09090b; }
     option { color: #fff; padding: 4px; }
     
-    .levels { margin-bottom: 12px; background: #27272a; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; display: none; }
-    .level-item { display: flex; flex-direction: column; }
-    .level-label { font-size: 11px; color: #a1a1aa; font-weight: normal; margin-bottom: 2px; }
+    .levels { margin-bottom: 8px; background: #18181b; border: 1px solid #27272a; padding: 8px; border-radius: 6px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; text-align: center; font-size: 13px; font-weight: bold; display: none; }
+    .level-item { display: flex; flex-direction: column; background: #27272a; padding: 6px 2px; border-radius: 4px; }
+    .level-label { font-size: 9px; color: #a1a1aa; font-weight: 700; margin-bottom: 2px; letter-spacing: 0.5px; }
+    #entryVal { color: #93c5fd; font-family: monospace; }
+    #targetVal { color: #86efac; font-family: monospace; }
+    #slVal { color: #fca5a5; font-family: monospace; }
 
     .toggle-container { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; background: #18181b; padding: 12px; border-radius: 6px; border: 1px solid #3f3f46; }
     .toggle-label { font-size: 14px; font-weight: bold; color: #fff; margin: 0;}
@@ -164,8 +167,11 @@ function injectUI() {
           <div class="level-item"><span class="level-label">TARGET</span><span id="targetVal">--</span></div>
           <div class="level-item"><span class="level-label">STOP LOSS</span><span id="slVal">--</span></div>
         </div>
-        <div id="reasoningText"></div>
-        <div id="actionText" style="margin-top: 10px; font-size: 11px; color: #93c5fd; font-style: italic;"></div>
+        <div id="actionText" style="margin-top: 6px; font-size: 11px; color: #93c5fd; font-style: italic; text-align: center;"></div>
+        <details id="detailsToggle" style="margin-top: 8px; border-top: 1px solid #27272a; padding-top: 6px;">
+          <summary style="font-size: 11px; color: #71717a; cursor: pointer; user-select: none;">🔍 View Rationale</summary>
+          <div id="reasoningText" style="margin-top: 6px; font-size: 11px; color: #a1a1aa; line-height: 1.4; max-height: 120px; overflow-y: auto;"></div>
+        </details>
       </div>
       
       <label>Asset Symbol</label>
@@ -461,6 +467,8 @@ function bindEvents(shadow, container) {
       const rText = shadow.getElementById("reasoningText");
       const actText = shadow.getElementById("actionText");
       const levDiv = shadow.getElementById("levelsDiv");
+      const detailsToggle = shadow.getElementById("detailsToggle");
+      if (detailsToggle) detailsToggle.open = false;
       
       resDiv.style.display = "block";
       

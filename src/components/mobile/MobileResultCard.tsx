@@ -175,7 +175,7 @@ export function MobileResultCard() {
           </div>
         )}
 
-        {(analysisResult.signal === 'BUY' || analysisResult.signal === 'SELL' || analysisResult.signal === 'STRONG_BUY' || analysisResult.signal === 'STRONG_SELL') && (
+        {analysisResult.entryPrice !== null && analysisResult.entryPrice !== undefined && (
           <div className="grid grid-cols-3 gap-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
             <div>
               <div className="text-[10px] text-zinc-500">Entry</div>
@@ -192,12 +192,17 @@ export function MobileResultCard() {
           </div>
         )}
 
-        <div>
-          <div className="text-xs text-zinc-400 mb-1">Reasoning</div>
-          <p className="text-xs text-zinc-300 bg-black/40 p-3 rounded-md border border-white/5 leading-relaxed">
-            {analysisResult.explanation}
-          </p>
-        </div>
+        {analysisResult.explanation && (
+          <details className="group">
+            <summary className="text-[11px] text-zinc-500 hover:text-zinc-400 cursor-pointer select-none list-none flex items-center justify-between py-1 border-t border-zinc-800/80">
+              <span>View Technical Details</span>
+              <span className="text-[10px] transition-transform group-open:rotate-180">▼</span>
+            </summary>
+            <p className="mt-2 text-xs text-zinc-300 bg-black/40 p-3 rounded-md border border-white/5 leading-relaxed max-h-40 overflow-y-auto">
+              {analysisResult.explanation}
+            </p>
+          </details>
+        )}
       </CardContent>
     </Card>
   );
